@@ -1,0 +1,785 @@
+{
+  "name": "gitr",
+  "displayName": "CommitPulse - Git Analytics Pipeline",
+  "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
+  "version": "0.1.0",
+  "publisher": "ImproviseLabs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/antonajp/CommitPulse"
+  },
+  "icon": "media/improviseLabsSquare.jpeg",
+  "keywords": [
+    "git",
+    "analytics",
+    "jira",
+    "linear",
+    "metrics",
+    "commits",
+    "visualization",
+    "engineering"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitr.runPipeline",
+        "title": "Gitr: Run Pipeline"
+      },
+      {
+        "command": "gitr.startDatabase",
+        "title": "Gitr: Start Database"
+      },
+      {
+        "command": "gitr.stopDatabase",
+        "title": "Gitr: Stop Database"
+      },
+      {
+        "command": "gitr.resetDatabase",
+        "title": "Gitr: Reset Database (Clear All Data)"
+      },
+      {
+        "command": "gitrx.setDatabasePassword",
+        "title": "Gitr: Set Database Password"
+      },
+      {
+        "command": "gitrx.setJiraToken",
+        "title": "Gitr: Set Jira API Token"
+      },
+      {
+        "command": "gitrx.setGitHubToken",
+        "title": "Gitr: Set GitHub Token"
+      },
+      {
+        "command": "gitr.toggleSchedule",
+        "title": "Gitr: Toggle Scheduled Pipeline"
+      },
+      {
+        "command": "gitrx.refreshRepos",
+        "title": "Gitr: Refresh Repositories",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitrx.runPipelineForRepo",
+        "title": "Run Pipeline for Repo"
+      },
+      {
+        "command": "gitrx.openRepoInTerminal",
+        "title": "Open in Terminal"
+      },
+      {
+        "command": "gitrx.refreshContributors",
+        "title": "Gitr: Refresh Contributors",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitrx.toggleContributorView",
+        "title": "Gitr: Toggle Contributors View Mode",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "gitrx.showContributorDetail",
+        "title": "Show Contributor Details"
+      },
+      {
+        "command": "gitrx.refreshPipelineRuns",
+        "title": "Gitr: Refresh Pipeline Runs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitrx.showPipelineRunLog",
+        "title": "Show Pipeline Run Log"
+      },
+      {
+        "command": "gitrx.openDashboard",
+        "title": "Gitr: Open Metrics Dashboard",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "gitrx.openLinkageView",
+        "title": "Gitr: Open Issue Linkage",
+        "icon": "$(link)"
+      },
+      {
+        "command": "gitrx.setLinearToken",
+        "title": "Gitr: Set Linear API Token"
+      },
+      {
+        "command": "gitrx.setMigrationPassword",
+        "title": "Gitr: Set Migration Database Password"
+      },
+      {
+        "command": "gitr.backfillSccMetrics",
+        "title": "Gitr: Backfill SCC Metrics"
+      },
+      {
+        "command": "gitr.backfillStoryPoints",
+        "title": "Gitr: Backfill Story Points"
+      },
+      {
+        "command": "gitr.backfillArcComponents",
+        "title": "Gitr: Backfill Architecture Components"
+      },
+      {
+        "command": "gitr.backfillJiraIssues",
+        "title": "Gitr: Backfill Jira Issues (Clear & Reload)"
+      },
+      {
+        "command": "gitrx.refreshCharts",
+        "title": "Gitr: Refresh Charts",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitrx.openSprintVelocityChart",
+        "title": "Gitr: Open Sprint Velocity vs LOC Chart",
+        "icon": "$(graph-line)"
+      },
+      {
+        "command": "gitrx.openDevPipeline",
+        "title": "Gitr: Open Development Pipeline",
+        "icon": "$(timeline-view-icon)"
+      },
+      {
+        "command": "gitrx.openReleaseMgmtChart",
+        "title": "Gitr: Open Release Management Chart",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "gitrx.openCodeReviewVelocity",
+        "title": "Gitr: Open Code Review Velocity",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "gitrx.openHotSpots",
+        "title": "Gitr: Open Hot Spots",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "gitrx.openKnowledgeConcentration",
+        "title": "Gitr: Open Knowledge Concentration",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "gitrx.openTicketLifecycle",
+        "title": "Gitr: Open Ticket Lifecycle",
+        "icon": "$(workflow)"
+      },
+      {
+        "command": "gitrx.openDeveloperFocus",
+        "title": "Gitr: Open Developer Focus",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "gitrx.openTeamCoupling",
+        "title": "Gitr: Open Team Coupling",
+        "icon": "$(link)"
+      },
+      {
+        "command": "gitrx.openReleaseRisk",
+        "title": "Gitr: Open Release Risk",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "gitrx.openTestDebt",
+        "title": "Gitr: Open Test Debt Predictor",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "gitrx.openCommitHygiene",
+        "title": "Gitr: Open Commit Hygiene",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "gitrx.openArchitectureDrift",
+        "title": "Gitr: Open Architecture Drift",
+        "icon": "$(symbol-structure)"
+      }
+    ],
+    "configuration": {
+      "title": "Gitr",
+      "properties": {
+        "gitrx.repositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path to the Git repository"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name for this repository"
+              },
+              "organization": {
+                "type": "string",
+                "description": "Organization or team that owns this repository"
+              },
+              "trackerType": {
+                "type": "string",
+                "enum": [
+                  "jira",
+                  "linear",
+                  "none"
+                ],
+                "default": "jira",
+                "description": "Issue tracker type for this repository (jira, linear, or none)"
+              },
+              "repoUrl": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https?://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._/-]*)*(\\.git)?$",
+                "description": "Repository URL for commit and PR linking (e.g., https://github.com/owner/repo)"
+              },
+              "startDate": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "Earliest commit date to extract (YYYY-MM-DD). Commits before this date are ignored. Overrides global sinceDate."
+              }
+            },
+            "required": [
+              "path",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "default": [],
+          "description": "List of repositories to analyze. Each entry requires a path and name.",
+          "markdownDescription": "List of repositories to analyze. Each entry is an object with `path` (required), `name` (required), `organization` (optional), `trackerType` (optional: `jira`, `linear`, or `none`, defaults to `jira`), `repoUrl` (optional: URL for commit/PR linking), and `startDate` (optional: earliest date YYYY-MM-DD to extract).\n\nExample:\n```json\n[\n  { \"path\": \"/home/user/repos/my-app\", \"name\": \"My App\", \"organization\": \"Engineering\", \"trackerType\": \"linear\", \"repoUrl\": \"https://github.com/myorg/my-app\", \"startDate\": \"2023-01-01\" }\n]\n```"
+        },
+        "gitrx.database.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "PostgreSQL database host",
+          "markdownDescription": "PostgreSQL database host. Maps from legacy `db_host` in `unclassified.properties`."
+        },
+        "gitrx.database.port": {
+          "type": "number",
+          "default": 5433,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "PostgreSQL database port (5433 to avoid conflict with other local PostgreSQL instances)",
+          "markdownDescription": "PostgreSQL database port. Default `5433` avoids conflicts with other local PostgreSQL instances on the standard `5432` port."
+        },
+        "gitrx.database.name": {
+          "type": "string",
+          "default": "gitrx",
+          "description": "PostgreSQL database name",
+          "markdownDescription": "PostgreSQL database name. Maps from legacy `db_name` in `unclassified.properties`."
+        },
+        "gitrx.database.user": {
+          "type": "string",
+          "default": "gitrx_admin",
+          "description": "PostgreSQL database user",
+          "markdownDescription": "PostgreSQL database user. Maps from legacy `db_user` in `unclassified.properties`. Password is stored securely via the **Gitr: Set Database Password** command."
+        },
+        "gitrx.database.migrationUser": {
+          "type": "string",
+          "default": "",
+          "description": "Optional privileged user for running database migrations (DDL). Falls back to gitrx.database.user if empty.",
+          "markdownDescription": "Optional privileged PostgreSQL user for running database migrations (DDL operations). If left empty, the main `gitrx.database.user` is used for both migrations and pipeline queries.\n\nSet this to a user with DDL privileges (CREATE TABLE, ALTER, DROP) while keeping `gitrx.database.user` restricted to DML (SELECT, INSERT, UPDATE, DELETE) for privilege separation.\n\nThe migration user's password is stored securely via the **Gitr: Set Migration Database Password** command. If no migration password is set, the main database password is used."
+        },
+        "gitrx.jira.server": {
+          "type": "string",
+          "default": "",
+          "format": "uri",
+          "description": "Jira server URL (e.g., https://yourorg.atlassian.net)",
+          "markdownDescription": "Jira server URL. Maps from legacy `jira_server` in `unclassified.properties`.\n\nExample: `https://yourorg.atlassian.net`"
+        },
+        "gitrx.jira.username": {
+          "type": "string",
+          "default": "",
+          "description": "Jira username (email) for API authentication",
+          "markdownDescription": "Jira username (email) for API authentication. Maps from legacy `jira_username` in `unclassified.properties`. The API token is stored securely via the **Gitr: Set Jira API Token** command."
+        },
+        "gitrx.jira.projectKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]+$"
+          },
+          "default": [],
+          "description": "Jira project keys to track (e.g., [\"PROJ\", \"FEAT\"])",
+          "markdownDescription": "Jira project keys to track. Each key must be uppercase alphanumeric.\n\nExample: `[\"PROJ\", \"FEAT\", \"BUG\"]`"
+        },
+        "gitrx.jira.keyAliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Jira key aliases for renamed projects (e.g., {\"PROJ\": \"PROJ\"})",
+          "markdownDescription": "Jira key aliases for renamed projects. Maps old project keys to their current names.\n\nExample: `{ \"PROJ\": \"PROJ2\", \"CRM\": \"CRMREO\" }`"
+        },
+        "gitrx.jira.pointsField": {
+          "type": "string",
+          "default": "customfield_10034",
+          "description": "Jira custom field ID for story points (e.g., customfield_10034)",
+          "markdownDescription": "Jira custom field ID for story points. Default: `customfield_10034`.\n\nThis varies by Jira instance. Check your Jira admin settings to find the correct field ID."
+        },
+        "gitrx.jira.maxKeys": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum issue key number to scan per project (0 = auto-detect from database)",
+          "markdownDescription": "Maximum issue key number to scan per project. Set to `0` (default) to auto-detect the max key from the database and scan forward by a buffer. Set to a specific number to scan up to `PROJECT-N`."
+        },
+        "gitrx.jira.increment": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "maximum": 5000,
+          "description": "Number of issues to fetch beyond the current max issue number per incremental run",
+          "markdownDescription": "Number of issues to fetch beyond the current max issue number per incremental run. During each pipeline execution, the loader scans from `maxKey` to `maxKey + increment` for each project.\n\nDefault: `200`"
+        },
+        "gitrx.jira.daysAgo": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 365,
+          "description": "Number of days to look back when refreshing unfinished Jira issues",
+          "markdownDescription": "Number of days to look back for recently completed Jira issues during unfinished issue refresh. Issues that transitioned to Done/Cancelled within this window are also refreshed.\n\nDefault: `2`"
+        },
+        "gitrx.jira.urlPrefix": {
+          "type": "string",
+          "default": "",
+          "format": "uri",
+          "description": "Base URL for Jira issue navigation (e.g., https://yourorg.atlassian.net). Falls back to gitrx.jira.server if empty.",
+          "markdownDescription": "Base URL for Jira issue navigation. When set, issue links open as `{urlPrefix}/browse/{ISSUE-KEY}`.\n\nIf empty, falls back to `gitrx.jira.server/browse/`.\n\nExample: `https://yourorg.atlassian.net`"
+        },
+        "gitrx.jira.debugLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose debug logging for Jira API requests and responses.",
+          "markdownDescription": "Enable verbose debug logging for Jira API requests and responses.\n\nWhen enabled, logs:\n- Full API request URLs\n- Request headers (auth redacted)\n- JQL queries and pagination\n- Response summaries and error details\n\n**Note:** Also set `gitrx.logLevel` to `DEBUG` or `TRACE` to see the output."
+        },
+        "gitrx.linear.teamKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]+$"
+          },
+          "default": [],
+          "description": "Linear team keys to track (e.g., [\"ENG\", \"PLAT\"])",
+          "markdownDescription": "Linear team keys to track. Each key must be uppercase alphanumeric.\n\nExample: `[\"ENG\", \"PLAT\", \"IQS\"]`"
+        },
+        "gitrx.linear.keyAliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Linear key aliases for renamed teams (e.g., {\"OLD\": \"NEW\"})",
+          "markdownDescription": "Linear key aliases for renamed teams. Maps old team keys to their current names.\n\nExample: `{ \"OLD\": \"NEW\" }`"
+        },
+        "gitrx.linear.maxKeys": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum issue key number to scan per team (0 = auto-detect from database)",
+          "markdownDescription": "Maximum issue key number to scan per team. Set to `0` (default) to auto-detect the max key from the database and scan forward by a buffer."
+        },
+        "gitrx.linear.increment": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "maximum": 5000,
+          "description": "Number of issues to fetch beyond the current max issue number per incremental run",
+          "markdownDescription": "Number of issues to fetch beyond the current max issue number per incremental Linear run.\n\nDefault: `200`"
+        },
+        "gitrx.linear.daysAgo": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 365,
+          "description": "Number of days to look back when refreshing unfinished Linear issues",
+          "markdownDescription": "Number of days to look back for recently completed Linear issues during unfinished issue refresh.\n\nDefault: `2`"
+        },
+        "gitrx.linear.urlPrefix": {
+          "type": "string",
+          "default": "",
+          "format": "uri",
+          "description": "Base URL for Linear issue navigation (e.g., https://linear.app/yourteam). Falls back to https://linear.app/{team}/issue/ if empty.",
+          "markdownDescription": "Base URL for Linear issue navigation. When set, issue links open as `{urlPrefix}/issue/{ISSUE-KEY}`.\n\nIf empty, the team key is extracted from the issue ID and the URL is built as `https://linear.app/{team}/issue/{ISSUE-KEY}`.\n\nExample: `https://linear.app/yourteam`"
+        },
+        "gitrx.github.organization": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub organization name for repository correlation",
+          "markdownDescription": "GitHub organization name for repository correlation. The GitHub personal access token is stored securely via the **Gitr: Set GitHub Token** command."
+        },
+        "gitrx.schedule.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable automatic scheduled pipeline execution",
+          "markdownDescription": "Enable automatic scheduled pipeline execution. When enabled, the pipeline runs on the schedule defined by `gitrx.schedule.cronExpression`."
+        },
+        "gitrx.schedule.cronExpression": {
+          "type": "string",
+          "default": "0 9 * * 1-5",
+          "description": "Cron expression for scheduled pipeline runs (default: weekdays at 9 AM)",
+          "markdownDescription": "Cron expression for scheduled pipeline runs. Uses standard 5-field cron syntax.\n\nDefault: `0 9 * * 1-5` (weekdays at 9:00 AM)\n\nExamples:\n- `0 */4 * * *` — every 4 hours\n- `0 9 * * 1-5` — weekdays at 9 AM\n- `0 0 * * 0` — weekly on Sunday at midnight"
+        },
+        "gitrx.logLevel": {
+          "type": "string",
+          "enum": [
+            "TRACE",
+            "DEBUG",
+            "INFO",
+            "WARN",
+            "ERROR",
+            "CRITICAL"
+          ],
+          "default": "INFO",
+          "description": "Logging verbosity level for the Gitr output channel",
+          "markdownDescription": "Logging verbosity level for the Gitr output channel.\n\n- **TRACE** — Most verbose, all internal operations\n- **DEBUG** — Detailed diagnostic information\n- **INFO** — General operational messages\n- **WARN** — Warning conditions\n- **ERROR** — Error conditions\n- **CRITICAL** — Only critical failures"
+        },
+        "gitrx.pipeline.steps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "gitCommitExtraction",
+              "githubContributorSync",
+              "jiraIssueLoading",
+              "jiraChangelogUpdate",
+              "commitJiraLinking",
+              "linearIssueLoading",
+              "linearChangelogUpdate",
+              "commitLinearLinking",
+              "teamAssignment"
+            ]
+          },
+          "default": [
+            "gitCommitExtraction",
+            "githubContributorSync",
+            "jiraIssueLoading",
+            "jiraChangelogUpdate",
+            "commitJiraLinking"
+          ],
+          "description": "Pipeline steps to execute. Default runs 5 core Jira steps. Set to [] (empty array) to run all 9 steps including Linear and teamAssignment.",
+          "markdownDescription": "Pipeline steps to execute when running `Gitr: Run Pipeline`.\n\n**Default** (5 core Jira steps): `gitCommitExtraction`, `githubContributorSync`, `jiraIssueLoading`, `jiraChangelogUpdate`, `commitJiraLinking`\n\nSet to `[]` (empty array) to run all 9 steps including Linear integration and team assignment.\n\n**Available steps:**\n- `gitCommitExtraction` — Extract commits from Git repositories\n- `githubContributorSync` — Sync contributors from GitHub\n- `jiraIssueLoading` — Load new Jira issues incrementally\n- `jiraChangelogUpdate` — Refresh unfinished Jira issues\n- `commitJiraLinking` — Link commits to Jira issues via regex\n- `linearIssueLoading` — Load new Linear issues incrementally\n- `linearChangelogUpdate` — Refresh unfinished Linear issues\n- `commitLinearLinking` — Link commits to Linear issues via regex\n- `teamAssignment` — Calculate primary team assignments\n\n**Examples:**\n```json\n// Default: 5 core Jira steps (new installs)\n\"gitrx.pipeline.steps\": [\"gitCommitExtraction\", \"githubContributorSync\", \"jiraIssueLoading\", \"jiraChangelogUpdate\", \"commitJiraLinking\"]\n\n// All 9 steps (Linear users, team assignment)\n\"gitrx.pipeline.steps\": []\n\n// Custom subset\n\"gitrx.pipeline.steps\": [\"gitCommitExtraction\", \"commitJiraLinking\"]\n```"
+        },
+        "gitrx.pipeline.sinceDate": {
+          "type": "string",
+          "default": "",
+          "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$",
+          "description": "Earliest commit date to extract (YYYY-MM-DD). Commits before this date are ignored. Per-repo startDate takes precedence.",
+          "markdownDescription": "Global cutoff date for commit extraction (YYYY-MM-DD format).\n\nCommits before this date are ignored during the `gitCommitExtraction` pipeline step. This is useful for large repositories with many years of history where only recent commits are relevant.\n\n**Priority**: Per-repository `startDate` settings override this global setting. When both are set, the *later* of the two dates is used.\n\n**Examples:**\n```json\n// Extract commits from 2023 onwards\n\"gitrx.pipeline.sinceDate\": \"2023-01-01\"\n\n// No cutoff (extract all history)\n\"gitrx.pipeline.sinceDate\": \"\"\n```"
+        },
+        "gitrx.docker.postgresVersion": {
+          "type": "string",
+          "default": "16",
+          "description": "PostgreSQL Docker image version tag"
+        },
+        "gitrx.arcComponent.extensionMapping": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {
+            ".ts": "Back-End",
+            ".js": "Back-End",
+            ".py": "Back-End",
+            ".mjs": "Back-End",
+            ".cjs": "Back-End",
+            ".cls": "Back-End",
+            ".trigger": "Back-End",
+            ".apex": "Back-End",
+            ".flow": "Back-End",
+            ".jsx": "Front-End",
+            ".html": "Front-End",
+            ".css": "Front-End",
+            ".ejs": "Front-End",
+            ".svg": "Front-End",
+            ".component": "Front-End",
+            ".page": "Front-End",
+            ".app": "Front-End",
+            ".cmp": "Front-End",
+            ".evt": "Front-End",
+            ".intf": "Front-End",
+            ".tokens": "Front-End",
+            ".design": "Front-End",
+            ".flexipage": "Front-End",
+            ".email": "Front-End",
+            ".tf": "DevOps/CI",
+            ".tfvars": "DevOps/CI",
+            ".yaml": "DevOps/CI",
+            ".yml": "DevOps/CI",
+            ".sh": "DevOps/CI",
+            ".worker": "DevOps/CI",
+            ".service": "DevOps/CI",
+            ".dev": "DevOps/CI",
+            ".sql": "Database",
+            ".prisma": "Database",
+            ".rules": "Database",
+            ".object": "Database",
+            ".field": "Database",
+            ".soql": "Database",
+            ".json": "Configuration",
+            ".toml": "Configuration",
+            ".ini": "Configuration",
+            ".xml": "Configuration",
+            ".example": "Configuration",
+            ".local": "Configuration",
+            ".development": "Configuration",
+            ".production": "Configuration",
+            ".staging": "Configuration",
+            ".profile": "Configuration",
+            ".permissionset": "Configuration",
+            ".layout": "Configuration",
+            ".labels": "Configuration",
+            ".tab": "Configuration",
+            ".reportType": "Configuration",
+            ".report": "Configuration",
+            ".dashboard-meta": "Configuration",
+            ".md": "Documentation",
+            ".txt": "Documentation",
+            ".docx": "Documentation",
+            ".rtf": "Documentation",
+            ".auradoc": "Documentation",
+            ".test.ts": "Testing",
+            ".test.js": "Testing",
+            ".test.tsx": "Testing",
+            ".test.jsx": "Testing",
+            ".spec.ts": "Testing",
+            ".spec.js": "Testing",
+            ".spec.jsx": "Testing",
+            ".testSuite": "Testing",
+            ".map": "Build/Tooling",
+            ".png": "Assets",
+            ".jpg": "Assets",
+            ".jpeg": "Assets",
+            ".webp": "Assets",
+            ".ico": "Assets",
+            ".mp3": "Assets",
+            ".resource": "Assets",
+            ".csv": "Other",
+            ".backup": "Other",
+            ".bkup": "Other"
+          },
+          "description": "Maps file extensions to architecture component categories for commit_files classification.",
+          "markdownDescription": "Maps file extensions to architecture component categories.\n\n**Categories**: Front-End, Back-End, Database, DevOps/CI, Configuration, Documentation, Testing, Build/Tooling, Assets, Other\n\nMulti-dot extensions (e.g., `.test.tsx`) take precedence over single-dot extensions (`.tsx`). Extension matching is case-insensitive.\n\nExample: `{ \".proto\": \"Back-End\", \".graphql\": \"Back-End\" }`\n\nAfter editing, re-run **Gitr: Backfill Architecture Components** to apply changes."
+        },
+        "gitrx.arcComponent.filenameMapping": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {
+            "Dockerfile": "DevOps/CI",
+            "tfplan": "DevOps/CI",
+            ".dockerignore": "DevOps/CI",
+            "pre-commit": "DevOps/CI",
+            ".trivyignore": "DevOps/CI",
+            "Jenkinsfile": "DevOps/CI",
+            "docker-compose.yml": "DevOps/CI",
+            ".gitignore": "Configuration",
+            ".gitkeep": "Configuration",
+            ".vscodeignore": "Configuration",
+            ".firebaserc": "Configuration",
+            ".prettierignore": "Configuration",
+            ".prettierrc": "Configuration",
+            ".forceignore": "Configuration",
+            "sfdx-project.json": "Configuration",
+            "tsconfig.json": "Configuration",
+            "eslint.config.mjs": "Configuration",
+            "LICENSE": "Documentation",
+            "Makefile": "Build/Tooling",
+            "package.json": "Build/Tooling",
+            "esbuild.config.mjs": "Build/Tooling",
+            "jest.config.js": "Testing",
+            "jest.config.ts": "Testing",
+            "jest.config.mjs": "Testing",
+            "vitest.config.ts": "Testing",
+            "vitest.config.mjs": "Testing"
+          },
+          "description": "Maps specific filenames to architecture component categories. Filename matches take priority over extension matches.",
+          "markdownDescription": "Maps specific filenames (case-sensitive) to architecture component categories.\n\n**Priority**: Filename matches always take precedence over extension matches.\n\n**Categories**: Front-End, Back-End, Database, DevOps/CI, Configuration, Documentation, Testing, Build/Tooling, Assets, Other\n\nExample: `{ \"Procfile\": \"DevOps/CI\", \".eslintrc\": \"Configuration\" }`\n\nAfter editing, re-run **Gitr: Backfill Architecture Components** to apply changes."
+        },
+        "gitrx.charts.topNComplexFiles": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Number of top complex files to display in the File Complexity chart",
+          "markdownDescription": "Number of top complex files to display in the File Complexity chart. Must be between 1 and 100.\n\nDefault: `20`"
+        },
+        "gitrx.releaseManagement.productionBranches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "main",
+            "master",
+            "prod",
+            "production"
+          ],
+          "description": "Branch names considered as production environments for release tracking",
+          "markdownDescription": "Branch names considered as production environments for release tracking. Merges to these branches are counted as production releases.\n\nDefault: `[\"main\", \"master\", \"prod\", \"production\"]`\n\nBranches matching `release/*` patterns are also considered production."
+        },
+        "gitrx.releaseManagement.stagingBranches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "staging",
+            "stage",
+            "uat",
+            "develop",
+            "dev"
+          ],
+          "description": "Branch names considered as staging/development environments for release tracking",
+          "markdownDescription": "Branch names considered as staging/development environments for release tracking. Merges to these branches are counted as staging releases.\n\nDefault: `[\"staging\", \"stage\", \"uat\", \"develop\", \"dev\"]`"
+        },
+        "gitrx.releaseManagement.defaultTimeRangeDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Default time range in days for the Release Management chart",
+          "markdownDescription": "Default time range in days for the Release Management Contributions chart.\n\nDefault: `30`"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitr-explorer",
+          "title": "Gitr",
+          "icon": "media/gitr-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitr-explorer": [
+        {
+          "id": "gitr.repositoryExplorer",
+          "name": "Repositories",
+          "icon": "$(repo)"
+        },
+        {
+          "id": "gitrx-repos",
+          "name": "Repo Stats",
+          "icon": "$(database)"
+        },
+        {
+          "id": "gitrx-contributors",
+          "name": "Contributors",
+          "icon": "$(organization)"
+        },
+        {
+          "id": "gitrx-pipeline-runs",
+          "name": "Pipeline Runs",
+          "icon": "$(play-circle)"
+        },
+        {
+          "id": "gitrx-charts",
+          "name": "Charts",
+          "icon": "$(graph)"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitrx.refreshRepos",
+          "when": "view == gitrx-repos",
+          "group": "navigation"
+        },
+        {
+          "command": "gitrx.refreshContributors",
+          "when": "view == gitrx-contributors",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitrx.toggleContributorView",
+          "when": "view == gitrx-contributors",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitrx.refreshPipelineRuns",
+          "when": "view == gitrx-pipeline-runs",
+          "group": "navigation"
+        },
+        {
+          "command": "gitrx.refreshCharts",
+          "when": "view == gitrx-charts",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gitrx.runPipelineForRepo",
+          "when": "view == gitrx-repos && viewItem == repository",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "gitrx.openRepoInTerminal",
+          "when": "view == gitrx-repos && viewItem == repository",
+          "group": "1_actions@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch",
+    "package": "node esbuild.config.mjs --production",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run src/__tests__/unit/",
+    "test:integration": "vitest run src/__tests__/integration/",
+    "test:extension": "vitest run src/__tests__/extension/",
+    "test:watch": "vitest",
+    "dev": "npm run compile && npx @vscode/vsce package --no-dependencies",
+    "vscode:prepublish": "npm run package",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@linear/sdk": "^76.0.0",
+    "@octokit/rest": "^21.0.0",
+    "cron-parser": "^5.5.0",
+    "dockerode": "^4.0.0",
+    "jira.js": "^4.0.0",
+    "pg": "^8.13.0",
+    "simple-git": "^3.27.0"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.31",
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^8.57.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.2",
+    "testcontainers": "^11.12.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "yaml": "^2.8.2"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "vitest related --run"
+    ]
+  }
+}

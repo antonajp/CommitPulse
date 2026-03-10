@@ -1,0 +1,469 @@
+/**
+ * Styles for the Release Management Contributions chart webview.
+ * Uses VS Code CSS variables for theme integration.
+ * Colorblind-accessible palette with 4.5:1 contrast ratio.
+ *
+ * Ticket: IQS-898
+ */
+
+/* === Reset and Base === */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  line-height: 1.5;
+}
+
+/* === Container === */
+.chart-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 24px;
+}
+
+/* ============================================================================
+   Chart Explanatory Paragraphs (IQS-922)
+   Collapsible explanation sections for dashboard charts.
+   Uses <details> element with persistent state via vscode.getState().
+   ============================================================================ */
+
+.chart-explanation {
+  margin-bottom: 16px;
+  border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
+  background: var(--vscode-textCodeBlock-background, #1e1e1e);
+  border-radius: 4px;
+}
+
+.chart-explanation[open] {
+  padding-bottom: 2px;
+}
+
+.explanation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9em;
+  font-weight: 500;
+  color: var(--vscode-foreground, #cccccc);
+  list-style: none;
+  transition: background-color 0.15s;
+}
+
+.explanation-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.explanation-toggle:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.explanation-toggle:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+.explanation-toggle .chevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  fill: currentColor;
+  transition: transform 0.2s ease;
+}
+
+.chart-explanation[open] .explanation-toggle .chevron {
+  transform: rotate(90deg);
+}
+
+.explanation-content {
+  padding: 0 12px 12px 12px;
+  font-size: 0.88em;
+  line-height: 1.6;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.explanation-content p {
+  margin: 0;
+}
+
+.explanation-content p + p {
+  margin-top: 8px;
+}
+
+/* Accessibility: ensure sufficient contrast and focus visibility */
+.chart-explanation:focus-within {
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4);
+}
+
+/* Support for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .explanation-toggle .chevron {
+    transition: none;
+  }
+}
+
+/* === Header === */
+.chart-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.chart-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.date-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-controls label {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+.date-controls input[type="date"] {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  background-color: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border-radius: 4px;
+}
+
+.date-controls input[type="date"]:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: -1px;
+}
+
+/* === Buttons === */
+.action-btn,
+.export-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-button-foreground, #ffffff);
+  background-color: var(--vscode-button-background, #0e639c);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.action-btn:hover,
+.export-btn:hover {
+  background-color: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.action-btn:focus,
+.export-btn:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: 2px;
+}
+
+/* === Summary Stats === */
+.summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  flex: 1;
+  min-width: 140px;
+  padding: 12px 16px;
+  background-color: var(--vscode-editor-inactiveSelectionBackground, #264f78);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* === Loading State === */
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--vscode-editor-inactiveSelectionBackground, #264f78);
+  border-top-color: var(--vscode-progressBar-background, #0e70c0);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 14px;
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+/* === Error State === */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background-color: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  border-radius: 4px;
+  color: var(--vscode-inputValidation-errorForeground, #f48771);
+}
+
+/* === Empty State === */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-state h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.empty-state p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground, #999);
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* === Legend === */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 16px;
+  padding: 8px 0;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+/* === Chart SVG Container === */
+.chart-svg-container {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 8px 0;
+}
+
+#chartSvg {
+  display: block;
+  min-width: 100%;
+}
+
+/* === Axis Styling === */
+.axis text {
+  fill: var(--vscode-foreground, #ccc);
+  font-size: 11px;
+}
+
+.axis line,
+.axis path {
+  stroke: var(--vscode-editorWidget-border, #454545);
+}
+
+.grid line {
+  stroke: var(--vscode-editorWidget-border, #454545);
+  opacity: 0.3;
+}
+
+/* === Bar Styling === */
+.bar {
+  transition: opacity 0.15s ease;
+}
+
+.bar:hover {
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+/* === Tooltip === */
+.chart-tooltip {
+  position: absolute;
+  padding: 10px 14px;
+  background-color: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1000;
+  max-width: 280px;
+}
+
+.chart-tooltip.visible {
+  opacity: 1;
+}
+
+.tt-component {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.tt-team {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #999);
+  margin-bottom: 6px;
+}
+
+.tt-value {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* === Data Table === */
+.data-table-container {
+  margin-top: 24px;
+  border-top: 1px solid var(--vscode-editorWidget-border, #454545);
+  padding-top: 16px;
+}
+
+.data-table-toggle {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  background: transparent;
+  border: 1px solid var(--vscode-textLink-foreground, #3794ff);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.data-table-toggle:hover {
+  background-color: var(--vscode-textLink-foreground, #3794ff);
+  color: var(--vscode-editor-background, #1e1e1e);
+}
+
+.data-table-toggle:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: 2px;
+}
+
+.data-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, #454545);
+}
+
+.data-table th {
+  background-color: var(--vscode-editor-inactiveSelectionBackground, #264f78);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.data-table tr:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+/* === Accessibility === */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* === Focus Styles for Keyboard Navigation === */
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: 2px;
+}
+
+/* === Responsive Adjustments === */
+@media (max-width: 768px) {
+  .chart-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .date-controls {
+    flex-wrap: wrap;
+  }
+
+  .stat-card {
+    min-width: 100px;
+  }
+}

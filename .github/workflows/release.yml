@@ -1,0 +1,74 @@
+# GitHub Actions release workflow for gitr VS Code extension.
+# Ticket: IQS-872
+#
+# Triggers on push of version tags (v*).
+# Steps: build, package VSIX, create GitHub Release, upload VSIX artifact.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript type check
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Build with esbuild
+        run: npm run compile
+
+      - name: Package VSIX
+        run: npx @vscode/vsce package --no-dependencies
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Release ${{ github.ref_name }}"
+          body: |
+            ## gitr VS Code Extension ${{ github.ref_name }}
+
+            ### Installation
+            1. Download the `.vsix` file from the assets below
+            2. Install via CLI: `code --install-extension gitr-${{ steps.version.outputs.version }}.vsix`
+            3. Or install via VS Code: Extensions sidebar > `...` menu > "Install from VSIX..."
+
+            ### Changes
+            See [CHANGELOG](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details.
+          files: "*.vsix"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

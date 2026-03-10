@@ -1,0 +1,57 @@
+# Docker Compose configuration for gitrx PostgreSQL 16 database.
+# Ticket: IQS-846
+#
+# Usage:
+#   Start:          docker compose up -d
+#   Stop (keep data): docker compose down
+#   Stop (wipe data): docker compose down -v
+#   View logs:      docker compose logs -f postgres
+#   Connect:        psql -h localhost -p ${DB_PORT:-5433} -U ${DB_USER:-gitrx_admin} -d ${DB_NAME:-gitrx}
+#
+# Configuration:
+#   Copy .env.example to .env and adjust values before first run.
+#   All variables have sensible defaults so `docker compose up -d` works
+#   without an .env file for quick local development.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gitrx-postgres
+    restart: unless-stopped
+
+    # Database credentials and configuration from environment variables.
+    # Defaults allow zero-config startup for local development.
+    environment:
+      POSTGRES_DB: ${DB_NAME:-gitrx}
+      POSTGRES_USER: ${DB_USER:-gitrx_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gitrx_local_dev}
+
+    # Port mapping — host port is configurable via DB_PORT env var.
+    ports:
+      - "${DB_PORT:-5433}:5432"
+
+    # Persistent storage, init script mount, and migrations directory.
+    # The init script (01_run_migrations.sh) reads from /migrations/
+    # to apply versioned SQL migrations on first container startup.
+    volumes:
+      - gitrx-pgdata:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/migrations:/migrations:ro
+
+    # Health check using pg_isready for readiness probing.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-gitrx_admin} -d ${DB_NAME:-gitrx}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    # Resource limits to prevent runaway memory usage in development.
+    shm_size: 128mb
+
+# Named volume for data persistence across container restarts.
+# `docker compose down` preserves this volume.
+# `docker compose down -v` removes it (full data wipe).
+volumes:
+  gitrx-pgdata:
+    driver: local

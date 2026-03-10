@@ -1,0 +1,164 @@
+/**
+ * TypeScript interfaces for the GitAnalysisService.
+ *
+ * Defines data shapes for commit extraction results, branch info,
+ * tag mappings, and processing options. These types bridge between
+ * the simple-git library output and the CommitRepository insert shapes.
+ *
+ * Maps from Python GitCommitHistorySql.py data structures.
+ *
+ * Ticket: IQS-854
+ */
+
+// ============================================================================
+// Processing options
+// ============================================================================
+
+/**
+ * Options for a git analysis run.
+ * Controls date filtering, branch selection, and incremental behavior.
+ */
+export interface GitAnalysisOptions {
+  /** Start date for commit filtering (ISO format YYYY-MM-DD). Undefined = all history. */
+  readonly sinceDate?: string;
+  /** End date for commit filtering (ISO format YYYY-MM-DD). Undefined = now. */
+  readonly untilDate?: string;
+}
+
+// ============================================================================
+// Repository context
+// ============================================================================
+
+/**
+ * Context for a single repository being processed.
+ * Combines config with runtime state like the repo name and URL.
+ */
+export interface RepoContext {
+  /** Absolute path to the Git repository. */
+  readonly path: string;
+  /** Display name for this repository (from settings). */
+  readonly name: string;
+  /** Organization or team that owns this repository (from settings). */
+  readonly organization: string;
+  /** Derived repository URL (e.g., https://github.com/org/repo.git). */
+  readonly repositoryUrl: string;
+}
+
+// ============================================================================
+// Commit extraction results
+// ============================================================================
+
+/**
+ * Raw commit data extracted from simple-git log.
+ * This is the intermediate shape before transformation into CommitHistoryRow.
+ *
+ * Maps from Python commit object fields accessed in get_branch_details().
+ */
+export interface ExtractedCommit {
+  /** Full 40-character commit SHA. */
+  readonly sha: string;
+  /** Commit author name. */
+  readonly author: string;
+  /** Commit author email. */
+  readonly authorEmail: string;
+  /** Commit date as ISO string. */
+  readonly date: string;
+  /** Cleaned commit message (newlines/carriage returns removed). */
+  readonly message: string;
+  /** Branch this commit was found on. */
+  readonly branch: string;
+  /** Number of files changed in this commit. */
+  readonly fileCount: number;
+  /** Total lines added. */
+  readonly linesAdded: number;
+  /** Total lines removed. */
+  readonly linesRemoved: number;
+  /** Whether this is a merge commit (detected via regex). */
+  readonly isMerge: boolean;
+  /** Diff file details for this commit. */
+  readonly files: readonly ExtractedFileDiff[];
+}
+
+/**
+ * File-level diff data from a single commit.
+ * Maps from Python commit.stats.files items.
+ */
+export interface ExtractedFileDiff {
+  /** File path relative to repo root. */
+  readonly filePath: string;
+  /** File extension including dot (e.g., ".ts"). */
+  readonly fileExtension: string;
+  /** Lines inserted in this file. */
+  readonly insertions: number;
+  /** Lines deleted in this file. */
+  readonly deletions: number;
+  /** Net line change (insertions - deletions). */
+  readonly delta: number;
+  /** Parent directory (first path segment, or "root"). */
+  readonly parentDirectory: string;
+  /** Sub-directory (second path segment, or ""). */
+  readonly subDirectory: string;
+  /** Whether this file is a test file. */
+  readonly isTestFile: boolean;
+}
+
+// ============================================================================
+// Branch info
+// ============================================================================
+
+/**
+ * Information about a git branch with its latest commit date.
+ * Used for filtering branches by recency.
+ */
+export interface BranchInfo {
+  /** Branch name (e.g., "main", "feature/foo"). */
+  readonly name: string;
+  /** Timestamp of the latest commit on this branch (epoch seconds). */
+  readonly lastCommitTimestamp: number;
+}
+
+// ============================================================================
+// Tag mapping
+// ============================================================================
+
+/**
+ * Mapping from commit SHA to array of tag names.
+ * Maps from Python get_all_tags_by_commit_sha().
+ */
+export type TagMap = ReadonlyMap<string, readonly string[]>;
+
+// ============================================================================
+// Processing results
+// ============================================================================
+
+/**
+ * Summary statistics for a completed repository analysis run.
+ */
+export interface RepoAnalysisResult {
+  /** Repository name. */
+  readonly repoName: string;
+  /** Number of branches processed. */
+  readonly branchesProcessed: number;
+  /** Number of new commits inserted. */
+  readonly commitsInserted: number;
+  /** Number of branch relationships recorded. */
+  readonly branchRelationshipsRecorded: number;
+  /** Total processing time in milliseconds. */
+  readonly durationMs: number;
+  /** Error message if processing failed, undefined on success. */
+  readonly error?: string;
+}
+
+/**
+ * Summary of a full pipeline analysis run across all repositories.
+ */
+export interface AnalysisRunResult {
+  /** Pipeline run ID from the database. */
+  readonly pipelineRunId: number;
+  /** Results per repository. */
+  readonly repoResults: readonly RepoAnalysisResult[];
+  /** Total processing time in milliseconds. */
+  readonly totalDurationMs: number;
+  /** Overall status. */
+  readonly status: 'SUCCESS' | 'PARTIAL' | 'FAILED';
+}

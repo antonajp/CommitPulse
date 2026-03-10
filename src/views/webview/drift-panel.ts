@@ -1,0 +1,650 @@
+/**
+ * Architecture Drift Heat Map dashboard webview panel manager.
+ * Creates and manages a VS Code WebviewPanel with:
+ * - Singleton pattern (only one panel at a time)
+ * - Heat map visualization: component rows x week columns
+ * - Cell color intensity reflects commit count
+ * - Warning badge on cells with cross-component commits
+ * - Hover cell shows tooltip with commit count, LOC, cross-component count
+ * - Click cell opens commit list
+ * - Cross-component filter toggle
+ * - Component visibility toggles
+ * - Summary panel with drift trend
+ * - Most coupled component pairs list
+ * - CSP nonce-based script authorization
+ * - D3.js v7 bundled with SHA-256 integrity verification
+ * - Proper disposal and resource cleanup
+ *
+ * Ticket: IQS-918
+ */
+
+import * as vscode from 'vscode';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import { LoggerService } from '../../logging/logger.js';
+import { DatabaseService, buildConfigFromSettings } from '../../database/database-service.js';
+import { ArchitectureDriftDataService } from '../../services/architecture-drift-service.js';
+import { generateDriftHtml } from './drift-html.js';
+import { getSettings } from '../../config/settings.js';
+import { validateExternalUrl } from '../../utils/url-validator.js';
+import type { SecretStorageService } from '../../config/secret-storage.js';
+import type {
+  ArchitectureDriftFilters,
+  ArchitectureDrift,
+  CrossComponentCommit,
+  ComponentPairCoupling,
+  HeatMapData,
+  DriftSummary,
+} from '../../services/architecture-drift-types.js';
+
+/**
+ * Class name constant for structured logging context.
+ */
+const CLASS_NAME = 'DriftPanel';
+
+/**
+ * View type identifier for the drift webview.
+ */
+const VIEW_TYPE = 'gitrx.driftPanel';
+
+/**
+ * Expected SHA-256 hash of the bundled D3.js v7 library.
+ * Used for integrity verification per IQS-880 security pattern.
+ */
+const D3_EXPECTED_SHA256 = 'f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539';
+
+/**
+ * Rate limiting configuration for external URL opens.
+ * Prevents rapid-fire URL opens which could indicate malicious behavior.
+ * Ticket: IQS-925
+ */
+const RATE_LIMIT_WINDOW_MS = 60000; // 60 seconds
+const RATE_LIMIT_MAX_URLS = 5; // Max 5 URLs per window
+
+/**
+ * Messages from webview to host (extension).
+ */
+export type DriftWebviewToHost =
+  | { type: 'requestDriftData'; filters?: ArchitectureDriftFilters }
+  | { type: 'requestDriftRefresh'; filters?: ArchitectureDriftFilters }
+  | { type: 'requestDriftFilterUpdate'; filters: ArchitectureDriftFilters }
+  | { type: 'requestCellDrillDown'; component: string; week: string; filters?: ArchitectureDriftFilters }
+  | { type: 'requestComponentDrillDown'; component: string; filters?: ArchitectureDriftFilters }
+  | { type: 'requestOpenFile'; filePath: string; repository: string }
+  | { type: 'openExternal'; url: string };
+
+/**
+ * Messages from host (extension) to webview.
+ */
+export type DriftHostToWebview =
+  | {
+      type: 'driftData';
+      driftData: readonly ArchitectureDrift[];
+      heatMapData: HeatMapData;
+      couplingData: readonly ComponentPairCoupling[];
+      summary: DriftSummary;
+      hasData: boolean;
+      viewExists: boolean;
+    }
+  | {
+      type: 'driftFilterOptions';
+      repositories: string[];
+      components: string[];
+    }
+  | { type: 'driftLoading'; isLoading: boolean }
+  | { type: 'driftError'; message: string; source: string }
+  | {
+      type: 'cellDrillDown';
+      component: string;
+      week: string;
+      commits: readonly CrossComponentCommit[];
+      hasData: boolean;
+    }
+  | {
+      type: 'componentDrillDown';
+      component: string;
+      drift: ArchitectureDrift | null;
+      hasData: boolean;
+    };
+
+/**
+ * Manages the Architecture Drift Heat Map WebviewPanel lifecycle.
+ * Implements singleton pattern: only one panel exists at a time.
+ * Re-reveals existing panel if user triggers the command again.
+ *
+ * Ticket: IQS-918
+ */
+export class DriftPanel implements vscode.Disposable {
+  /**
+   * Singleton panel instance. Null when no panel is open.
+   */
+  private static currentPanel: DriftPanel | undefined;
+
+  private readonly logger: LoggerService;
+  private readonly panel: vscode.WebviewPanel;
+  private readonly extensionUri: vscode.Uri;
+  private readonly secretService: SecretStorageService;
+  private readonly disposables: vscode.Disposable[] = [];
+  private db: DatabaseService | undefined;
+  private dataService: ArchitectureDriftDataService | undefined;
+
+  /**
+   * Timestamps of recent URL opens for rate limiting.
+   * Filtered to retain only timestamps within the rate limit window.
+   * Ticket: IQS-925
+   */
+  private urlOpenTimestamps: number[] = [];
+
+  /**
+   * Create or reveal the Architecture Drift Heat Map panel.
+   * Verifies D3.js bundle integrity before creating the panel.
+   *
+   * @param extensionUri - The URI of the extension's root directory
+   * @param secretService - SecretStorageService for database password retrieval
+   */
+  static createOrShow(extensionUri: vscode.Uri, secretService: SecretStorageService): void {
+    const logger = LoggerService.getInstance();
+    logger.info(CLASS_NAME, 'createOrShow', 'Opening Architecture Drift Heat Map panel');
+
+    // If panel exists, reveal it
+    if (DriftPanel.currentPanel) {
+      logger.debug(CLASS_NAME, 'createOrShow', 'Existing panel found, revealing');
+      DriftPanel.currentPanel.panel.reveal(vscode.ViewColumn.One);
+      return;
+    }
+
+    // Verify D3.js bundle integrity (IQS-880 security pattern)
+    const d3Path = vscode.Uri.joinPath(extensionUri, 'media', 'd3.min.js').fsPath;
+    if (!DriftPanel.verifyD3Integrity(d3Path, logger)) {
+      void vscode.window.showErrorMessage(
+        'Gitr: D3.js bundle integrity check failed. The file may be corrupted or tampered with.',
+      );
+      return;
+    }
+
+    // Create a new panel
+    logger.debug(CLASS_NAME, 'createOrShow', 'Creating new drift webview panel');
+    const panel = vscode.window.createWebviewPanel(
+      VIEW_TYPE,
+      'Gitr: Architecture Drift',
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(extensionUri, 'media'),
+        ],
+      },
+    );
+
+    DriftPanel.currentPanel = new DriftPanel(panel, extensionUri, secretService);
+  }
+
+  /**
+   * Verify the SHA-256 integrity of the D3.js bundle.
+   *
+   * @param d3Path - Absolute file path to d3.min.js
+   * @param logger - Logger instance
+   * @returns true if integrity check passes
+   */
+  private static verifyD3Integrity(d3Path: string, logger: LoggerService): boolean {
+    logger.debug(CLASS_NAME, 'verifyD3Integrity', `Verifying D3.js integrity at: ${d3Path}`);
+
+    try {
+      const content = fs.readFileSync(d3Path);
+      const hash = crypto.createHash('sha256').update(content).digest('hex');
+      logger.debug(CLASS_NAME, 'verifyD3Integrity', `Computed SHA-256: ${hash}`);
+
+      if (hash !== D3_EXPECTED_SHA256) {
+        logger.error(CLASS_NAME, 'verifyD3Integrity',
+          `SHA-256 mismatch! Expected: ${D3_EXPECTED_SHA256}, Got: ${hash}`);
+        return false;
+      }
+
+      logger.info(CLASS_NAME, 'verifyD3Integrity', 'D3.js integrity verified successfully');
+      return true;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(CLASS_NAME, 'verifyD3Integrity', `Failed to verify D3.js: ${msg}`);
+      return false;
+    }
+  }
+
+  /**
+   * Private constructor -- use createOrShow() to create instances.
+   */
+  private constructor(
+    panel: vscode.WebviewPanel,
+    extensionUri: vscode.Uri,
+    secretService: SecretStorageService,
+  ) {
+    this.logger = LoggerService.getInstance();
+    this.panel = panel;
+    this.extensionUri = extensionUri;
+    this.secretService = secretService;
+
+    this.logger.debug(CLASS_NAME, 'constructor', 'Initializing DriftPanel');
+
+    // Set the webview HTML content
+    this.updateWebviewContent();
+
+    // Listen for panel disposal
+    this.panel.onDidDispose(
+      () => this.dispose(),
+      null,
+      this.disposables,
+    );
+
+    // Listen for messages from the webview
+    this.panel.webview.onDidReceiveMessage(
+      (message: DriftWebviewToHost) => {
+        this.logger.trace(CLASS_NAME, 'onDidReceiveMessage', `Received message: type=${message.type}`);
+        void this.handleMessage(message);
+      },
+      null,
+      this.disposables,
+    );
+
+    this.logger.info(CLASS_NAME, 'constructor', 'DriftPanel initialized successfully');
+  }
+
+  /**
+   * Generate and set the webview HTML content with CSP nonce and local resource URIs.
+   */
+  private updateWebviewContent(): void {
+    this.logger.debug(CLASS_NAME, 'updateWebviewContent', 'Generating drift webview HTML');
+
+    const webview = this.panel.webview;
+    const nonce = this.generateNonce();
+
+    // Resolve local resource URIs
+    const d3Uri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'd3.min.js'),
+    );
+    const styleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'drift.css'),
+    );
+
+    this.logger.trace(CLASS_NAME, 'updateWebviewContent', `D3.js URI: ${d3Uri.toString()}`);
+    this.logger.trace(CLASS_NAME, 'updateWebviewContent', `Style URI: ${styleUri.toString()}`);
+
+    webview.html = generateDriftHtml({
+      nonce,
+      d3Uri,
+      styleUri,
+      cspSource: webview.cspSource,
+    });
+
+    this.logger.debug(CLASS_NAME, 'updateWebviewContent', 'Drift webview HTML set');
+  }
+
+  /**
+   * Handle incoming messages from the webview.
+   */
+  private async handleMessage(message: DriftWebviewToHost): Promise<void> {
+    this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
+
+    try {
+      switch (message.type) {
+        case 'requestDriftData': {
+          await this.handleRequestDriftData(message.filters);
+          break;
+        }
+
+        case 'requestDriftRefresh': {
+          this.logger.debug(CLASS_NAME, 'handleMessage', 'Refresh requested');
+          await this.handleRequestDriftData(message.filters);
+          break;
+        }
+
+        case 'requestDriftFilterUpdate': {
+          this.logger.debug(CLASS_NAME, 'handleMessage', 'Filter update requested');
+          await this.handleRequestDriftData(message.filters);
+          break;
+        }
+
+        case 'requestCellDrillDown': {
+          await this.handleRequestCellDrillDown(message);
+          break;
+        }
+
+        case 'requestComponentDrillDown': {
+          await this.handleRequestComponentDrillDown(message);
+          break;
+        }
+
+        case 'requestOpenFile': {
+          await this.handleRequestOpenFile(message);
+          break;
+        }
+
+        case 'openExternal': {
+          await this.handleOpenExternal(message.url);
+          break;
+        }
+
+        default: {
+          // Exhaustiveness guard
+          const _exhaustive: never = message;
+          this.logger.warn(CLASS_NAME, 'handleMessage', `Unknown message type: ${String((_exhaustive as unknown as Record<string, unknown>).type)}`);
+        }
+      }
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(CLASS_NAME, 'handleMessage', `Error handling ${message.type}: ${errorMsg}`);
+      this.postError(errorMsg, message.type);
+    }
+  }
+
+  /**
+   * Handle request for drift chart data.
+   */
+  private async handleRequestDriftData(filters?: ArchitectureDriftFilters): Promise<void> {
+    this.logger.debug(CLASS_NAME, 'handleRequestDriftData', 'Processing requestDriftData');
+
+    // Send loading state
+    this.postMessage({ type: 'driftLoading', isLoading: true });
+
+    await this.ensureDbConnection();
+
+    if (!this.dataService) {
+      this.logger.error(CLASS_NAME, 'handleRequestDriftData', 'Data service not available after DB init');
+      this.postError('Data service unavailable', 'requestDriftData');
+      return;
+    }
+
+    const chartData = await this.dataService.getHeatMapChartData(filters ?? {});
+
+    // Also send filter options for the dropdowns
+    await this.sendFilterOptions();
+
+    this.postMessage({
+      type: 'driftData',
+      driftData: chartData.driftData,
+      heatMapData: chartData.heatMapData,
+      couplingData: chartData.couplingData,
+      summary: chartData.summary,
+      hasData: chartData.hasData,
+      viewExists: chartData.viewExists,
+    });
+
+    this.postMessage({ type: 'driftLoading', isLoading: false });
+  }
+
+  /**
+   * Handle drill-down request for a specific cell (component x week).
+   */
+  private async handleRequestCellDrillDown(message: {
+    type: 'requestCellDrillDown';
+    component: string;
+    week: string;
+    filters?: ArchitectureDriftFilters;
+  }): Promise<void> {
+    this.logger.debug(CLASS_NAME, 'handleRequestCellDrillDown',
+      `Drill-down for cell: ${message.component} x ${message.week}`);
+
+    await this.ensureDbConnection();
+
+    if (!this.dataService) {
+      this.logger.error(CLASS_NAME, 'handleRequestCellDrillDown', 'Data service not available');
+      this.postError('Data service unavailable', 'requestCellDrillDown');
+      return;
+    }
+
+    // Get commits for this component and week
+    const weekEnd = new Date(message.week);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+
+    const cellFilters: ArchitectureDriftFilters = {
+      ...message.filters,
+      component: message.component,
+      startDate: message.week,
+      endDate: weekEnd.toISOString().split('T')[0],
+    };
+
+    const commitsData = await this.dataService.getCrossComponentCommitData(cellFilters);
+
+    this.postMessage({
+      type: 'cellDrillDown',
+      component: message.component,
+      week: message.week,
+      commits: commitsData.commits,
+      hasData: commitsData.commits.length > 0,
+    });
+  }
+
+  /**
+   * Handle drill-down request for a specific component.
+   */
+  private async handleRequestComponentDrillDown(message: {
+    type: 'requestComponentDrillDown';
+    component: string;
+    filters?: ArchitectureDriftFilters;
+  }): Promise<void> {
+    this.logger.debug(CLASS_NAME, 'handleRequestComponentDrillDown',
+      `Drill-down for component: ${message.component}`);
+
+    await this.ensureDbConnection();
+
+    if (!this.dataService) {
+      this.logger.error(CLASS_NAME, 'handleRequestComponentDrillDown', 'Data service not available');
+      this.postError('Data service unavailable', 'requestComponentDrillDown');
+      return;
+    }
+
+    // Get drift data for this component
+    const driftData = await this.dataService.getArchitectureDrift({
+      ...message.filters,
+      component: message.component,
+    });
+
+    const drift = driftData[0] ?? null;
+
+    this.postMessage({
+      type: 'componentDrillDown',
+      component: message.component,
+      drift,
+      hasData: drift !== null,
+    });
+  }
+
+  /**
+   * Handle request to open a file in VS Code.
+   */
+  private async handleRequestOpenFile(message: {
+    type: 'requestOpenFile';
+    filePath: string;
+    repository: string;
+  }): Promise<void> {
+    this.logger.debug(CLASS_NAME, 'handleRequestOpenFile',
+      `Opening file: ${message.filePath} in ${message.repository}`);
+
+    // Look up repository path from settings
+    const settings = getSettings();
+    const repoConfig = settings.repositories.find(r => r.name === message.repository);
+
+    if (!repoConfig) {
+      this.logger.warn(CLASS_NAME, 'handleRequestOpenFile', `Repository not found: ${message.repository}`);
+      void vscode.window.showWarningMessage(`Repository "${message.repository}" not found in settings.`);
+      return;
+    }
+
+    // Construct full file path
+    const fullPath = vscode.Uri.file(`${repoConfig.path}/${message.filePath}`);
+
+    try {
+      const doc = await vscode.workspace.openTextDocument(fullPath);
+      await vscode.window.showTextDocument(doc);
+      this.logger.info(CLASS_NAME, 'handleRequestOpenFile', `Opened file: ${fullPath.fsPath}`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(CLASS_NAME, 'handleRequestOpenFile', `Failed to open file: ${msg}`);
+      void vscode.window.showErrorMessage(`Could not open file: ${message.filePath}`);
+    }
+  }
+
+  /**
+   * Handle opening an external URL in the default browser.
+   *
+   * Security hardening (IQS-925):
+   * - Rate limiting: max 5 URLs per 60 seconds
+   * - Domain allowlist validation
+   * - Rejects non-http/https schemes
+   *
+   * @param url - The URL to open
+   */
+  private async handleOpenExternal(url: string): Promise<void> {
+    this.logger.debug(CLASS_NAME, 'handleOpenExternal', `Attempting to open external URL: ${url}`);
+
+    // Rate limiting check (IQS-925)
+    const now = Date.now();
+    this.urlOpenTimestamps = this.urlOpenTimestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW_MS);
+
+    if (this.urlOpenTimestamps.length >= RATE_LIMIT_MAX_URLS) {
+      this.logger.warn(CLASS_NAME, 'handleOpenExternal', `Rate limit exceeded: ${this.urlOpenTimestamps.length} URLs in window`);
+      void vscode.window.showWarningMessage(
+        'Gitr: Too many URLs opened recently. Please wait a moment before trying again.',
+      );
+      return;
+    }
+
+    // URL validation with domain allowlist
+    const settings = getSettings();
+    const jiraServer = settings.jira?.server ?? '';
+    const validation = validateExternalUrl(url, jiraServer);
+
+    if (!validation.isValid) {
+      this.logger.warn(CLASS_NAME, 'handleOpenExternal', `URL rejected: ${validation.reason} - URL: ${url}`);
+      void vscode.window.showWarningMessage(
+        `Gitr: Cannot open URL - ${validation.reason}`,
+      );
+      return;
+    }
+
+    // Record timestamp for rate limiting
+    this.urlOpenTimestamps.push(now);
+
+    // Open the validated URL
+    try {
+      this.logger.info(CLASS_NAME, 'handleOpenExternal', `Opening validated URL: ${url}`);
+      await vscode.env.openExternal(validation.validatedUri!);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(CLASS_NAME, 'handleOpenExternal', `Failed to open URL: ${msg}`);
+    }
+  }
+
+  /**
+   * Send available filter options to the webview.
+   */
+  private async sendFilterOptions(): Promise<void> {
+    this.logger.debug(CLASS_NAME, 'sendFilterOptions', 'Fetching filter options');
+
+    if (!this.dataService) {
+      return;
+    }
+
+    const components = await this.dataService.getUniqueComponents();
+
+    // Get repositories from settings
+    const settings = getSettings();
+    const repositories = settings.repositories.map(r => r.name);
+
+    this.postMessage({
+      type: 'driftFilterOptions',
+      repositories,
+      components: [...components],
+    });
+  }
+
+  /**
+   * Ensure a database connection is available for queries.
+   * Lazily initializes the DatabaseService and ArchitectureDriftDataService.
+   */
+  private async ensureDbConnection(): Promise<void> {
+    if (this.dataService) {
+      this.logger.trace(CLASS_NAME, 'ensureDbConnection', 'Data service already available');
+      return;
+    }
+
+    this.logger.debug(CLASS_NAME, 'ensureDbConnection', 'Initializing database connection for drift');
+
+    const settings = getSettings();
+    const password = await this.secretService.getDatabasePassword();
+
+    if (!password) {
+      const msg = 'Database password not configured. Use "Gitr: Set Database Password" first.';
+      this.logger.warn(CLASS_NAME, 'ensureDbConnection', msg);
+      void vscode.window.showWarningMessage(msg);
+      throw new Error(msg);
+    }
+
+    this.db = new DatabaseService();
+    const dbConfig = buildConfigFromSettings(settings.database, password);
+    await this.db.initialize(dbConfig);
+
+    this.dataService = new ArchitectureDriftDataService(this.db);
+    this.logger.info(CLASS_NAME, 'ensureDbConnection', 'Database connection established for drift');
+  }
+
+  /**
+   * Post a typed message to the webview.
+   */
+  private postMessage(message: DriftHostToWebview): void {
+    this.logger.trace(CLASS_NAME, 'postMessage', `Posting message: type=${message.type}`);
+    void this.panel.webview.postMessage(message);
+  }
+
+  /**
+   * Post an error message to the webview.
+   */
+  private postError(errorMessage: string, source: string): void {
+    this.postMessage({
+      type: 'driftError',
+      message: errorMessage,
+      source,
+    });
+  }
+
+  /**
+   * Generate a cryptographic nonce for CSP script authorization.
+   */
+  private generateNonce(): string {
+    return crypto.randomBytes(16).toString('hex');
+  }
+
+  /**
+   * Dispose the panel and all its resources.
+   */
+  dispose(): void {
+    this.logger.info(CLASS_NAME, 'dispose', 'Disposing DriftPanel');
+
+    DriftPanel.currentPanel = undefined;
+
+    if (this.db) {
+      this.logger.debug(CLASS_NAME, 'dispose', 'Shutting down drift database connection');
+      void this.db.shutdown();
+      this.db = undefined;
+      this.dataService = undefined;
+    }
+
+    this.panel.dispose();
+
+    while (this.disposables.length > 0) {
+      const disposable = this.disposables.pop();
+      if (disposable) {
+        disposable.dispose();
+      }
+    }
+
+    this.logger.debug(CLASS_NAME, 'dispose', 'DriftPanel disposed');
+  }
+
+  /**
+   * Reset the singleton for testing purposes.
+   * @internal - Only use in test code
+   */
+  static resetForTesting(): void {
+    DriftPanel.currentPanel = undefined;
+  }
+}

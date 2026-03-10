@@ -1,0 +1,158 @@
+# GitHub Actions CI workflow for gitr VS Code extension.
+# Ticket: IQS-872
+#
+# Triggers on push to main and pull requests.
+# Steps: checkout, setup-node, npm ci, lint (eslint), type-check (tsc --noEmit),
+#         unit tests (vitest), integration tests (vitest + PostgreSQL), build (esbuild).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same branch/PR to save resources.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript type check
+        run: npm run typecheck
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gitrx_test
+          POSTGRES_USER: gitrx_admin
+          POSTGRES_PASSWORD: gitrx_ci_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U gitrx_admin -d gitrx_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5433
+          DB_NAME: gitrx_test
+          DB_USER: gitrx_admin
+          DB_PASSWORD: gitrx_ci_test
+        run: |
+          for migration in docker/migrations/*.sql; do
+            if [ -f "$migration" ]; then
+              echo "Applying migration: $migration"
+              PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f "$migration"
+            fi
+          done
+
+      - name: Run integration tests
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5433
+          DB_NAME: gitrx_test
+          DB_USER: gitrx_admin
+          DB_PASSWORD: gitrx_ci_test
+        run: npm run test:integration
+
+  build:
+    name: Build Extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint-and-typecheck, unit-tests]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build with esbuild
+        run: npm run compile
+
+      - name: Package VSIX
+        run: npx @vscode/vsce package --no-dependencies
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitr-vsix-${{ github.sha }}
+          path: "*.vsix"
+          retention-days: 30

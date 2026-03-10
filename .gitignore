@@ -1,0 +1,29 @@
+# Legacy files
+legacy/config/classified.properties
+legacy/config/unclassified.properties
+legacy/logs/*
+!legacy/logs/.gitkeep
+legacy/scripts/import_commits.sh
+
+# General
+*.txt
+*.log
+.DS_Store
+temp
+
+# Node.js / TypeScript
+node_modules/
+dist/
+out/
+*.vsix
+.vscode-test/
+coverage/
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# SQL artifacts
+postgres_output.sql
+url_updates.sql

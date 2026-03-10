@@ -1,0 +1,1011 @@
+/**
+ * Shared webview stylesheet for Gitr extension.
+ * Uses VS Code CSS variables for theme integration.
+ * Responsive grid layout for dashboard cards.
+ * Shared across: Metrics Dashboard, Commit-Jira Linkage, and future webviews.
+ *
+ * Tickets: IQS-869, IQS-870, IQS-871
+ */
+
+/* ============================================================================
+   Reset & Base
+   ============================================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  line-height: 1.5;
+  padding: 0;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* ============================================================================
+   Dashboard Container
+   ============================================================================ */
+
+.dashboard-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* ============================================================================
+   Header & Filters
+   ============================================================================ */
+
+.dashboard-header {
+  margin-bottom: 16px;
+}
+
+.dashboard-header h1 {
+  font-size: 1.4em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  margin-bottom: 12px;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  background-color: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 4px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filter-group label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.filter-input {
+  padding: 4px 8px;
+  font-size: var(--vscode-font-size, 13px);
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-input-foreground, #cccccc);
+  background-color: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-input-border, #555555);
+  border-radius: 2px;
+  outline: none;
+  min-width: 100px;
+}
+
+.filter-input:focus {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.filter-btn {
+  padding: 4px 14px;
+  font-size: var(--vscode-font-size, 13px);
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-button-foreground, #ffffff);
+  background-color: var(--vscode-button-background, #0e639c);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  align-self: flex-end;
+}
+
+.filter-btn:hover {
+  background-color: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.filter-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+/* ============================================================================
+   Dashboard Grid
+   ============================================================================ */
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================================
+   Cards
+   ============================================================================ */
+
+.card {
+  background-color: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 4px;
+  padding: 14px;
+  overflow: hidden;
+  position: relative;
+}
+
+.card h2 {
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444444);
+  padding-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.card-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.card-wide {
+  grid-column: 1 / -1;
+}
+
+.card-empty {
+  font-style: italic;
+  color: var(--vscode-descriptionForeground, #888888);
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* ============================================================================
+   Chart Container
+   ============================================================================ */
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  min-height: 250px;
+  max-height: 400px;
+}
+
+.card-wide .chart-container {
+  min-height: 280px;
+  max-height: 450px;
+}
+
+/* ============================================================================
+   Scorecard Table
+   ============================================================================ */
+
+.table-container {
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.scorecard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.scorecard-table th,
+.scorecard-table td {
+  text-align: left;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333333);
+}
+
+.scorecard-table th {
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  position: sticky;
+  top: 0;
+  background-color: var(--vscode-sideBar-background, #252526);
+  z-index: 1;
+}
+
+.scorecard-table td {
+  color: var(--vscode-editor-foreground, #cccccc);
+}
+
+.scorecard-table tr:hover td {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.score-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================================
+   Scorecard Detailed Table (IQS-892)
+   ============================================================================ */
+
+.scorecard-table-detailed {
+  table-layout: auto;
+}
+
+.scorecard-table-detailed th,
+.scorecard-table-detailed td {
+  white-space: nowrap;
+}
+
+/* Sortable Headers (IQS-892) */
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+
+.sortable-header:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.sortable-header:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+.sortable-header .header-text {
+  margin-right: 4px;
+}
+
+.sortable-header .sort-indicator {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.sortable-header[aria-sort="ascending"] .sort-indicator,
+.sortable-header[aria-sort="descending"] .sort-indicator {
+  color: var(--vscode-foreground, #cccccc);
+}
+
+/* Total Score Column Emphasis (IQS-892) */
+.score-total-header {
+  border-left: 2px solid var(--vscode-panel-border, #444444);
+  font-weight: 700;
+}
+
+.score-total {
+  border-left: 2px solid var(--vscode-panel-border, #444444);
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+/* ============================================================================
+   Scrollbar Styling (WebKit-based for VS Code)
+   ============================================================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--vscode-scrollbarSlider-background, #424242);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--vscode-scrollbarSlider-hoverBackground, #555555);
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+/* ============================================================================
+   Action Buttons (Export CSV, Copy to Clipboard) — IQS-871
+   ============================================================================ */
+
+.action-btn {
+  padding: 2px 8px;
+  font-size: 0.82em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.action-btn:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.action-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+.action-btn:active {
+  opacity: 0.8;
+}
+
+.export-btn::before {
+  content: '\2913 ';
+}
+
+.copy-btn::before {
+  content: '\2398 ';
+}
+
+/* ============================================================================
+   Loading Overlay — IQS-871
+   ============================================================================ */
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--vscode-editor-background, rgba(30, 30, 30, 0.85));
+  opacity: 0.92;
+  z-index: 10;
+  border-radius: 4px;
+}
+
+.loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--vscode-panel-border, #444444);
+  border-top-color: var(--vscode-progressBar-background, #0e70c0);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 8px;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+/* ============================================================================
+   Error Banner — IQS-871
+   ============================================================================ */
+
+.error-banner {
+  padding: 8px 12px;
+  margin-top: 8px;
+  background-color: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  border-radius: 3px;
+  color: var(--vscode-errorForeground, #f48771);
+  font-size: 0.9em;
+}
+
+.error-icon {
+  margin-right: 4px;
+}
+
+/* ============================================================================
+   Focus & Accessibility — IQS-871
+   ============================================================================ */
+
+:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================================
+   D3.js Chart Containers — IQS-887
+   ============================================================================ */
+
+.d3-chart {
+  width: 100%;
+  min-height: 250px;
+  overflow: hidden;
+}
+
+.d3-chart svg {
+  display: block;
+  max-width: 100%;
+}
+
+.d3-chart .grid line {
+  stroke-opacity: 0.15;
+}
+
+.d3-chart .grid .domain {
+  display: none;
+}
+
+.d3-chart .axis text {
+  fill: var(--vscode-foreground, #cccccc);
+}
+
+.d3-chart .axis line,
+.d3-chart .axis .domain {
+  stroke: var(--vscode-panel-border, #444444);
+}
+
+/* ============================================================================
+   Chart Controls (Tab Group, Metric Toggle, Date Controls) -- IQS-889
+   ============================================================================ */
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  margin-bottom: 8px;
+}
+
+.tab-group {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tab-btn {
+  padding: 3px 12px;
+  font-size: 0.85em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-descriptionForeground, #888888);
+  background-color: transparent;
+  border: none;
+  border-right: 1px solid var(--vscode-panel-border, #444444);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab-btn:last-child {
+  border-right: none;
+}
+
+.tab-btn:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.tab-btn.active {
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  font-weight: 600;
+}
+
+.tab-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+.metric-toggle {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.metric-btn {
+  padding: 3px 10px;
+  font-size: 0.82em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-descriptionForeground, #888888);
+  background-color: transparent;
+  border: none;
+  border-right: 1px solid var(--vscode-panel-border, #444444);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.metric-btn:last-child {
+  border-right: none;
+}
+
+.metric-btn:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.metric-btn.active {
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  font-weight: 600;
+}
+
+.metric-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+.chart-date-controls {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.chart-date-controls label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.chart-container-tall {
+  min-height: 300px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.loc-expansion {
+  text-align: center;
+  padding: 6px 0;
+}
+
+/* ============================================================================
+   Drill-Down Modal (IQS-895)
+   ============================================================================ */
+
+.drilldown-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  /* Hidden by default - JavaScript sets display:flex when showing */
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.drilldown-modal-content {
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 6px;
+  width: 90%;
+  max-width: 900px;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.drilldown-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444444);
+}
+
+.drilldown-modal-header h3 {
+  margin: 0;
+  font-size: 1em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80%;
+}
+
+.drilldown-close-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground, #cccccc);
+  font-size: 1.5em;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.drilldown-close-btn:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.drilldown-close-btn:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+.drilldown-modal-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.drilldown-table-container {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.drilldown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+
+.drilldown-table th,
+.drilldown-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333333);
+}
+
+.drilldown-table th {
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  position: sticky;
+  top: 0;
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  z-index: 1;
+}
+
+.drilldown-table td {
+  color: var(--vscode-editor-foreground, #cccccc);
+}
+
+.drilldown-table tr:hover td {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.drilldown-table .sha-cell {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-textLink-foreground, #3794ff);
+  cursor: pointer;
+}
+
+.drilldown-table .sha-cell:hover {
+  text-decoration: underline;
+}
+
+.drilldown-table .message-cell {
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drilldown-table .churn-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* File Churn chart bar segment hover/focus styling */
+.churn-bar-segment {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.churn-bar-segment:hover,
+.churn-bar-segment:focus {
+  opacity: 0.85;
+}
+
+.churn-bar-segment:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+/* ============================================================================
+   Commit & PR Links (IQS-925)
+   ============================================================================ */
+
+.commit-link {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-textLink-foreground, #3794ff);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 3px;
+  border-radius: 2px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.commit-link:hover {
+  background-color: var(--vscode-textLink-activeForeground, rgba(55, 148, 255, 0.15));
+  text-decoration: underline;
+}
+
+.commit-link:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+.commit-link:active {
+  opacity: 0.8;
+}
+
+.commit-link-disabled {
+  color: var(--vscode-descriptionForeground, #888888);
+  cursor: default;
+  text-decoration: none;
+}
+
+.commit-link-disabled:hover {
+  background-color: transparent;
+  text-decoration: none;
+}
+
+.external-icon {
+  font-size: 0.75em;
+  margin-left: 1px;
+  opacity: 0.7;
+}
+
+/* ============================================================================
+   Chart Explanatory Paragraphs (IQS-922)
+   Collapsible explanation sections for dashboard charts.
+   Uses <details> element with persistent state via vscode.getState().
+   ============================================================================ */
+
+.chart-explanation {
+  margin-bottom: 16px;
+  border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
+  background: var(--vscode-textCodeBlock-background, #1e1e1e);
+  border-radius: 4px;
+}
+
+.chart-explanation[open] {
+  padding-bottom: 2px;
+}
+
+.explanation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9em;
+  font-weight: 500;
+  color: var(--vscode-foreground, #cccccc);
+  list-style: none;
+  transition: background-color 0.15s;
+}
+
+.explanation-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.explanation-toggle:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.explanation-toggle:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+.explanation-toggle .chevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  fill: currentColor;
+  transition: transform 0.2s ease;
+}
+
+.chart-explanation[open] .explanation-toggle .chevron {
+  transform: rotate(90deg);
+}
+
+.explanation-content {
+  padding: 0 12px 12px 12px;
+  font-size: 0.88em;
+  line-height: 1.6;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.explanation-content p {
+  margin: 0;
+}
+
+.explanation-content p + p {
+  margin-top: 8px;
+}
+
+/* Accessibility: ensure sufficient contrast and focus visibility */
+.chart-explanation:focus-within {
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4);
+}
+
+/* Support for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .explanation-toggle .chevron {
+    transition: none;
+  }
+}
+
+/* ============================================================================
+   Developer Pipeline Section (IQS-929)
+   ============================================================================ */
+
+.dev-pipeline-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.dev-pipeline-header h1 {
+  font-size: 1.4em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  margin-bottom: 12px;
+}
+
+.dev-pipeline-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.dev-pipeline-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Developer legend (shared across charts) */
+.developer-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 6px;
+  margin-top: 1rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.legend-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Summary stats (reuse existing .summary-stats if present, or define here) */
+.summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.stat-card {
+  flex: 1 1 120px;
+  text-align: center;
+  padding: 0.5rem;
+}
+
+.stat-value {
+  font-size: 1.4em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.stat-label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+  margin-top: 0.25rem;
+}
+
+/* Loading skeleton */
+.skeleton-chart {
+  height: 300px;
+  background: linear-gradient(90deg, var(--vscode-editor-background) 25%, var(--vscode-panel-border) 50%, var(--vscode-editor-background) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Empty and error states */
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.empty-state p {
+  margin: 0.5rem 0;
+}
+
+.error-state {
+  text-align: center;
+  padding: 2rem;
+  color: var(--vscode-errorForeground, #f48771);
+  background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+/* Chart tooltip */
+.chart-tooltip {
+  position: absolute;
+  display: none;
+  background: var(--vscode-editorHoverWidget-background, #252526);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #444444);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 0.85em;
+  pointer-events: none;
+  z-index: 1000;
+  max-width: 300px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.chart-tooltip.visible {
+  display: block;
+}
+
+.chart-tooltip hr {
+  margin: 4px 0;
+  border: none;
+  border-top: 1px solid var(--vscode-panel-border, #444);
+}

@@ -1,0 +1,932 @@
+/**
+ * Release Risk Gauge dashboard stylesheet.
+ * Uses VS Code CSS variables for theme integration.
+ * Provides styling for speedometer gauge, mini gauges, risk badge,
+ * bar chart, tooltips, filters, summary stats, and drill-down panel.
+ *
+ * Ticket: IQS-912
+ */
+
+/* ============================================================================
+   Reset & Base
+   ============================================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  line-height: 1.5;
+  padding: 0;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* ============================================================================
+   Chart Container
+   ============================================================================ */
+
+.chart-container {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* ============================================================================
+   Chart Explanatory Paragraphs (IQS-922)
+   Collapsible explanation sections for dashboard charts.
+   Uses <details> element with persistent state via vscode.getState().
+   ============================================================================ */
+
+.chart-explanation {
+  margin-bottom: 16px;
+  border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
+  background: var(--vscode-textCodeBlock-background, #1e1e1e);
+  border-radius: 4px;
+}
+
+.chart-explanation[open] {
+  padding-bottom: 2px;
+}
+
+.explanation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9em;
+  font-weight: 500;
+  color: var(--vscode-foreground, #cccccc);
+  list-style: none;
+  transition: background-color 0.15s;
+}
+
+.explanation-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.explanation-toggle:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.explanation-toggle:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+.explanation-toggle .chevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  fill: currentColor;
+  transition: transform 0.2s ease;
+}
+
+.chart-explanation[open] .explanation-toggle .chevron {
+  transform: rotate(90deg);
+}
+
+.explanation-content {
+  padding: 0 12px 12px 12px;
+  font-size: 0.88em;
+  line-height: 1.6;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.explanation-content p {
+  margin: 0;
+}
+
+.explanation-content p + p {
+  margin-top: 8px;
+}
+
+/* Accessibility: ensure sufficient contrast and focus visibility */
+.chart-explanation:focus-within {
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4);
+}
+
+/* Support for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .explanation-toggle .chevron {
+    transition: none;
+  }
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+}
+
+.chart-header h1 {
+  font-size: 1.4em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  margin: 0;
+}
+
+/* ============================================================================
+   Controls & Filters
+   ============================================================================ */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-group label {
+  font-size: 0.75em;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.filter-group input[type="date"],
+.filter-group select {
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, #555);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.9em;
+  min-width: 120px;
+}
+
+.filter-group input[type="date"]:focus,
+.filter-group select:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.action-btn {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: background 0.15s;
+  align-self: flex-end;
+}
+
+.action-btn:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.action-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+}
+
+.export-btn {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: background 0.15s;
+  align-self: flex-end;
+}
+
+.export-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.export-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+}
+
+/* ============================================================================
+   Risk Badge
+   ============================================================================ */
+
+.risk-badge {
+  display: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 1.1em;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.badge-low {
+  background: rgba(22, 163, 74, 0.2);
+  color: #16a34a;
+  border: 1px solid #16a34a;
+}
+
+.badge-medium {
+  background: rgba(202, 138, 4, 0.2);
+  color: #ca8a04;
+  border: 1px solid #ca8a04;
+}
+
+.badge-high {
+  background: rgba(234, 88, 12, 0.2);
+  color: #ea580c;
+  border: 1px solid #ea580c;
+}
+
+.badge-critical {
+  background: rgba(220, 38, 38, 0.2);
+  color: #dc2626;
+  border: 1px solid #dc2626;
+}
+
+/* ============================================================================
+   Gauge Section
+   ============================================================================ */
+
+.gauge-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.main-gauge-container {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #444);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+}
+
+.main-gauge-container h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--vscode-foreground, #ccc);
+}
+
+.gauge-svg-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.gauge-value {
+  font-size: 2.5em;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.gauge-value.category-critical { color: #dc2626; }
+.gauge-value.category-high { color: #ea580c; }
+.gauge-value.category-medium { color: #ca8a04; }
+.gauge-value.category-low { color: #16a34a; }
+
+.gauge-label {
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground, #999);
+  margin-top: 4px;
+}
+
+/* Breakdown Gauges */
+.breakdown-gauges {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #444);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.breakdown-gauges h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--vscode-foreground, #ccc);
+  text-align: center;
+}
+
+.mini-gauges-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.mini-gauge-container {
+  text-align: center;
+  padding: 12px;
+  background: var(--vscode-textBlockQuote-background, #2d2d30);
+  border-radius: 6px;
+}
+
+.mini-gauge-svg {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.mini-gauge-value {
+  font-size: 1.3em;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mini-gauge-value.category-critical { color: #dc2626; }
+.mini-gauge-value.category-high { color: #ea580c; }
+.mini-gauge-value.category-medium { color: #ca8a04; }
+.mini-gauge-value.category-low { color: #16a34a; }
+
+.mini-gauge-label {
+  font-size: 0.75em;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+/* ============================================================================
+   Riskiest Commits Section
+   ============================================================================ */
+
+.riskiest-commits-section {
+  margin-bottom: 24px;
+}
+
+.riskiest-commits-section h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--vscode-foreground, #ccc);
+}
+
+.bar-chart-container {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #444);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.chart-instructions {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground, #999);
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--vscode-textBlockQuote-background, #2d2d30);
+  border-radius: 4px;
+}
+
+/* Bar styling */
+.bar {
+  transition: opacity 0.15s;
+}
+
+/* SVG styling */
+.x-axis text,
+.y-axis text {
+  fill: var(--vscode-foreground, #ccc);
+  font-size: 10px;
+}
+
+.x-axis line,
+.x-axis path,
+.y-axis line,
+.y-axis path {
+  stroke: var(--vscode-panel-border, #444);
+}
+
+/* ============================================================================
+   Summary Stats
+   ============================================================================ */
+
+.summary-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #444);
+  border-radius: 6px;
+  padding: 12px 16px;
+  min-width: 80px;
+  text-align: center;
+}
+
+.stat-card.stat-critical {
+  border-left: 4px solid #dc2626;
+}
+
+.stat-card.stat-high {
+  border-left: 4px solid #ea580c;
+}
+
+.stat-card.stat-medium {
+  border-left: 4px solid #ca8a04;
+}
+
+.stat-card.stat-low {
+  border-left: 4px solid #16a34a;
+}
+
+.stat-card .stat-value {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.stat-card .stat-label {
+  font-size: 0.7em;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+/* ============================================================================
+   Tooltip
+   ============================================================================ */
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #555);
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 0.85em;
+  color: var(--vscode-editorWidget-foreground, #cccccc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.15s;
+  max-width: 300px;
+}
+
+.chart-tooltip.visible {
+  opacity: 1;
+}
+
+.chart-tooltip .tt-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.chart-tooltip .tt-meta {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #999);
+  margin-bottom: 4px;
+}
+
+.chart-tooltip .tt-divider {
+  border: none;
+  border-top: 1px solid var(--vscode-panel-border, #444);
+  margin: 8px 0;
+}
+
+.chart-tooltip .tt-stat {
+  margin: 4px 0;
+}
+
+.chart-tooltip .tt-action {
+  margin-top: 8px;
+  font-size: 0.85em;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  font-style: italic;
+}
+
+/* ============================================================================
+   Legend
+   ============================================================================ */
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 10px;
+  background: var(--vscode-textBlockQuote-background, #2d2d30);
+  border-radius: 4px;
+}
+
+.risk-legend .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85em;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+}
+
+/* ============================================================================
+   Drill-Down Panel
+   ============================================================================ */
+
+.drill-down-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 450px;
+  max-width: 100%;
+  height: 100vh;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border-left: 1px solid var(--vscode-panel-border, #444);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.4);
+  z-index: 1001;
+  overflow-y: auto;
+}
+
+.drill-down-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+  position: sticky;
+  top: 0;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.drill-down-header h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground, #ccc);
+  font-size: 1.5em;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.close-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+}
+
+.drill-down-content {
+  padding: 16px;
+}
+
+/* Commit Detail Header */
+.commit-detail-header {
+  margin-bottom: 16px;
+}
+
+.commit-sha {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.85em;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.commit-meta {
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground, #999);
+  margin-bottom: 8px;
+}
+
+.commit-author {
+  font-weight: 500;
+  color: var(--vscode-foreground, #ccc);
+}
+
+.commit-message {
+  font-size: 0.95em;
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-textBlockQuote-background, #2d2d30);
+  padding: 10px;
+  border-radius: 4px;
+  border-left: 3px solid var(--vscode-panel-border, #555);
+}
+
+/* Risk Score Large Display */
+.risk-score-large {
+  text-align: center;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.risk-score-large.category-critical { background: rgba(220, 38, 38, 0.15); }
+.risk-score-large.category-high { background: rgba(234, 88, 12, 0.15); }
+.risk-score-large.category-medium { background: rgba(202, 138, 4, 0.15); }
+.risk-score-large.category-low { background: rgba(22, 163, 74, 0.15); }
+
+.risk-score-large .score-value {
+  font-size: 3em;
+  font-weight: 700;
+  display: block;
+  line-height: 1;
+}
+
+.risk-score-large.category-critical .score-value { color: #dc2626; }
+.risk-score-large.category-high .score-value { color: #ea580c; }
+.risk-score-large.category-medium .score-value { color: #ca8a04; }
+.risk-score-large.category-low .score-value { color: #16a34a; }
+
+.risk-score-large .score-label {
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+  margin-top: 4px;
+  display: block;
+}
+
+/* Risk Breakdown Detail */
+.risk-breakdown-detail {
+  margin-bottom: 16px;
+}
+
+.risk-breakdown-detail h3 {
+  font-size: 1em;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--vscode-foreground, #ccc);
+}
+
+.risk-factors-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.risk-factor {
+  background: var(--vscode-textBlockQuote-background, #2d2d30);
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.factor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.factor-label {
+  font-weight: 500;
+  color: var(--vscode-foreground, #ccc);
+}
+
+.factor-value {
+  font-weight: 700;
+}
+
+.factor-value.category-critical { color: #dc2626; }
+.factor-value.category-high { color: #ea580c; }
+.factor-value.category-medium { color: #ca8a04; }
+.factor-value.category-low { color: #16a34a; }
+
+.factor-bar {
+  height: 6px;
+  background: var(--vscode-panel-border, #444);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.factor-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.factor-fill.category-critical { background: #dc2626; }
+.factor-fill.category-high { background: #ea580c; }
+.factor-fill.category-medium { background: #ca8a04; }
+.factor-fill.category-low { background: #16a34a; }
+
+.factor-desc {
+  font-size: 0.75em;
+  color: var(--vscode-descriptionForeground, #999);
+  margin-top: 4px;
+}
+
+/* Commit Stats */
+.commit-stats {
+  margin-bottom: 16px;
+}
+
+.commit-stats h3 {
+  font-size: 1em;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--vscode-foreground, #ccc);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.stat-item {
+  background: var(--vscode-textBlockQuote-background, #2d2d30);
+  padding: 12px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.stat-item .stat-val {
+  font-size: 1.3em;
+  font-weight: 700;
+  display: block;
+  color: var(--vscode-foreground, #ccc);
+}
+
+.stat-item .stat-lbl {
+  font-size: 0.7em;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+}
+
+/* Commit Ticket */
+.commit-ticket {
+  background: var(--vscode-textBlockQuote-background, #2d2d30);
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.ticket-label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+.ticket-id {
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  margin-left: 8px;
+}
+
+/* Drill-down Actions */
+.drill-down-actions {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--vscode-panel-border, #444);
+}
+
+.open-diff-btn {
+  width: 100%;
+}
+
+/* Category Colors in tooltips/text */
+.category-critical { color: #dc2626; }
+.category-high { color: #ea580c; }
+.category-medium { color: #ca8a04; }
+.category-low { color: #16a34a; }
+
+/* ============================================================================
+   Empty & Error States
+   ============================================================================ */
+
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+.empty-state h2 {
+  font-size: 1.2em;
+  margin-bottom: 8px;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.empty-state p {
+  font-size: 0.95em;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.empty-text {
+  color: var(--vscode-descriptionForeground, #999);
+  font-style: italic;
+  padding: 16px;
+  text-align: center;
+}
+
+.error-banner {
+  background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  border-radius: 4px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* ============================================================================
+   Loading State
+   ============================================================================ */
+
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  gap: 12px;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--vscode-panel-border, #444);
+  border-top-color: var(--vscode-progressBar-background, #0e70c0);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: 0.9em;
+}
+
+/* ============================================================================
+   Responsive
+   ============================================================================ */
+
+@media (max-width: 900px) {
+  .gauge-section {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .filter-group {
+    flex: 1;
+    min-width: 100px;
+  }
+
+  .summary-stats {
+    flex-wrap: wrap;
+  }
+
+  .stat-card {
+    min-width: 70px;
+    flex: 1;
+  }
+
+  .drill-down-panel {
+    width: 100%;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .mini-gauges-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
