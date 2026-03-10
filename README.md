@@ -6,7 +6,7 @@
 
 ## Related Projects
 
-- **[CommitPulse Sync](https://github.com/antonajp/CommitPulse)** - The public repo for this VS Code extension.
+- **[CommitPulse Sync](https://github.com/antonajp/CommitPulse)** - The public repo for the https://marketplace.visualstudio.com/items?itemName=ImproviseLabs.gitr VS Code extension.
 
 ---
 
