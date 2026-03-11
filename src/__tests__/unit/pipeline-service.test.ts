@@ -77,8 +77,9 @@ vi.mock('simple-git', () => ({
 
 vi.mock('jira.js', () => ({
   Version3Client: vi.fn().mockImplementation(() => ({
-    issueSearch: { searchForIssuesUsingJql: vi.fn() },
+    issueSearch: { searchForIssuesUsingJqlEnhancedSearch: vi.fn() },
   })),
+  Version3Models: {},
 }));
 
 vi.mock('@octokit/rest', () => ({
@@ -234,7 +235,7 @@ describe('PipelineService', () => {
       token: 'jira-token',
       pointsField: 'customfield_10034',
     };
-    const mockJiraClient = { issueSearch: { searchForIssuesUsingJql: vi.fn() } };
+    const mockJiraClient = { issueSearch: { searchForIssuesUsingJqlEnhancedSearch: vi.fn() } };
     const jiraService = new JiraService(jiraConfig, jiraRepo, pipelineRepo, mockJiraClient as never);
     const changelogService = new JiraChangelogService(jiraConfig, jiraRepo, pipelineRepo, mockJiraClient as never);
     const loaderConfig = JiraIncrementalLoader.buildConfig(200, 2, []);

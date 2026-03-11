@@ -5,6 +5,19 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-03-11
+
+### Fixed
+
+- Resolve TypeScript type check errors with ESM module imports
+
+## [0.1.6] - 2026-03-11
+
+### Fixed
+
+- Fix TypeScript type check errors with jira.js v5.x ESM imports by switching to bundler module resolution
+- Remove unused @ts-expect-error directives for @octokit/rest imports
+
 ## [0.1.5] - 2026-03-10
 
 ### Fixed
@@ -161,6 +174,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Simplified README setup instructions** - Rewritten for users installing from VS Code Marketplace with step-by-step Docker database setup
 
 ## [0.1.1] - 2025-03-09
+
+### Added
+
+- **Split Developer Pipeline Charts** - Developer Pipeline view now offers 4 separate focused charts: Sprint Velocity vs LOC, Code Review Velocity, Hot Spots, and Knowledge Concentration
+
+### Fixed
+
+- Use `repoUrl` from VS Code settings for GitHub commit links instead of deriving from git remote
+- Hide File Churn drilldown modal by default in CSS
+- Add icons to TreeView definitions in package.json
+
+### Changed
+
+- Updated SETTINGS.md documentation with all extension settings
+
+## [0.1.0] - 2025-03-08
+
+### Added
+
 
 ### Added
 

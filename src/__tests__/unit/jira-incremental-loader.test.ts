@@ -56,9 +56,10 @@ vi.mock('pg', () => ({
 vi.mock('jira.js', () => ({
   Version3Client: vi.fn().mockImplementation(() => ({
     issueSearch: {
-      searchForIssuesUsingJql: vi.fn(),
+      searchForIssuesUsingJqlEnhancedSearch: vi.fn(),
     },
   })),
+  Version3Models: {},
 }));
 
 // ============================================================================
@@ -103,7 +104,7 @@ function setupMockClient(): void {
 function createMockJiraClient() {
   return {
     issueSearch: {
-      searchForIssuesUsingJql: vi.fn(),
+      searchForIssuesUsingJqlEnhancedSearch: vi.fn(),
     },
   };
 }

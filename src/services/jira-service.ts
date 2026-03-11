@@ -22,8 +22,11 @@
  * Ticket: IQS-856
  */
 
-import { Version3Client } from 'jira.js';
-import type { Issue } from 'jira.js/out/version3/models/index.js';
+import { Version3Client, Version3Models } from 'jira.js';
+
+// Type aliases for cleaner code
+type Issue = Version3Models.Issue;
+type SearchAndReconcileResults = Version3Models.SearchAndReconcileResults;
 import { LoggerService } from '../logging/logger.js';
 import { JiraRepository } from '../database/jira-repository.js';
 import { PipelineRepository } from '../database/pipeline-repository.js';
@@ -336,6 +339,7 @@ export class JiraService {
 
   /**
    * Paginate through JQL search results and process each issue.
+   * Uses cursor-based pagination with nextPageToken (new Jira API).
    *
    * @returns Aggregate counts of processed issues
    */
@@ -351,21 +355,20 @@ export class JiraService {
     let parents = 0;
     let failed = 0;
 
-    let startAt = 0;
-    let hasMore = true;
+    let nextPageToken: string | undefined = undefined;
+    let pageNumber = 1;
 
-    while (hasMore) {
-      this.logger.debug(CLASS_NAME, 'paginateAndProcess', `Fetching page: startAt=${startAt}, pageSize=${JQL_PAGE_SIZE}`);
+    do {
+      this.logger.debug(CLASS_NAME, 'paginateAndProcess', `Fetching page ${pageNumber}: nextPageToken=${nextPageToken ?? 'null'}`);
 
-      const searchResult = await this.searchWithRateLimiting(jql, startAt);
+      const searchResult = await this.searchWithRateLimiting(jql, nextPageToken);
       if (!searchResult) {
         this.logger.error(CLASS_NAME, 'paginateAndProcess', 'Search returned null after rate limit retries');
         break;
       }
 
-      const totalIssues = searchResult.total ?? 0;
       const issues = searchResult.issues ?? [];
-      this.logger.debug(CLASS_NAME, 'paginateAndProcess', `Page returned ${issues.length} issues (total: ${totalIssues})`);
+      this.logger.debug(CLASS_NAME, 'paginateAndProcess', `Page ${pageNumber} returned ${issues.length} issues`);
 
       for (const issue of issues) {
         try {
@@ -384,15 +387,15 @@ export class JiraService {
         }
       }
 
-      // Check if more pages are available
-      startAt += issues.length;
-      hasMore = startAt < totalIssues && issues.length > 0;
+      // Use cursor-based pagination
+      nextPageToken = searchResult.nextPageToken ?? undefined;
+      pageNumber++;
 
-      if (hasMore) {
+      if (nextPageToken) {
         // Respectful rate limiting between pages
         await this.delay(DEFAULT_RATE_LIMIT_DELAY_MS);
       }
-    }
+    } while (nextPageToken);
 
     return { inserted, skipped, links, parents, failed };
   }
@@ -451,16 +454,17 @@ export class JiraService {
 
   /**
    * Execute a JQL search with rate limiting awareness.
+   * Uses the new enhanced search API with cursor-based pagination.
    * Implements exponential backoff on 429 (Too Many Requests) responses.
    *
    * @param jql - The JQL query to execute
-   * @param startAt - The starting index for pagination
+   * @param nextPageToken - The cursor token for pagination (undefined for first page)
    * @returns The search results, or null if rate limit retries exhausted
    */
   private async searchWithRateLimiting(
     jql: string,
-    startAt: number,
-  ): Promise<{ total?: number; issues?: Issue[] } | null> {
+    nextPageToken?: string,
+  ): Promise<SearchAndReconcileResults | null> {
     let retries = 0;
     let delayMs = DEFAULT_RATE_LIMIT_DELAY_MS;
 
@@ -478,15 +482,16 @@ export class JiraService {
         logJqlSearchRequest({
           server: this.config.server,
           jql,
-          startAt,
+          startAt: 0, // Enhanced search uses cursor-based pagination
           maxResults: JQL_PAGE_SIZE,
           fields,
           enabled: this.config.debugLogging,
         });
 
-        const result = await this.jiraClient.issueSearch.searchForIssuesUsingJql({
+        // Use the new enhanced search API which calls /rest/api/3/search/jql
+        const result = await this.jiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch({
           jql,
-          startAt,
+          nextPageToken,
           maxResults: JQL_PAGE_SIZE,
           fields,
         });

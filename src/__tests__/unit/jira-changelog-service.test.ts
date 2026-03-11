@@ -10,7 +10,8 @@ import { PipelineRepository } from '../../database/pipeline-repository.js';
 import { JiraChangelogService } from '../../services/jira-changelog-service.js';
 import { JiraDevStatusService } from '../../services/jira-dev-status-service.js';
 import type { JiraServiceConfig } from '../../services/jira-service.js';
-import type { Issue } from 'jira.js/out/version3/models/index.js';
+import { Version3Models } from 'jira.js';
+type Issue = Version3Models.Issue;
 
 /**
  * Unit tests for JiraChangelogService and JiraDevStatusService.
@@ -46,9 +47,10 @@ vi.mock('pg', () => ({
 vi.mock('jira.js', () => ({
   Version3Client: vi.fn().mockImplementation(() => ({
     issueSearch: {
-      searchForIssuesUsingJql: vi.fn(),
+      searchForIssuesUsingJqlEnhancedSearch: vi.fn(),
     },
   })),
+  Version3Models: {},
 }));
 
 // ============================================================================
@@ -85,7 +87,7 @@ function setupMockClient(): void {
 function createMockJiraClient() {
   return {
     issueSearch: {
-      searchForIssuesUsingJql: vi.fn(),
+      searchForIssuesUsingJqlEnhancedSearch: vi.fn(),
     },
   };
 }
@@ -379,8 +381,9 @@ describe('JiraChangelogService', () => {
         }],
       });
 
-      mockJiraClient.issueSearch.searchForIssuesUsingJql.mockResolvedValue({
+      mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch.mockResolvedValue({
         issues: [mockIssue],
+        nextPageToken: undefined,
       });
 
       // Mock the dev status fetch via the delegated service
@@ -415,12 +418,14 @@ describe('JiraChangelogService', () => {
       vi.spyOn(jiraRepo, 'insertJiraHistory').mockResolvedValue();
 
       // First issue found, second not found
-      mockJiraClient.issueSearch.searchForIssuesUsingJql
+      mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch
         .mockResolvedValueOnce({
           issues: [createMockIssueWithChangelog({ key: 'IQS-100', histories: [] })],
+          nextPageToken: undefined,
         })
         .mockResolvedValueOnce({
           issues: [], // Not found
+          nextPageToken: undefined,
         });
 
       vi.spyOn(JiraDevStatusService.prototype, 'fetchAndSave').mockResolvedValue({

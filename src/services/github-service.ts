@@ -13,7 +13,6 @@
  * Ticket: IQS-859
  */
 
-// @ts-expect-error -- @octokit/rest is ESM-only; esbuild bundles it correctly at build time
 import { Octokit } from '@octokit/rest';
 import { LoggerService } from '../logging/logger.js';
 import { ContributorRepository } from '../database/contributor-repository.js';
