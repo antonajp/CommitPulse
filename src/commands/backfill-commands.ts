@@ -521,6 +521,7 @@ export function registerJiraBackfillCommand(logger: LoggerService | undefined): 
             const { JiraRepository } = await import('../database/jira-repository.js');
             const { PipelineRepository } = await import('../database/pipeline-repository.js');
             const { JiraService } = await import('../services/jira-service.js');
+            const { JiraChangelogService } = await import('../services/jira-changelog-service.js');
             const { JiraBackfillService } = await import('../services/jira-backfill-service.js');
             const { createJiraClient } = await import('../services/jira-client-factory.js');
 
@@ -544,7 +545,9 @@ export function registerJiraBackfillCommand(logger: LoggerService | undefined): 
               enableDebugLogging: settings.jira.debugLogging,
             });
 
-            const jiraService = new JiraService(jiraConfig, jiraRepo, pipelineRepo, jiraClient);
+            // IQS-935: Create changelog service for history extraction during issue loading
+            const changelogService = new JiraChangelogService(jiraConfig, jiraRepo, pipelineRepo, jiraClient);
+            const jiraService = new JiraService(jiraConfig, jiraRepo, pipelineRepo, jiraClient, changelogService);
 
             // Create backfill service
             const backfillService = new JiraBackfillService(

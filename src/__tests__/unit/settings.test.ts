@@ -825,4 +825,38 @@ describe('Settings Configuration Reader', () => {
       });
     });
   });
+
+  /**
+   * git.debugLogging validation tests for IQS-936.
+   * Validates the Git debug logging setting.
+   */
+  describe('git.debugLogging Validation (IQS-936)', () => {
+    it('should default git.debugLogging to false', () => {
+      const settings = getSettings();
+      expect(settings.git.debugLogging).toBe(false);
+    });
+
+    it('should read git.debugLogging when set to true', () => {
+      _setMockConfig('gitrx.git.debugLogging', true);
+      const settings = getSettings();
+      expect(settings.git.debugLogging).toBe(true);
+    });
+
+    it('should read git.debugLogging when set to false', () => {
+      _setMockConfig('gitrx.git.debugLogging', false);
+      const settings = getSettings();
+      expect(settings.git.debugLogging).toBe(false);
+    });
+
+    it('should include git in GitrxConfiguration interface', () => {
+      const settings = getSettings();
+      expect(settings).toHaveProperty('git');
+      expect(settings.git).toHaveProperty('debugLogging');
+    });
+
+    it('should return frozen git settings', () => {
+      const settings = getSettings();
+      expect(Object.isFrozen(settings.git)).toBe(true);
+    });
+  });
 });

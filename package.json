@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -362,6 +362,12 @@
           "default": false,
           "description": "Enable verbose debug logging for Jira API requests and responses.",
           "markdownDescription": "Enable verbose debug logging for Jira API requests and responses.\n\nWhen enabled, logs:\n- Full API request URLs\n- Request headers (auth redacted)\n- JQL queries and pagination\n- Response summaries and error details\n\n**Note:** Also set `gitrx.logLevel` to `DEBUG` or `TRACE` to see the output."
+        },
+        "gitrx.git.debugLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose debug logging for Git extraction operations.",
+          "markdownDescription": "Enable verbose debug logging for Git extraction operations.\n\nWhen enabled, logs:\n- Repository initialization and URL\n- Branch and tag discovery\n- Commit processing progress\n- File diff statistics\n- Git command execution\n\n**Note:** Also set `gitrx.logLevel` to `DEBUG` or `TRACE` to see the output."
         },
         "gitrx.linear.teamKeys": {
           "type": "array",

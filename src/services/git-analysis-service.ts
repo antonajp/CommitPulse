@@ -44,6 +44,7 @@ import {
   buildCommitHistoryRow,
 } from './git-commit-extractor.js';
 import { validateRepositoryUrl } from '../utils/url-validator.js';
+import { sanitizeUrlForLogging } from '../utils/url-sanitizer.js';
 
 // Re-export extractor functions for backward compatibility and convenience
 export {
@@ -111,8 +112,17 @@ export class GitAnalysisService {
     options: GitAnalysisOptions = {},
   ): Promise<AnalysisRunResult> {
     const startTime = Date.now();
+    const debugLogging = options.debugLogging ?? false;
     this.logger.info(CLASS_NAME, 'analyzeRepositories', `Starting analysis of ${repositories.length} repository(ies)`);
-    this.logger.debug(CLASS_NAME, 'analyzeRepositories', `Options: sinceDate=${options.sinceDate ?? 'all'}, untilDate=${options.untilDate ?? 'now'}`);
+    this.logger.debug(CLASS_NAME, 'analyzeRepositories', `Options: sinceDate=${options.sinceDate ?? 'all'}, untilDate=${options.untilDate ?? 'now'}, debugLogging=${debugLogging}`);
+
+    // IQS-936: Debug logging for Git extraction operations
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'analyzeRepositories', `[GIT DEBUG] Starting Git extraction for ${repositories.length} repositories`);
+      for (const repo of repositories) {
+        this.logger.debug(CLASS_NAME, 'analyzeRepositories', `[GIT DEBUG] Repository: ${repo.name} (${repo.path}), organization=${repo.organization || '(none)'}`);
+      }
+    }
 
     // Start pipeline run tracking
     const pipelineRunId = await this.pipelineRepo.insertPipelineStart({
@@ -180,8 +190,17 @@ export class GitAnalysisService {
   ): Promise<RepoAnalysisResult> {
     const startTime = Date.now();
     const repoName = repoEntry.name;
+    const debugLogging = options.debugLogging ?? false;
     this.logger.info(CLASS_NAME, 'analyzeRepository', `Starting analysis for: ${repoName}`);
     this.logger.debug(CLASS_NAME, 'analyzeRepository', `Repo path: ${repoEntry.path}`);
+
+    // IQS-936: Debug logging for repository initialization
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG] Initializing repository: ${repoName}`);
+      this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG]   Path: ${repoEntry.path}`);
+      this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG]   Organization: ${repoEntry.organization || '(none)'}`);
+      this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG]   Tracker: ${repoEntry.trackerType}`);
+    }
 
     // IQS-931: Compute effective since date (per-repo startDate overrides global sinceDate)
     const effectiveSinceDate = computeEffectiveSinceDate(repoEntry.startDate, options.sinceDate);
@@ -208,24 +227,49 @@ export class GitAnalysisService {
         : `Auto-detected repo URL: ${repositoryUrl}`,
     );
 
+    // IQS-936: Sanitize URL before storing in database and logging to prevent credential exposure
+    const sanitizedRepoUrl = sanitizeUrlForLogging(repositoryUrl);
     const repoContext: RepoContext = {
       path: repoEntry.path,
       name: repoName,
       organization: repoEntry.organization,
-      repositoryUrl,
+      repositoryUrl: sanitizedRepoUrl, // Store sanitized URL in database
     };
-    this.logger.debug(CLASS_NAME, 'analyzeRepository', `Repo URL: ${repoContext.repositoryUrl}`);
+    this.logger.debug(CLASS_NAME, 'analyzeRepository', `Repo URL: ${sanitizedRepoUrl}`);
 
-    const tagMap = await this.buildTagMap(git);
+    // IQS-936: Debug logging for repository URL (sanitized for security)
+    if (debugLogging) {
+      const sanitizedUrl = sanitizeUrlForLogging(repositoryUrl);
+      this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG] Repository URL (sanitized): ${sanitizedUrl}`);
+    }
+
+    const tagMap = await this.buildTagMap(git, debugLogging);
     this.logger.debug(CLASS_NAME, 'analyzeRepository', `Tag map built: ${tagMap.size} tagged commits`);
+
+    // IQS-936: Debug logging for tag extraction
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG] Tag extraction complete: ${tagMap.size} commits have tags`);
+    }
 
     const knownRelationships = await this.commitRepo.getKnownCommitBranchRelationships(repoName);
     this.logger.info(CLASS_NAME, 'analyzeRepository', `Known SHA-branch relationships: ${knownRelationships.size}`);
 
     const branches = effectiveOptions.sinceDate
-      ? await this.findRecentBranches(git, effectiveOptions.sinceDate)
-      : await this.getAllBranches(git);
+      ? await this.findRecentBranches(git, effectiveOptions.sinceDate, debugLogging)
+      : await this.getAllBranches(git, debugLogging);
     this.logger.info(CLASS_NAME, 'analyzeRepository', `Found ${branches.length} branches to process`);
+
+    // IQS-936: Debug logging for branch discovery
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG] Branch discovery: ${branches.length} branches found`);
+      for (const branch of branches.slice(0, 10)) {
+        const lastDate = new Date(branch.lastCommitTimestamp * 1000).toISOString();
+        this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG]   Branch: ${branch.name} (last commit: ${lastDate})`);
+      }
+      if (branches.length > 10) {
+        this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG]   ... and ${branches.length - 10} more branches`);
+      }
+    }
 
     let commitsInserted = 0;
     let branchRelationshipsRecorded = 0;
@@ -259,23 +303,37 @@ export class GitAnalysisService {
   /**
    * Find branches that have had commits since a given date.
    * Maps from Python find_recent_branches().
+   * @param debugLogging - Enable verbose debug logging (IQS-936)
    */
-  async findRecentBranches(git: SimpleGit, sinceDate: string): Promise<BranchInfo[]> {
+  async findRecentBranches(git: SimpleGit, sinceDate: string, debugLogging = false): Promise<BranchInfo[]> {
     this.logger.debug(CLASS_NAME, 'findRecentBranches', `Finding branches since ${sinceDate}`);
     const sinceTimestamp = new Date(sinceDate).getTime() / 1000;
-    const allBranches = await this.getAllBranches(git);
+    const allBranches = await this.getAllBranches(git, debugLogging);
     const recentBranches = allBranches.filter((b) => b.lastCommitTimestamp > sinceTimestamp);
     this.logger.debug(CLASS_NAME, 'findRecentBranches', `Filtered ${allBranches.length} -> ${recentBranches.length} recent`);
+
+    // IQS-936: Debug logging for date range filtering
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'findRecentBranches', `[GIT DEBUG] Date filter: since ${sinceDate} (timestamp ${sinceTimestamp})`);
+      this.logger.debug(CLASS_NAME, 'findRecentBranches', `[GIT DEBUG] Branches filtered: ${allBranches.length} total -> ${recentBranches.length} with recent activity`);
+    }
+
     return recentBranches;
   }
 
   /**
    * Get all local branches with their latest commit timestamps.
+   * @param debugLogging - Enable verbose debug logging (IQS-936)
    */
-  async getAllBranches(git: SimpleGit): Promise<BranchInfo[]> {
+  async getAllBranches(git: SimpleGit, debugLogging = false): Promise<BranchInfo[]> {
     this.logger.debug(CLASS_NAME, 'getAllBranches', 'Listing all branches');
     const branchSummary = await git.branchLocal();
     const branches: BranchInfo[] = [];
+
+    // IQS-936: Debug logging for branch discovery
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Found ${branchSummary.all.length} local branches`);
+    }
 
     for (const branchName of branchSummary.all) {
       try {
@@ -313,6 +371,7 @@ export class GitAnalysisService {
     tagMap: TagMap,
     pipelineRunId: number,
   ): Promise<{ newCommits: number; newRelationships: number }> {
+    const debugLogging = options.debugLogging ?? false;
     this.logger.debug(CLASS_NAME, 'processBranch', `Processing branch: ${branchName}`);
 
     const logResult = await this.getBranchLog(git, branchName, options);
@@ -321,6 +380,12 @@ export class GitAnalysisService {
     }
 
     this.logger.debug(CLASS_NAME, 'processBranch', `Branch ${branchName}: ${logResult.all.length} commits in range`);
+
+    // IQS-936: Debug logging for commit range
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'processBranch', `[GIT DEBUG] Processing branch: ${branchName}`);
+      this.logger.debug(CLASS_NAME, 'processBranch', `[GIT DEBUG]   Commits in range: ${logResult.all.length}`);
+    }
 
     let newCommits = 0;
     let newRelationships = 0;
@@ -348,6 +413,12 @@ export class GitAnalysisService {
       const commitHistoryRow = buildCommitHistoryRow(extracted, repoContext);
       await this.commitRepo.insertCommitHistory(commitHistoryRow);
 
+      // IQS-936: Debug logging for commit processing
+      if (debugLogging) {
+        this.logger.debug(CLASS_NAME, 'processBranch', `[GIT DEBUG] Commit: ${sha.substring(0, 8)} | Author: ${logEntry.author_name} | Date: ${logEntry.date}`);
+        this.logger.debug(CLASS_NAME, 'processBranch', `[GIT DEBUG]   Files: ${extracted.fileCount} | +${extracted.linesAdded}/-${extracted.linesRemoved} | Merge: ${extracted.isMerge}`);
+      }
+
       await this.commitRepo.insertCommitBranchRelationship(
         sha, branchName, logEntry.author_name, new Date(logEntry.date),
       );
@@ -360,6 +431,17 @@ export class GitAnalysisService {
         const filePaths = extracted.files.map((f) => f.filePath);
         const sccMetrics = await this.sccService.getFileMetricsViaScc(git, sha, filePaths);
         this.logger.debug(CLASS_NAME, 'processBranch', `scc metrics collected for ${sccMetrics.size} of ${filePaths.length} files`);
+
+        // IQS-936: Debug logging for file diffs (TRACE level to prevent flooding)
+        if (debugLogging) {
+          this.logger.trace(CLASS_NAME, 'processBranch', `[GIT DEBUG] File details for ${sha.substring(0, 8)}:`);
+          for (const file of extracted.files.slice(0, 10)) {
+            this.logger.trace(CLASS_NAME, 'processBranch', `[GIT DEBUG]   ${file.filePath} | ${file.fileExtension} | +${file.insertions}/-${file.deletions}`);
+          }
+          if (extracted.files.length > 10) {
+            this.logger.trace(CLASS_NAME, 'processBranch', `[GIT DEBUG]   ... and ${extracted.files.length - 10} more files`);
+          }
+        }
 
         const fileRows = this.sccService.buildCommitFileRows(sha, logEntry.author_name, extracted.files, sccMetrics);
         await this.commitRepo.insertCommitFiles(sha, fileRows);
@@ -406,14 +488,20 @@ export class GitAnalysisService {
   /**
    * Build a map of commit SHA -> tag names for the repository.
    * Maps from Python get_all_tags_by_commit_sha().
+   * @param debugLogging - Enable verbose debug logging (IQS-936)
    */
-  async buildTagMap(git: SimpleGit): Promise<TagMap> {
+  async buildTagMap(git: SimpleGit, debugLogging = false): Promise<TagMap> {
     this.logger.debug(CLASS_NAME, 'buildTagMap', 'Building tag map');
     const tagMap = new Map<string, string[]>();
 
     try {
       const tags = await git.tags();
       this.logger.debug(CLASS_NAME, 'buildTagMap', `Found ${tags.all.length} tags`);
+
+      // IQS-936: Debug logging for tag discovery
+      if (debugLogging) {
+        this.logger.debug(CLASS_NAME, 'buildTagMap', `[GIT DEBUG] Tag extraction: ${tags.all.length} total tags found`);
+      }
 
       for (const tagName of tags.all) {
         try {
@@ -426,6 +514,11 @@ export class GitAnalysisService {
             tagMap.set(trimmedSha, [tagName]);
           }
           this.logger.trace(CLASS_NAME, 'buildTagMap', `Tag ${tagName} -> ${trimmedSha.substring(0, 8)}`);
+
+          // IQS-936: Debug logging for tag-commit mapping (trace level for per-tag detail)
+          if (debugLogging) {
+            this.logger.trace(CLASS_NAME, 'buildTagMap', `[GIT DEBUG] Tag mapped: ${tagName} -> ${trimmedSha.substring(0, 8)}`);
+          }
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
           this.logger.warn(CLASS_NAME, 'buildTagMap', `Could not resolve tag ${tagName}: ${message}`);
@@ -497,16 +590,18 @@ export class GitAnalysisService {
       const origin = remotes.find((r) => r.name === 'origin');
       if (origin?.refs?.fetch) {
         const remoteUrl = origin.refs.fetch;
-        this.logger.trace(CLASS_NAME, 'deriveRepositoryUrl', `Checking origin fetch URL: ${remoteUrl}`);
+        // IQS-936: Sanitize URL before logging to prevent credential exposure
+        const sanitizedRemote = sanitizeUrlForLogging(remoteUrl);
+        this.logger.trace(CLASS_NAME, 'deriveRepositoryUrl', `Checking origin fetch URL: ${sanitizedRemote}`);
 
         // Validate the repository URL (IQS-924 security hardening)
         const validation = validateRepositoryUrl(remoteUrl);
         if (!validation.isValid) {
           this.logger.warn(CLASS_NAME, 'deriveRepositoryUrl',
-            `Rejected malicious repository URL: ${validation.reason} - URL: ${remoteUrl}`);
+            `Rejected malicious repository URL: ${validation.reason} - URL: ${sanitizedRemote}`);
           // Fall through to use safe fallback
         } else {
-          this.logger.trace(CLASS_NAME, 'deriveRepositoryUrl', `Using validated origin URL: ${remoteUrl}`);
+          this.logger.trace(CLASS_NAME, 'deriveRepositoryUrl', `Using validated origin URL: ${sanitizedRemote}`);
           return remoteUrl;
         }
       }

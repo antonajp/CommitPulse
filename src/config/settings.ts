@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { LoggerService } from '../logging/logger.js';
+import { sanitizeUrlForLogging } from '../utils/url-sanitizer.js';
 
 /**
  * Tracker type for a repository. Determines which issue tracker
@@ -164,6 +165,22 @@ export interface DockerSettings {
 }
 
 /**
+ * Git extraction settings.
+ * Controls debug logging for Git operations during commit extraction.
+ *
+ * Ticket: IQS-936
+ */
+export interface GitSettings {
+  /**
+   * Enable verbose debug logging for Git extraction operations.
+   * When enabled, logs repository init, branch discovery, tag extraction,
+   * commit processing, and file diff statistics.
+   * Requires logLevel DEBUG or TRACE to see output.
+   */
+  readonly debugLogging: boolean;
+}
+
+/**
  * Valid log level string values matching the gitrx.logLevel enum in package.json.
  */
 export type LogLevelString = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL';
@@ -212,6 +229,8 @@ export interface GitrxConfiguration {
   readonly docker: DockerSettings;
   /** Architecture component mapping settings. Ticket: IQS-885. */
   readonly arcComponent: ArcComponentSettings;
+  /** Git extraction settings. Ticket: IQS-936. */
+  readonly git: GitSettings;
 }
 
 /**
@@ -325,6 +344,11 @@ export function getSettings(): GitrxConfiguration {
     ),
   });
 
+  // Read Git extraction settings (IQS-936)
+  const git: GitSettings = Object.freeze({
+    debugLogging: config.get<boolean>('git.debugLogging', false),
+  });
+
   const settings: GitrxConfiguration = {
     repositories,
     database,
@@ -336,6 +360,7 @@ export function getSettings(): GitrxConfiguration {
     logLevel,
     docker,
     arcComponent,
+    git,
   };
 
   logger.trace(CLASS_NAME, 'getSettings', `Settings loaded: ${repositories.length} repositories configured`);
@@ -703,13 +728,17 @@ function validateRepoUrl(
       return undefined;
     }
 
-    logger.trace(CLASS_NAME, 'validateRepoUrl', `Validated repoUrl at index ${index}: ${trimmed}`);
+    // IQS-936: Sanitize URL before logging to prevent credential exposure
+    const sanitizedUrl = sanitizeUrlForLogging(trimmed);
+    logger.trace(CLASS_NAME, 'validateRepoUrl', `Validated repoUrl at index ${index}: ${sanitizedUrl}`);
     return trimmed;
   } catch {
+    // IQS-936: Sanitize URL before logging to prevent credential exposure
+    const sanitizedUrl = sanitizeUrlForLogging(url);
     logger.warn(
       CLASS_NAME,
       'validateRepoUrl',
-      `Invalid URL format for repoUrl at index ${index}: ${url}`,
+      `Invalid URL format for repoUrl at index ${index}: ${sanitizedUrl}`,
     );
     return undefined;
   }

@@ -338,13 +338,10 @@ describe('E2E Pipeline Integration Tests', () => {
     await gitAnalysisService.analyzeRepositories([repoEntry]);
 
     // Arrange: Create data enhancer with PROJ as a known key
-    // We create a subclass that returns the PROJ key from getContributorTeams()
-    class TestDataEnhancer extends DataEnhancerService {
-      protected override async getContributorTeams(): Promise<string[]> {
-        return ['PROJ'];
-      }
-    }
-    const dataEnhancer = new TestDataEnhancer(commitRepo, commitJiraRepo, {});
+    // IQS-935: Pass project keys via constructor instead of subclass override
+    const dataEnhancer = new DataEnhancerService(
+      commitRepo, commitJiraRepo, {}, undefined, ['PROJ'],
+    );
 
     // Act: Run commit-Jira linking
     const enhancerResult = await dataEnhancer.enhanceCommitJiraLinks();
@@ -381,12 +378,10 @@ describe('E2E Pipeline Integration Tests', () => {
     const sccService = new SccMetricsService();
     const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo, sccService);
 
-    class TestDataEnhancer extends DataEnhancerService {
-      protected override async getContributorTeams(): Promise<string[]> {
-        return ['PROJ'];
-      }
-    }
-    const dataEnhancer = new TestDataEnhancer(commitRepo, commitJiraRepo, {});
+    // IQS-935: Pass project keys via constructor instead of subclass override
+    const dataEnhancer = new DataEnhancerService(
+      commitRepo, commitJiraRepo, {}, undefined, ['PROJ'],
+    );
 
     // TeamAssignmentService needs ContributorRepository but we won't run that step
     // Mock it as needed
@@ -529,12 +524,10 @@ describe('E2E Pipeline Integration Tests', () => {
     const sccService = new SccMetricsService();
     const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo, sccService);
 
-    class TestDataEnhancer extends DataEnhancerService {
-      protected override async getContributorTeams(): Promise<string[]> {
-        return ['PROJ'];
-      }
-    }
-    const dataEnhancer = new TestDataEnhancer(commitRepo, commitJiraRepo, {});
+    // IQS-935: Pass project keys via constructor instead of subclass override
+    const dataEnhancer = new DataEnhancerService(
+      commitRepo, commitJiraRepo, {}, undefined, ['PROJ'],
+    );
     const teamAssignment = {
       updateTeamAssignmentsWithPipeline: vi.fn().mockResolvedValue({
         authorsProcessed: 0,

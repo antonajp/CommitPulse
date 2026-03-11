@@ -71,26 +71,29 @@ function setupMockClient(): void {
 }
 
 /**
- * Testable subclass of DataEnhancerService that provides
- * contributor teams via a simple setter rather than DB query.
+ * IQS-935: TestableDataEnhancerService is no longer needed since
+ * projectKeys are now passed via constructor. Use factory function instead.
  */
-class TestableDataEnhancerService extends DataEnhancerService {
-  private testTeams: string[] = [];
-
-  setTestTeams(teams: string[]): void {
-    this.testTeams = teams;
-  }
-
-  protected override async getContributorTeams(): Promise<string[]> {
-    return this.testTeams;
-  }
+function createDataEnhancerService(
+  commitRepo: CommitRepository,
+  commitJiraRepo: CommitJiraRepository,
+  keyAliases: Record<string, string> = {},
+  projectKeys: string[] = [],
+): DataEnhancerService {
+  return new DataEnhancerService(
+    commitRepo,
+    commitJiraRepo,
+    keyAliases,
+    undefined, // commitLinearRepo
+    projectKeys,
+  );
 }
 
 describe('DataEnhancerService', () => {
   let dbService: DatabaseService;
   let commitRepo: CommitRepository;
   let commitJiraRepo: CommitJiraRepository;
-  let service: TestableDataEnhancerService;
+  let service: DataEnhancerService;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -103,11 +106,12 @@ describe('DataEnhancerService', () => {
     commitRepo = new CommitRepository(dbService);
     commitJiraRepo = new CommitJiraRepository(dbService);
 
-    // Create with default key aliases matching the original Python hardcoded values
-    service = new TestableDataEnhancerService(
+    // IQS-935: Create with key aliases and default project keys
+    service = createDataEnhancerService(
       commitRepo,
       commitJiraRepo,
       { PROJ: 'PROJ2', CRM: 'CRMSYS' },
+      [], // Default empty project keys - tests pass projectKeys directly to methods
     );
   });
 
@@ -584,8 +588,10 @@ describe('DataEnhancerService', () => {
 
   describe('enhanceCommitJiraLinks', () => {
     it('should process all authors and return aggregate results', async () => {
-      // Set up test teams (these will be the jira keys)
-      service.setTestTeams(['PROJ', 'FEAT']);
+      // IQS-935: Create service with project keys via constructor
+      service = createDataEnhancerService(
+        commitRepo, commitJiraRepo, { PROJ: 'PROJ2', CRM: 'CRMSYS' }, ['PROJ', 'FEAT'],
+      );
 
       // Mock getCommitContributorLogins (1 author)
       mockQuery
@@ -630,8 +636,10 @@ describe('DataEnhancerService', () => {
     });
 
     it('should include alias source keys in scan list', async () => {
-      // Set up test teams
-      service.setTestTeams(['PROJ']);
+      // IQS-935: Create service with project keys via constructor
+      service = createDataEnhancerService(
+        commitRepo, commitJiraRepo, { PROJ: 'PROJ2', CRM: 'CRMSYS' }, ['PROJ'],
+      );
 
       // Mock getCommitContributorLogins (0 authors for simplicity)
       mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
@@ -644,7 +652,10 @@ describe('DataEnhancerService', () => {
     });
 
     it('should handle empty author list gracefully', async () => {
-      service.setTestTeams(['PROJ']);
+      // IQS-935: Create service with project keys via constructor
+      service = createDataEnhancerService(
+        commitRepo, commitJiraRepo, { PROJ: 'PROJ2', CRM: 'CRMSYS' }, ['PROJ'],
+      );
 
       // Mock getCommitContributorLogins (no authors)
       mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
@@ -658,7 +669,10 @@ describe('DataEnhancerService', () => {
     });
 
     it('should pass refresh and combine options through', async () => {
-      service.setTestTeams(['PROJ']);
+      // IQS-935: Create service with project keys via constructor
+      service = createDataEnhancerService(
+        commitRepo, commitJiraRepo, { PROJ: 'PROJ2', CRM: 'CRMSYS' }, ['PROJ'],
+      );
 
       // Mock getCommitContributorLogins (1 author)
       mockQuery
