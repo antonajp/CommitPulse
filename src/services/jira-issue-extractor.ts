@@ -12,7 +12,10 @@
  * Ticket: IQS-856
  */
 
-import type { Issue } from 'jira.js/out/version3/models/index.js';
+import { Version3Models } from 'jira.js';
+
+// Type alias for cleaner code
+type Issue = Version3Models.Issue;
 import { LoggerService } from '../logging/logger.js';
 import type {
   JiraDetailRow,

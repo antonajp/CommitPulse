@@ -30,8 +30,10 @@ import type {
   JiraHistoryRow,
 } from '../database/jira-types.js';
 import type { JiraServiceConfig } from './jira-service.js';
-import type { Version3Client } from 'jira.js';
-import type { Issue } from 'jira.js/out/version3/models/index.js';
+import type { Version3Client, Version3Models } from 'jira.js';
+
+// Type alias for cleaner code
+type Issue = Version3Models.Issue;
 import { JiraDevStatusService } from './jira-dev-status-service.js';
 import type { UpdateUnfinishedResult } from './jira-changelog-types.js';
 import { logJqlSearchRequest } from './jira-client-factory.js';
@@ -339,6 +341,7 @@ export class JiraChangelogService {
 
   /**
    * Fetch a single issue from Jira with changelog expansion.
+   * Uses the new enhanced search API (searchForIssuesUsingJqlEnhancedSearch).
    *
    * @param issueKey - The Jira issue key (e.g., "IQS-100")
    * @returns The issue with changelog, or null if not found
@@ -371,7 +374,8 @@ export class JiraChangelogService {
           enabled: (this.config as { debugLogging?: boolean }).debugLogging,
         });
 
-        const result = await this.jiraClient.issueSearch.searchForIssuesUsingJql({
+        // Use the new enhanced search API which calls /rest/api/3/search/jql
+        const result = await this.jiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch({
           jql,
           maxResults: 1,
           expand: 'changelog',

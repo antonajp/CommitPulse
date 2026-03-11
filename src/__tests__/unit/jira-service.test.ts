@@ -15,7 +15,8 @@ import {
   type JiraServiceConfig,
   type JiraExtractorConfig,
 } from '../../services/jira-service.js';
-import type { Issue } from 'jira.js/out/version3/models/index.js';
+import { Version3Models } from 'jira.js';
+type Issue = Version3Models.Issue;
 
 /**
  * Unit tests for JiraService class.
@@ -54,9 +55,10 @@ vi.mock('pg', () => ({
 vi.mock('jira.js', () => ({
   Version3Client: vi.fn().mockImplementation(() => ({
     issueSearch: {
-      searchForIssuesUsingJql: vi.fn(),
+      searchForIssuesUsingJqlEnhancedSearch: vi.fn(),
     },
   })),
+  Version3Models: {},
 }));
 
 // ============================================================================
@@ -169,7 +171,7 @@ function createMockIssue(overrides?: Partial<{
 function createMockJiraClient() {
   return {
     issueSearch: {
-      searchForIssuesUsingJql: vi.fn(),
+      searchForIssuesUsingJqlEnhancedSearch: vi.fn(),
     },
   };
 }
@@ -513,9 +515,9 @@ describe('JiraService', () => {
         parent: { key: 'PROJ-0', summary: 'Parent Epic', issuetype: 'Epic' },
       });
 
-      mockJiraClient.issueSearch.searchForIssuesUsingJql.mockResolvedValue({
-        total: 1,
+      mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch.mockResolvedValue({
         issues: [mockIssue],
+        nextPageToken: undefined,
       });
 
       const service = new JiraService(
@@ -550,9 +552,9 @@ describe('JiraService', () => {
       vi.spyOn(pipelineRepo, 'updatePipelineRun').mockResolvedValue();
       vi.spyOn(pipelineRepo, 'logTableCounts').mockResolvedValue();
 
-      mockJiraClient.issueSearch.searchForIssuesUsingJql.mockResolvedValue({
-        total: 1,
+      mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch.mockResolvedValue({
         issues: [createMockIssue({ key: 'PROJ-1' })],
+        nextPageToken: undefined,
       });
 
       const service = new JiraService(
@@ -579,16 +581,16 @@ describe('JiraService', () => {
       vi.spyOn(pipelineRepo, 'updatePipelineRun').mockResolvedValue();
       vi.spyOn(pipelineRepo, 'logTableCounts').mockResolvedValue();
 
-      // Page 1: return 2 issues (total = 3)
-      // Page 2: return 1 issue
-      mockJiraClient.issueSearch.searchForIssuesUsingJql
+      // Page 1: return 2 issues with nextPageToken
+      // Page 2: return 1 issue with no nextPageToken (end)
+      mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch
         .mockResolvedValueOnce({
-          total: 3,
           issues: [createMockIssue({ key: 'PROJ-1' }), createMockIssue({ key: 'PROJ-2' })],
+          nextPageToken: 'page2token',
         })
         .mockResolvedValueOnce({
-          total: 3,
           issues: [createMockIssue({ key: 'PROJ-3' })],
+          nextPageToken: undefined,
         });
 
       const service = new JiraService(
@@ -597,7 +599,7 @@ describe('JiraService', () => {
 
       const result = await service.loadProjectIssues('PROJ', { startKey: 0, maxKeys: 100 });
 
-      expect(mockJiraClient.issueSearch.searchForIssuesUsingJql).toHaveBeenCalledTimes(2);
+      expect(mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch).toHaveBeenCalledTimes(2);
       expect(result.issuesInserted).toBe(3);
     });
 
@@ -620,13 +622,13 @@ describe('JiraService', () => {
       vi.spyOn(pipelineRepo, 'updatePipelineRun').mockResolvedValue();
       vi.spyOn(pipelineRepo, 'logTableCounts').mockResolvedValue();
 
-      mockJiraClient.issueSearch.searchForIssuesUsingJql.mockResolvedValue({
-        total: 3,
+      mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch.mockResolvedValue({
         issues: [
           createMockIssue({ key: 'PROJ-1' }),
           createMockIssue({ key: 'PROJ-2' }),
           createMockIssue({ key: 'PROJ-3' }),
         ],
+        nextPageToken: undefined,
       });
 
       const service = new JiraService(
@@ -654,9 +656,9 @@ describe('JiraService', () => {
       vi.spyOn(pipelineRepo, 'updatePipelineRun').mockResolvedValue();
       vi.spyOn(pipelineRepo, 'logTableCounts').mockResolvedValue();
 
-      mockJiraClient.issueSearch.searchForIssuesUsingJql.mockResolvedValue({
-        total: 0,
+      mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch.mockResolvedValue({
         issues: [],
+        nextPageToken: undefined,
       });
 
       const service = new JiraService(
@@ -667,7 +669,7 @@ describe('JiraService', () => {
       await service.loadProjectIssues('PROJ', { startKey: 0, maxKeys: 0 });
 
       // Should have called with maxKeys = 500 + 100 (AUTO_DETECT_BUFFER)
-      const searchCall = mockJiraClient.issueSearch.searchForIssuesUsingJql.mock.calls[0];
+      const searchCall = mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch.mock.calls[0];
       expect(searchCall).toBeDefined();
       const jqlUsed = searchCall![0]?.jql as string;
       expect(jqlUsed).toContain('PROJ-600');
@@ -690,9 +692,9 @@ describe('JiraService', () => {
       vi.spyOn(pipelineRepo, 'updatePipelineRun').mockResolvedValue();
       vi.spyOn(pipelineRepo, 'logTableCounts').mockResolvedValue();
 
-      mockJiraClient.issueSearch.searchForIssuesUsingJql
-        .mockResolvedValueOnce({ total: 1, issues: [createMockIssue({ key: 'PROJ-1' })] })
-        .mockResolvedValueOnce({ total: 1, issues: [createMockIssue({ key: 'FEAT-1' })] });
+      mockJiraClient.issueSearch.searchForIssuesUsingJqlEnhancedSearch
+        .mockResolvedValueOnce({ issues: [createMockIssue({ key: 'PROJ-1' })], nextPageToken: undefined })
+        .mockResolvedValueOnce({ issues: [createMockIssue({ key: 'FEAT-1' })], nextPageToken: undefined });
 
       const service = new JiraService(
         jiraConfig, jiraRepo, pipelineRepo, mockJiraClient as never,

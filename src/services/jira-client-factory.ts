@@ -13,7 +13,7 @@
  */
 
 import { Version3Client } from 'jira.js';
-import type { Config } from 'jira.js';
+import type { JiraError } from 'jira.js';
 import { LoggerService } from '../logging/logger.js';
 
 // ============================================================================
@@ -61,20 +61,8 @@ export function createJiraClient(config: JiraClientConfig): Version3Client {
   logger.debug(CLASS_NAME, 'createJiraClient', `Creating Jira client for server: ${config.server}`);
   logger.debug(CLASS_NAME, 'createJiraClient', `Debug logging enabled: ${enableLogging}`);
 
-  // Build middleware callbacks for response/error logging
-  const middlewares: Config.Middlewares = {};
-
-  if (enableLogging) {
-    middlewares.onResponse = (data: unknown): void => {
-      logJiraResponse(logger, data);
-    };
-
-    middlewares.onError = (error: Config.Error): void => {
-      logJiraError(logger, error);
-    };
-  }
-
-  const client = new Version3Client({
+  // Build client config with optional middleware callbacks
+  const clientConfig = {
     host: config.server,
     authentication: {
       basic: {
@@ -82,8 +70,19 @@ export function createJiraClient(config: JiraClientConfig): Version3Client {
         apiToken: config.token,
       },
     },
-    middlewares,
-  });
+    ...(enableLogging ? {
+      middlewares: {
+        onResponse: (data: unknown): void => {
+          logJiraResponse(logger, data);
+        },
+        onError: (error: JiraError): void => {
+          logJiraError(logger, error);
+        },
+      },
+    } : {}),
+  };
+
+  const client = new Version3Client(clientConfig);
 
   logger.debug(CLASS_NAME, 'createJiraClient', 'Jira client created successfully');
   return client;
@@ -265,7 +264,7 @@ function logJiraResponse(logger: LoggerService, data: unknown): void {
 /**
  * Log Jira API error details.
  */
-function logJiraError(logger: LoggerService, error: Config.Error): void {
+function logJiraError(logger: LoggerService, error: JiraError): void {
   logger.error(CLASS_NAME, 'onError', '=== JIRA API ERROR ===');
 
   // Check if it's an HttpException with detailed info

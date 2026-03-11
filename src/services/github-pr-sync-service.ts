@@ -19,9 +19,7 @@
  * Ticket: IQS-899
  */
 
-// @ts-expect-error -- @octokit/rest is ESM-only; esbuild bundles it correctly at build time
 import { Octokit } from '@octokit/rest';
-// @ts-expect-error -- @octokit/rest is ESM-only; type-only import works at build time
 import type { RestEndpointMethodTypes } from '@octokit/rest';
 import { LoggerService } from '../logging/logger.js';
 import { DatabaseService } from '../database/database-service.js';
