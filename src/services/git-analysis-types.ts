@@ -23,6 +23,13 @@ export interface GitAnalysisOptions {
   readonly sinceDate?: string;
   /** End date for commit filtering (ISO format YYYY-MM-DD). Undefined = now. */
   readonly untilDate?: string;
+  /**
+   * Enable verbose debug logging for Git extraction operations.
+   * When enabled, logs detailed info about repository init, branch discovery,
+   * tag extraction, commit processing, and file diffs.
+   * Ticket: IQS-936
+   */
+  readonly debugLogging?: boolean;
 }
 
 // ============================================================================

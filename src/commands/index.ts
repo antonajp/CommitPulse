@@ -671,8 +671,9 @@ async function buildPipelineService(
       enableDebugLogging: settings.jira.debugLogging,
     });
 
-    const jiraService = new JiraService(jiraConfig, jiraRepo, pipelineRepo, jiraClient);
     const changelogService = new JiraChangelogService(jiraConfig, jiraRepo, pipelineRepo, jiraClient);
+    // IQS-935: Pass changelogService to JiraService for history extraction during issue loading
+    const jiraService = new JiraService(jiraConfig, jiraRepo, pipelineRepo, jiraClient, changelogService);
     const loaderConfig = JiraIncrementalLoader.buildConfig(
       settings.jira.increment,
       settings.jira.daysAgo,
@@ -710,7 +711,10 @@ async function buildPipelineService(
   }
 
   // Step 7: Create data enhancer and team assignment services
-  const dataEnhancerService = new DataEnhancerService(commitRepo, commitJiraRepo, settings.jira.keyAliases, commitLinearRepo);
+  // IQS-935: Pass projectKeys to DataEnhancerService for commit-jira linking
+  const dataEnhancerService = new DataEnhancerService(
+    commitRepo, commitJiraRepo, settings.jira.keyAliases, commitLinearRepo, settings.jira.projectKeys,
+  );
   const teamAssignmentService = new TeamAssignmentService(contributorRepo, commitJiraRepo, pipelineRepo);
 
   // Step 8: Build pipeline config (IQS-931: added sinceDate)

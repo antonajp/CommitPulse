@@ -54,7 +54,7 @@ export interface DataEnhancerResult {
 
 /**
  * Links commits to Jira/Linear issues by scanning commit messages for key patterns.
- * Maps from Python GitjaDataEnhancer class. Ticket: IQS-861, IQS-875
+ * Maps from Python GitjaDataEnhancer class. Ticket: IQS-861, IQS-875, IQS-935
  */
 export class DataEnhancerService {
   private readonly logger: LoggerService;
@@ -65,20 +65,26 @@ export class DataEnhancerService {
   /** Key aliases from VS Code settings (e.g., { PROJ: "PROJ2", CRM: "CRMREO" }). */
   private readonly keyAliases: Readonly<Record<string, string>>;
 
+  /** IQS-935: Jira project keys from VS Code settings (e.g., ["IQS", "PROJ"]). */
+  private readonly projectKeys: readonly string[];
+
   constructor(
     commitRepo: CommitRepository,
     commitJiraRepo: CommitJiraRepository,
     keyAliases: Readonly<Record<string, string>> = {},
     commitLinearRepo?: CommitLinearRepository,
+    projectKeys: readonly string[] = [],
   ) {
     this.logger = LoggerService.getInstance();
     this.commitRepo = commitRepo;
     this.commitJiraRepo = commitJiraRepo;
     this.commitLinearRepo = commitLinearRepo ?? null;
     this.keyAliases = keyAliases;
+    this.projectKeys = projectKeys;
 
     this.logger.debug(CLASS_NAME, 'constructor', `DataEnhancerService created with ${Object.keys(keyAliases).length} key aliases`);
     this.logger.debug(CLASS_NAME, 'constructor', `Key aliases: ${JSON.stringify(keyAliases)}`);
+    this.logger.debug(CLASS_NAME, 'constructor', `Project keys: [${projectKeys.join(', ')}]`);
     this.logger.debug(CLASS_NAME, 'constructor', `Linear support: ${commitLinearRepo ? 'enabled' : 'disabled'}`);
   }
 
@@ -550,17 +556,19 @@ export class DataEnhancerService {
     return targetString;
   }
 
-  /** Build deduplicated Jira key list from contributor teams + alias source keys. */
+  /**
+   * Build deduplicated Jira key list from configured project keys + alias source keys.
+   * IQS-935: Now uses projectKeys from constructor instead of stub getContributorTeams().
+   */
   private async buildJiraKeyList(): Promise<string[]> {
     this.logger.debug(CLASS_NAME, 'buildJiraKeyList', 'Building Jira project key list');
 
-    // Get teams/projects from the database
-    const dbKeys = await this.getContributorTeams();
-    this.logger.debug(CLASS_NAME, 'buildJiraKeyList', `Database keys: [${dbKeys.join(', ')}]`);
+    // IQS-935: Use project keys from settings (passed via constructor)
+    const keySet = new Set<string>(this.projectKeys);
+    this.logger.debug(CLASS_NAME, 'buildJiraKeyList', `Project keys from settings: [${this.projectKeys.join(', ')}]`);
 
     // Add source keys from aliases (these are the keys to scan for,
     // which will be replaced during cleanup)
-    const keySet = new Set(dbKeys);
     for (const sourceKey of Object.keys(this.keyAliases)) {
       keySet.add(sourceKey);
       this.logger.trace(CLASS_NAME, 'buildJiraKeyList', `Added alias source key: ${sourceKey}`);
@@ -568,15 +576,12 @@ export class DataEnhancerService {
 
     const result = Array.from(keySet);
     this.logger.debug(CLASS_NAME, 'buildJiraKeyList', `Final key list (${result.length} keys): [${result.join(', ')}]`);
-    return result;
-  }
 
-  /** Get unique contributor teams from database. Hook method for testing override. */
-  protected async getContributorTeams(): Promise<string[]> {
-    // This will be called with the ContributorRepository in the pipeline
-    // For now, return an empty array and let the caller provide keys via buildJiraKeyList
-    this.logger.debug(CLASS_NAME, 'getContributorTeams', 'Getting contributor teams (base implementation returns empty)');
-    return [];
+    if (result.length === 0) {
+      this.logger.warn(CLASS_NAME, 'buildJiraKeyList', 'No Jira project keys configured. Set gitrx.jira.projectKeys in VS Code settings.');
+    }
+
+    return result;
   }
 
   /** Escape special regex characters. Maps from Python re.escape(). */

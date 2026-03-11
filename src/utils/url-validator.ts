@@ -9,6 +9,8 @@
  *
  * Only allowlisted domains are permitted:
  * - GitHub (github.com and *.github.com for enterprise)
+ * - Bitbucket (bitbucket.org and *.bitbucket.org for enterprise)
+ * - GitLab (gitlab.com and *.gitlab.com for self-hosted)
  * - Linear (linear.app)
  * - Configured Jira server
  *
@@ -22,6 +24,7 @@
 
 import * as vscode from 'vscode';
 import { LoggerService } from '../logging/logger.js';
+import { sanitizeUrlForLogging } from './url-sanitizer.js';
 
 /**
  * Class name constant for structured logging context.
@@ -132,6 +135,18 @@ export function validateExternalUrl(url: string, jiraServer: string): UrlValidat
       return { isValid: true, validatedUri: parsed };
     }
 
+    // Check allowlist: Bitbucket
+    if (domain === 'bitbucket.org' || domain.endsWith('.bitbucket.org')) {
+      logger.trace(CLASS_NAME, 'validateExternalUrl', 'Domain allowed: Bitbucket');
+      return { isValid: true, validatedUri: parsed };
+    }
+
+    // Check allowlist: GitLab
+    if (domain === 'gitlab.com' || domain.endsWith('.gitlab.com')) {
+      logger.trace(CLASS_NAME, 'validateExternalUrl', 'Domain allowed: GitLab');
+      return { isValid: true, validatedUri: parsed };
+    }
+
     // Check allowlist: Linear
     if (domain === 'linear.app') {
       logger.trace(CLASS_NAME, 'validateExternalUrl', 'Domain allowed: Linear');
@@ -223,7 +238,9 @@ export function sanitizeTicketId(ticketId: string): string {
  */
 export function validateRepositoryUrl(repoUrl: string): UrlValidationResult {
   const logger = LoggerService.getInstance();
-  logger.trace(CLASS_NAME, 'validateRepositoryUrl', `Validating repo URL: ${repoUrl}`);
+  // IQS-936: Sanitize URL before logging to prevent credential exposure
+  const sanitizedUrl = sanitizeUrlForLogging(repoUrl);
+  logger.trace(CLASS_NAME, 'validateRepositoryUrl', `Validating repo URL: ${sanitizedUrl}`);
 
   if (!repoUrl || typeof repoUrl !== 'string' || repoUrl.trim().length === 0) {
     logger.debug(CLASS_NAME, 'validateRepositoryUrl', 'Empty or invalid URL provided');

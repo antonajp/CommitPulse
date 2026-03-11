@@ -88,6 +88,54 @@ describe('URL Validator', () => {
       });
     });
 
+    describe('Bitbucket URLs', () => {
+      it('should allow bitbucket.org URLs', () => {
+        const result = validateExternalUrl('https://bitbucket.org/user/repo', '');
+        expect(result.isValid).toBe(true);
+        expect(result.validatedUri).toBeDefined();
+      });
+
+      it('should allow Bitbucket subdomains for enterprise', () => {
+        const result = validateExternalUrl('https://bitbucket.mycompany.bitbucket.org/projects/repo', '');
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should reject fake Bitbucket lookalike domains', () => {
+        const result = validateExternalUrl('https://bitbucket.mycompany.com/org/repo', '');
+        expect(result.isValid).toBe(false);
+        expect(result.reason).toContain('Untrusted domain');
+      });
+
+      it('should allow bitbucket.org commit URLs', () => {
+        const result = validateExternalUrl('https://bitbucket.org/user/repo/commits/abc123', '');
+        expect(result.isValid).toBe(true);
+      });
+    });
+
+    describe('GitLab URLs', () => {
+      it('should allow gitlab.com URLs', () => {
+        const result = validateExternalUrl('https://gitlab.com/user/repo', '');
+        expect(result.isValid).toBe(true);
+        expect(result.validatedUri).toBeDefined();
+      });
+
+      it('should allow GitLab subdomains for self-hosted', () => {
+        const result = validateExternalUrl('https://myinstance.gitlab.com/projects/repo', '');
+        expect(result.isValid).toBe(true);
+      });
+
+      it('should reject fake GitLab lookalike domains', () => {
+        const result = validateExternalUrl('https://gitlab.mycompany.com/org/repo', '');
+        expect(result.isValid).toBe(false);
+        expect(result.reason).toContain('Untrusted domain');
+      });
+
+      it('should allow gitlab.com commit URLs', () => {
+        const result = validateExternalUrl('https://gitlab.com/user/repo/-/commit/abc123', '');
+        expect(result.isValid).toBe(true);
+      });
+    });
+
     describe('Linear URLs', () => {
       it('should allow linear.app URLs', () => {
         const result = validateExternalUrl('https://linear.app/team/issue/TEAM-123', '');

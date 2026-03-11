@@ -40,6 +40,7 @@ import {
   createJiraClient,
   logJqlSearchRequest,
 } from './jira-client-factory.js';
+import type { JiraChangelogService } from './jira-changelog-service.js';
 
 // Re-export extractor functions for convenience
 export {
@@ -95,6 +96,8 @@ export interface LoadProjectIssuesResult {
   readonly linksInserted: number;
   /** Number of parent relationships inserted. */
   readonly parentsInserted: number;
+  /** Number of changelog history entries inserted. IQS-935 */
+  readonly historyInserted: number;
   /** Number of issues that failed to load. */
   readonly issuesFailed: number;
   /** Duration of the load operation in milliseconds. */
@@ -162,16 +165,19 @@ export class JiraService {
   private readonly pipelineRepo: PipelineRepository;
   private readonly config: JiraServiceConfig;
   private readonly extractorConfig: JiraExtractorConfig;
+  private readonly changelogService: JiraChangelogService | null;
 
   constructor(
     config: JiraServiceConfig,
     jiraRepo: JiraRepository,
     pipelineRepo: PipelineRepository,
     jiraClient?: Version3Client,
+    changelogService?: JiraChangelogService,
   ) {
     this.config = config;
     this.jiraRepo = jiraRepo;
     this.pipelineRepo = pipelineRepo;
+    this.changelogService = changelogService ?? null;
     this.logger = LoggerService.getInstance();
 
     // Build extractor config from service config
@@ -191,6 +197,7 @@ export class JiraService {
 
     this.logger.debug(CLASS_NAME, 'constructor', `JiraService created for server: ${config.server}`);
     this.logger.debug(CLASS_NAME, 'constructor', `Points field: ${config.pointsField}`);
+    this.logger.debug(CLASS_NAME, 'constructor', `Changelog service: ${changelogService ? 'enabled' : 'disabled'}`);
   }
 
   // --------------------------------------------------------------------------
@@ -229,6 +236,7 @@ export class JiraService {
     let issuesSkipped = 0;
     let linksInserted = 0;
     let parentsInserted = 0;
+    let historyInserted = 0;
     let issuesFailed = 0;
 
     try {
@@ -252,13 +260,14 @@ export class JiraService {
       issuesSkipped = counts.skipped;
       linksInserted = counts.links;
       parentsInserted = counts.parents;
+      historyInserted = counts.history;
       issuesFailed = counts.failed;
 
       // Log table counts (matches Python log_table_counts call)
       await this.safeLogTableCounts(pipelineRunId);
 
       await this.pipelineRepo.updatePipelineRun(pipelineRunId, 'FINISHED');
-      this.logger.info(CLASS_NAME, 'loadProjectIssues', `Completed: ${issuesInserted} inserted, ${issuesSkipped} skipped, ${issuesFailed} failed`);
+      this.logger.info(CLASS_NAME, 'loadProjectIssues', `Completed: ${issuesInserted} inserted, ${issuesSkipped} skipped, ${historyInserted} history, ${issuesFailed} failed`);
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -271,7 +280,7 @@ export class JiraService {
 
     return {
       projectKey, issuesInserted, issuesSkipped,
-      linksInserted, parentsInserted, issuesFailed, durationMs,
+      linksInserted, parentsInserted, historyInserted, issuesFailed, durationMs,
     };
   }
 
@@ -340,6 +349,7 @@ export class JiraService {
   /**
    * Paginate through JQL search results and process each issue.
    * Uses cursor-based pagination with nextPageToken (new Jira API).
+   * IQS-935: Now includes changelog extraction and history count tracking.
    *
    * @returns Aggregate counts of processed issues
    */
@@ -348,11 +358,12 @@ export class JiraService {
     projectKey: string,
     knownKeys: Set<string>,
     pipelineRunId: number,
-  ): Promise<{ inserted: number; skipped: number; links: number; parents: number; failed: number }> {
+  ): Promise<{ inserted: number; skipped: number; links: number; parents: number; history: number; failed: number }> {
     let inserted = 0;
     let skipped = 0;
     let links = 0;
     let parents = 0;
+    let history = 0;
     let failed = 0;
 
     let nextPageToken: string | undefined = undefined;
@@ -379,6 +390,7 @@ export class JiraService {
             inserted++;
             links += result.linksCount;
             parents += result.parentCount;
+            history += result.historyCount;
           }
         } catch (error: unknown) {
           failed++;
@@ -397,12 +409,13 @@ export class JiraService {
       }
     } while (nextPageToken);
 
-    return { inserted, skipped, links, parents, failed };
+    return { inserted, skipped, links, parents, history, failed };
   }
 
   /**
    * Process a single Jira issue: extract data, persist to database,
    * and log to pipeline.
+   * IQS-935: Now extracts changelog and dev status via JiraChangelogService.
    *
    * @returns 'skipped' if already known, or counts of inserted sub-records
    */
@@ -411,7 +424,7 @@ export class JiraService {
     projectKey: string,
     knownKeys: Set<string>,
     pipelineRunId: number,
-  ): Promise<'skipped' | { linksCount: number; parentCount: number }> {
+  ): Promise<'skipped' | { linksCount: number; parentCount: number; historyCount: number }> {
     // Skip already-known issues
     if (knownKeys.has(issue.key)) {
       this.logger.trace(CLASS_NAME, 'processIssue', `Skipping known issue: ${issue.key}`);
@@ -438,6 +451,20 @@ export class JiraService {
       parentCount = 1;
     }
 
+    // IQS-935: Extract and persist changelog and GitHub dev status
+    let historyCount = 0;
+    if (this.changelogService) {
+      try {
+        const changelogResult = await this.changelogService.processIssueChangelogAndDevStatus(issue);
+        historyCount = changelogResult.historyCount;
+        this.logger.trace(CLASS_NAME, 'processIssue', `Changelog for ${issue.key}: ${historyCount} history entries, ${changelogResult.branchesSaved} branches, ${changelogResult.prsSaved} PRs`);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(CLASS_NAME, 'processIssue', `Failed to process changelog for ${issue.key}: ${message}`);
+        // Continue processing - changelog failure shouldn't block issue loading
+      }
+    }
+
     // Track in pipeline
     knownKeys.add(issue.key);
     this.logger.debug(CLASS_NAME, 'processIssue', `Committed issue: ${issue.key}`);
@@ -445,7 +472,7 @@ export class JiraService {
     // Log to pipeline (fire-and-forget)
     this.logPipelineJira(pipelineRunId, issue.key);
 
-    return { linksCount, parentCount };
+    return { linksCount, parentCount, historyCount };
   }
 
   // --------------------------------------------------------------------------
@@ -456,6 +483,7 @@ export class JiraService {
    * Execute a JQL search with rate limiting awareness.
    * Uses the new enhanced search API with cursor-based pagination.
    * Implements exponential backoff on 429 (Too Many Requests) responses.
+   * IQS-935: Now expands changelog for history extraction.
    *
    * @param jql - The JQL query to execute
    * @param nextPageToken - The cursor token for pagination (undefined for first page)
@@ -476,6 +504,9 @@ export class JiraService {
       this.config.pointsField,
     ];
 
+    // IQS-935: Expand changelog to extract status/assignee history
+    const expand = this.changelogService ? 'changelog' : undefined;
+
     while (retries <= MAX_RATE_LIMIT_RETRIES) {
       try {
         // Log request details before API call for debugging
@@ -485,6 +516,7 @@ export class JiraService {
           startAt: 0, // Enhanced search uses cursor-based pagination
           maxResults: JQL_PAGE_SIZE,
           fields,
+          expand,
           enabled: this.config.debugLogging,
         });
 
@@ -494,6 +526,7 @@ export class JiraService {
           nextPageToken,
           maxResults: JQL_PAGE_SIZE,
           fields,
+          expand,
         });
 
         this.logger.trace(CLASS_NAME, 'searchWithRateLimiting', `Search returned ${result.issues?.length ?? 0} issues`);
