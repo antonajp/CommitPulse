@@ -9,8 +9,9 @@ import { VelocityDataService } from '../../services/velocity-data-service.js';
 import type { DatabaseService } from '../../database/database-service.js';
 
 /**
- * Unit tests for VelocityDataService (IQS-888).
+ * Unit tests for VelocityDataService (IQS-888, IQS-944).
  * Tests the data service layer for the Sprint Velocity vs LOC chart.
+ * IQS-944: Added tests for humanStoryPoints and aiStoryPoints fields.
  */
 describe('VelocityDataService', () => {
   let mockDb: DatabaseService;
@@ -73,7 +74,8 @@ describe('VelocityDataService', () => {
   });
 
   describe('getSprintVelocityVsLoc', () => {
-    it('should return mapped velocity data points', async () => {
+    it('should return mapped velocity data points with dual story point columns', async () => {
+      // IQS-944: Test includes human_story_points and ai_story_points
       (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         rows: [
           {
@@ -81,6 +83,8 @@ describe('VelocityDataService', () => {
             team: 'Engineering',
             project: 'gitrx',
             repository: 'gitr',
+            human_story_points: 8,
+            ai_story_points: 5,
             total_story_points: 13,
             issue_count: 5,
             total_loc_changed: 1500,
@@ -93,6 +97,8 @@ describe('VelocityDataService', () => {
             team: 'Engineering',
             project: 'gitrx',
             repository: 'gitr',
+            human_story_points: 5,
+            ai_story_points: 3,
             total_story_points: 8,
             issue_count: 3,
             total_loc_changed: 800,
@@ -113,6 +119,8 @@ describe('VelocityDataService', () => {
         team: 'Engineering',
         project: 'gitrx',
         repository: 'gitr',
+        humanStoryPoints: 8,
+        aiStoryPoints: 5,
         totalStoryPoints: 13,
         issueCount: 5,
         totalLocChanged: 1500,
@@ -125,6 +133,8 @@ describe('VelocityDataService', () => {
         team: 'Engineering',
         project: 'gitrx',
         repository: 'gitr',
+        humanStoryPoints: 5,
+        aiStoryPoints: 3,
         totalStoryPoints: 8,
         issueCount: 3,
         totalLocChanged: 800,
@@ -142,6 +152,8 @@ describe('VelocityDataService', () => {
             team: null,
             project: null,
             repository: 'gitr',
+            human_story_points: 0,
+            ai_story_points: 0,
             total_story_points: 0,
             issue_count: 0,
             total_loc_changed: 500,
@@ -160,6 +172,8 @@ describe('VelocityDataService', () => {
       expect(result[0]?.weekStart).toBe('2024-06-10');
       expect(result[0]?.team).toBeNull();
       expect(result[0]?.totalStoryPoints).toBe(0);
+      expect(result[0]?.humanStoryPoints).toBe(0);
+      expect(result[0]?.aiStoryPoints).toBe(0);
     });
 
     it('should handle empty results', async () => {
@@ -182,6 +196,8 @@ describe('VelocityDataService', () => {
             team: null,
             project: null,
             repository: null,
+            human_story_points: 3,
+            ai_story_points: 2,
             total_story_points: 5,
             issue_count: 2,
             total_loc_changed: 0,
@@ -200,9 +216,12 @@ describe('VelocityDataService', () => {
       expect(result[0]?.team).toBeNull();
       expect(result[0]?.project).toBeNull();
       expect(result[0]?.repository).toBeNull();
+      expect(result[0]?.humanStoryPoints).toBe(3);
+      expect(result[0]?.aiStoryPoints).toBe(2);
     });
 
     it('should convert numeric string values to numbers', async () => {
+      // IQS-944: Includes human and AI story points
       (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         rows: [
           {
@@ -210,6 +229,8 @@ describe('VelocityDataService', () => {
             team: 'Eng',
             project: 'test',
             repository: 'repo',
+            human_story_points: '13',
+            ai_story_points: '8',
             total_story_points: '21',
             issue_count: '8',
             total_loc_changed: '3000',
@@ -226,6 +247,10 @@ describe('VelocityDataService', () => {
 
       expect(typeof result[0]?.totalStoryPoints).toBe('number');
       expect(result[0]?.totalStoryPoints).toBe(21);
+      expect(typeof result[0]?.humanStoryPoints).toBe('number');
+      expect(result[0]?.humanStoryPoints).toBe(13);
+      expect(typeof result[0]?.aiStoryPoints).toBe('number');
+      expect(result[0]?.aiStoryPoints).toBe(8);
       expect(typeof result[0]?.totalLocChanged).toBe('number');
       expect(result[0]?.totalLocChanged).toBe(3000);
     });
@@ -389,6 +414,67 @@ describe('VelocityDataService', () => {
       ).rejects.toThrow('Invalid repository name');
     });
 
+    // IQS-944: Test for NULL story point values (defaults to 0)
+    it('should handle NULL human and AI story points as zero', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        rows: [
+          {
+            week_start: '2024-06-10',
+            team: 'Eng',
+            project: 'test',
+            repository: 'repo',
+            human_story_points: null,
+            ai_story_points: null,
+            total_story_points: 0,
+            issue_count: 0,
+            total_loc_changed: 500,
+            total_lines_added: 300,
+            total_lines_deleted: 200,
+            commit_count: 5,
+          },
+        ],
+        rowCount: 1,
+      });
+
+      const service = new VelocityDataService(mockDb);
+      const result = await service.getSprintVelocityVsLoc();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.humanStoryPoints).toBe(0);
+      expect(result[0]?.aiStoryPoints).toBe(0);
+    });
+
+    // IQS-944: Test for mixed story point sources (Jira has both, Linear has AI only)
+    it('should handle mixed human and AI story points from different sources', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        rows: [
+          {
+            week_start: '2024-06-10',
+            team: 'Eng',
+            project: 'test',
+            repository: 'repo',
+            human_story_points: 5,  // From Jira
+            ai_story_points: 8,     // From Jira + Linear
+            total_story_points: 13,
+            issue_count: 4,
+            total_loc_changed: 1200,
+            total_lines_added: 800,
+            total_lines_deleted: 400,
+            commit_count: 10,
+          },
+        ],
+        rowCount: 1,
+      });
+
+      const service = new VelocityDataService(mockDb);
+      const result = await service.getSprintVelocityVsLoc();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.humanStoryPoints).toBe(5);
+      expect(result[0]?.aiStoryPoints).toBe(8);
+      expect(result[0]?.totalStoryPoints).toBe(13);
+    });
+
     it('should accept valid repository name with special allowed characters', async () => {
       (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         rows: [],
@@ -401,6 +487,37 @@ describe('VelocityDataService', () => {
       expect(mockDb.query).toHaveBeenCalledWith(
         expect.stringContaining('repository = $1'),
         ['my-repo_v1.0'],
+      );
+    });
+
+    // IQS-944: Team name validation tests
+    it('should throw on invalid team name with special characters', async () => {
+      const service = new VelocityDataService(mockDb);
+      await expect(
+        service.getSprintVelocityVsLoc({ team: '<script>alert(1)</script>' }),
+      ).rejects.toThrow('Invalid team name');
+    });
+
+    it('should throw on team name exceeding max length', async () => {
+      const service = new VelocityDataService(mockDb);
+      const longTeamName = 'a'.repeat(101);
+      await expect(
+        service.getSprintVelocityVsLoc({ team: longTeamName }),
+      ).rejects.toThrow('Invalid team name');
+    });
+
+    it('should accept valid team name with spaces and hyphens', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+
+      const service = new VelocityDataService(mockDb);
+      await service.getSprintVelocityVsLoc({ team: 'Platform Team' });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('team = $1'),
+        ['Platform Team'],
       );
     });
   });
@@ -425,7 +542,7 @@ describe('VelocityDataService', () => {
         rows: [{ view_exists: true }],
         rowCount: 1,
       });
-      // 2. getSprintVelocityVsLoc
+      // 2. getSprintVelocityVsLoc (IQS-944: includes dual story point columns)
       (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         rows: [
           {
@@ -433,6 +550,8 @@ describe('VelocityDataService', () => {
             team: 'Eng',
             project: 'test',
             repository: 'repo',
+            human_story_points: 8,
+            ai_story_points: 5,
             total_story_points: 13,
             issue_count: 5,
             total_loc_changed: 1500,
@@ -450,6 +569,8 @@ describe('VelocityDataService', () => {
       expect(result.hasData).toBe(true);
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0]?.weekStart).toBe('2024-06-10');
+      expect(result.rows[0]?.humanStoryPoints).toBe(8);
+      expect(result.rows[0]?.aiStoryPoints).toBe(5);
     });
 
     it('should return hasData false when view exists but no data', async () => {

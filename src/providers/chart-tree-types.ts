@@ -36,7 +36,8 @@ export type ChartType =
   | 'releaseRisk'
   | 'testDebt'
   | 'commitHygiene'
-  | 'architectureDrift';
+  | 'architectureDrift'
+  | 'storyPointsTrend';
 
 /**
  * Chart category for grouping in the TreeView.

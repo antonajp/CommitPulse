@@ -137,6 +137,51 @@ function createFixtureRepo(): string {
 }
 
 /**
+ * Reset the fixture Git repository to its initial 3-commit state.
+ * Removes any commits or branches added during tests.
+ * IQS-941: Added to ensure test isolation between tests that modify the repo.
+ */
+function resetFixtureRepo(repoPath: string): void {
+  const logger = LoggerService.getInstance();
+  logger.debug(CLASS_NAME, 'resetFixtureRepo', `Resetting fixture repo at: ${repoPath}`);
+
+  try {
+    // Checkout main branch first (in case we're on a feature branch)
+    execSync('git checkout main', { cwd: repoPath, stdio: 'pipe' });
+
+    // Delete all local branches except main
+    const branches = execSync('git branch', { cwd: repoPath, encoding: 'utf-8' });
+    const branchLines = branches.split('\n').map((b) => b.trim().replace('* ', ''));
+    for (const branch of branchLines) {
+      if (branch && branch !== 'main' && branch !== '') {
+        execSync(`git branch -D "${branch}"`, { cwd: repoPath, stdio: 'pipe' });
+        logger.debug(CLASS_NAME, 'resetFixtureRepo', `Deleted branch: ${branch}`);
+      }
+    }
+
+    // Hard reset to the 3rd commit (initial state)
+    // First, get the SHA of the 3rd commit from the bottom (oldest)
+    const logOutput = execSync('git log --oneline --reverse', { cwd: repoPath, encoding: 'utf-8' });
+    const commits = logOutput.trim().split('\n');
+    if (commits.length >= 3) {
+      const thirdCommitSha = commits[2]?.split(' ')[0];
+      if (thirdCommitSha) {
+        execSync(`git reset --hard ${thirdCommitSha}`, { cwd: repoPath, stdio: 'pipe' });
+        logger.debug(CLASS_NAME, 'resetFixtureRepo', `Reset to commit: ${thirdCommitSha}`);
+      }
+    }
+
+    // Clean up any untracked files
+    execSync('git clean -fd', { cwd: repoPath, stdio: 'pipe' });
+
+    logger.debug(CLASS_NAME, 'resetFixtureRepo', 'Fixture repo reset complete');
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(CLASS_NAME, 'resetFixtureRepo', `Reset failed (may be expected on first test): ${message}`);
+  }
+}
+
+/**
  * Clean all test data from the database between tests.
  * Deletes in reverse FK order to avoid constraint violations.
  */
@@ -263,6 +308,9 @@ describe('E2E Pipeline Integration Tests', () => {
 
     // Clean database between tests
     await cleanDatabase(dbService);
+
+    // IQS-941: Reset fixture repo to initial 3-commit state for test isolation
+    resetFixtureRepo(fixtureRepoPath);
   });
 
   // ========================================================================
@@ -654,5 +702,205 @@ describe('E2E Pipeline Integration Tests', () => {
     // Verify commit_msg_words populated
     const wordsCount = await getRowCount(dbService, 'commit_msg_words');
     expect(wordsCount).toBeGreaterThan(0);
+  }, 60_000);
+
+  // ========================================================================
+  // Test: Incremental detection of NEW commits added after initial extraction
+  // Ticket: IQS-941
+  // ========================================================================
+
+  it('should detect and extract NEW commits added after initial extraction', async () => {
+    // Arrange: Extract initial commits
+    const sccService = new SccMetricsService();
+    const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo, sccService);
+    const logger = LoggerService.getInstance();
+
+    const repoEntry: RepositoryEntry = {
+      path: fixtureRepoPath,
+      name: 'e2e-test-repo',
+      organization: 'TestOrg',
+      trackerType: 'jira',
+    };
+
+    // First run: Extract initial 3 commits
+    const firstResult = await gitAnalysisService.analyzeRepositories([repoEntry]);
+    expect(firstResult.repoResults[0]?.commitsInserted).toBe(3);
+    logger.debug(CLASS_NAME, 'test', `First run: ${firstResult.repoResults[0]?.commitsInserted} commits inserted`);
+
+    const countAfterFirst = await getRowCount(dbService, 'commit_history');
+    expect(countAfterFirst).toBe(3);
+
+    // Add a NEW commit to the fixture repo BETWEEN pipeline runs
+    const commitEnvBase = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'testdev',
+      GIT_COMMITTER_NAME: 'testdev',
+      GIT_AUTHOR_EMAIL: 'testdev@example.com',
+      GIT_COMMITTER_EMAIL: 'testdev@example.com',
+      GIT_AUTHOR_DATE: '2024-06-04T10:00:00Z',
+      GIT_COMMITTER_DATE: '2024-06-04T10:00:00Z',
+    };
+
+    // Create a new file and commit it
+    writeFileSync(join(fixtureRepoPath, 'src', 'helper.ts'), 'export function helper() { return "help"; }\n');
+    execSync('git add -A', { cwd: fixtureRepoPath, stdio: 'pipe' });
+    execSync(
+      'git commit -m "feat: PROJ-303 add helper function for new feature"',
+      { cwd: fixtureRepoPath, stdio: 'pipe', env: commitEnvBase },
+    );
+    logger.debug(CLASS_NAME, 'test', 'Added new commit with PROJ-303');
+
+    // Act: Second run (incremental - should detect and extract the NEW commit)
+    const secondResult = await gitAnalysisService.analyzeRepositories([repoEntry]);
+    logger.debug(CLASS_NAME, 'test', `Second run: ${secondResult.repoResults[0]?.commitsInserted} commits inserted`);
+
+    // Assert: The new commit should be detected and inserted
+    expect(secondResult.repoResults[0]?.commitsInserted).toBe(1);
+    expect(secondResult.status).toBe('SUCCESS');
+
+    // Assert: Database now has 4 commits total
+    const countAfterSecond = await getRowCount(dbService, 'commit_history');
+    expect(countAfterSecond).toBe(4);
+
+    // Assert: The new commit message is in the database
+    const allCommits = await dbService.query<{ commit_message: string }>(
+      'SELECT commit_message FROM commit_history ORDER BY commit_date ASC',
+    );
+    expect(allCommits.rows).toHaveLength(4);
+    expect(allCommits.rows[3]?.commit_message).toContain('PROJ-303 add helper function');
+
+    // Assert: Commit branch relationship exists for the new commit
+    const branchRelCount = await getRowCount(dbService, 'commit_branch_relationship');
+    expect(branchRelCount).toBeGreaterThanOrEqual(4); // At least 4 commits on main
+
+    // Assert: Commit files populated for the new commit
+    const newCommit = await dbService.query<{ sha: string }>(
+      "SELECT sha FROM commit_history WHERE commit_message LIKE '%PROJ-303%'",
+    );
+    expect(newCommit.rows).toHaveLength(1);
+    const newSha = newCommit.rows[0]!.sha;
+
+    const filesForNewCommit = await dbService.query<{ filename: string }>(
+      'SELECT filename FROM commit_files WHERE sha = $1',
+      [newSha],
+    );
+    expect(filesForNewCommit.rows.length).toBeGreaterThanOrEqual(1);
+    expect(filesForNewCommit.rows.some((f) => f.filename.includes('helper.ts'))).toBe(true);
+  }, 90_000);
+
+  // ========================================================================
+  // Test: Detect new commits on newly created branches
+  // Ticket: IQS-941
+  // ========================================================================
+
+  it('should detect new commits on newly created branches', async () => {
+    // Arrange: Extract initial commits from main branch
+    const sccService = new SccMetricsService();
+    const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo, sccService);
+    const logger = LoggerService.getInstance();
+
+    const repoEntry: RepositoryEntry = {
+      path: fixtureRepoPath,
+      name: 'e2e-test-repo',
+      organization: 'TestOrg',
+      trackerType: 'jira',
+    };
+
+    // First run: Extract commits from main branch
+    const firstResult = await gitAnalysisService.analyzeRepositories([repoEntry]);
+    const initialCommits = firstResult.repoResults[0]?.commitsInserted ?? 0;
+    logger.debug(CLASS_NAME, 'test', `First run: ${initialCommits} commits inserted`);
+
+    const countAfterFirst = await getRowCount(dbService, 'commit_history');
+    const relCountAfterFirst = await getRowCount(dbService, 'commit_branch_relationship');
+
+    // Create a new branch and add a commit to it
+    const commitEnvBase = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'testdev',
+      GIT_COMMITTER_NAME: 'testdev',
+      GIT_AUTHOR_EMAIL: 'testdev@example.com',
+      GIT_COMMITTER_EMAIL: 'testdev@example.com',
+      GIT_AUTHOR_DATE: '2024-06-05T10:00:00Z',
+      GIT_COMMITTER_DATE: '2024-06-05T10:00:00Z',
+    };
+
+    // Create feature branch and add new commit
+    execSync('git checkout -b feature/new-feature', { cwd: fixtureRepoPath, stdio: 'pipe' });
+    writeFileSync(join(fixtureRepoPath, 'src', 'feature.ts'), 'export function feature() { return "feature"; }\n');
+    execSync('git add -A', { cwd: fixtureRepoPath, stdio: 'pipe' });
+    execSync(
+      'git commit -m "feat: PROJ-404 add new feature on feature branch"',
+      { cwd: fixtureRepoPath, stdio: 'pipe', env: commitEnvBase },
+    );
+    logger.debug(CLASS_NAME, 'test', 'Added new commit on feature/new-feature branch');
+
+    // Switch back to main for cleanup purposes
+    execSync('git checkout main', { cwd: fixtureRepoPath, stdio: 'pipe' });
+
+    // Act: Second run - should detect the new branch and new commit
+    const secondResult = await gitAnalysisService.analyzeRepositories([repoEntry]);
+    logger.debug(CLASS_NAME, 'test', `Second run: ${secondResult.repoResults[0]?.commitsInserted} new commits`);
+    logger.debug(CLASS_NAME, 'test', `Second run: ${secondResult.repoResults[0]?.branchRelationshipsRecorded} new relationships`);
+
+    // Assert: The new commit on the feature branch should be detected
+    expect(secondResult.repoResults[0]?.commitsInserted).toBeGreaterThanOrEqual(1);
+    expect(secondResult.status).toBe('SUCCESS');
+
+    // Assert: Database has more commits than before
+    const countAfterSecond = await getRowCount(dbService, 'commit_history');
+    expect(countAfterSecond).toBeGreaterThan(countAfterFirst);
+
+    // Assert: The new commit message is in the database
+    const featureCommit = await dbService.query<{ sha: string; commit_message: string }>(
+      "SELECT sha, commit_message FROM commit_history WHERE commit_message LIKE '%PROJ-404%'",
+    );
+    expect(featureCommit.rows).toHaveLength(1);
+    expect(featureCommit.rows[0]?.commit_message).toContain('add new feature on feature branch');
+
+    // Assert: Branch relationship recorded for the feature branch
+    const featureRelationships = await dbService.query<{ branch: string }>(
+      'SELECT branch FROM commit_branch_relationship WHERE sha = $1',
+      [featureCommit.rows[0]!.sha],
+    );
+    expect(featureRelationships.rows.length).toBeGreaterThanOrEqual(1);
+    expect(featureRelationships.rows.some((r) => r.branch === 'feature/new-feature')).toBe(true);
+
+    // Assert: More branch relationships than before
+    const relCountAfterSecond = await getRowCount(dbService, 'commit_branch_relationship');
+    expect(relCountAfterSecond).toBeGreaterThan(relCountAfterFirst);
+  }, 90_000);
+
+  // ========================================================================
+  // Test: Unchanged repository reports 0 new commits on re-run
+  // Ticket: IQS-941 (AC-2.3)
+  // ========================================================================
+
+  it('should report 0 new commits when repository is unchanged', async () => {
+    // Arrange: Extract all commits
+    const sccService = new SccMetricsService();
+    const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo, sccService);
+
+    const repoEntry: RepositoryEntry = {
+      path: fixtureRepoPath,
+      name: 'e2e-test-repo',
+      organization: 'TestOrg',
+      trackerType: 'jira',
+    };
+
+    // First run
+    const firstResult = await gitAnalysisService.analyzeRepositories([repoEntry]);
+    const firstCommits = firstResult.repoResults[0]?.commitsInserted ?? 0;
+    expect(firstCommits).toBeGreaterThan(0);
+
+    // Second run without any changes to the repo
+    const secondResult = await gitAnalysisService.analyzeRepositories([repoEntry]);
+    expect(secondResult.repoResults[0]?.commitsInserted).toBe(0);
+    expect(secondResult.repoResults[0]?.branchRelationshipsRecorded).toBe(0);
+
+    // Third run - still no changes
+    const thirdResult = await gitAnalysisService.analyzeRepositories([repoEntry]);
+    expect(thirdResult.repoResults[0]?.commitsInserted).toBe(0);
+    expect(thirdResult.repoResults[0]?.branchRelationshipsRecorded).toBe(0);
   }, 60_000);
 });

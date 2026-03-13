@@ -604,6 +604,19 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: help;
+  position: relative;
+}
+
+.issues-cell:hover {
+  color: var(--vscode-foreground, #ccc);
+  text-decoration: underline dotted;
+}
+
+.issues-cell:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+  color: var(--vscode-foreground, #ccc);
 }
 
 .commit-link {
@@ -744,6 +757,19 @@ body {
 .chart-tooltip .tier-badge.tier-poor {
   background: rgba(220, 38, 38, 0.2);
   color: #dc2626;
+}
+
+/* Issues list in tooltip (IQS-939) */
+.chart-tooltip .issues-list {
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style-type: disc;
+}
+
+.chart-tooltip .issues-list li {
+  margin: 4px 0;
+  line-height: 1.4;
+  color: var(--vscode-editorWidget-foreground, #cccccc);
 }
 
 /* ============================================================================

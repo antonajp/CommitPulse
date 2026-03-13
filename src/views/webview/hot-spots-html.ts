@@ -43,11 +43,42 @@ export interface HotSpotsHtmlConfig {
 export function generateHotSpotsHtml(config: HotSpotsHtmlConfig): string {
   const { nonce, d3Uri, styleUri, cspSource } = config;
 
+  // ============================================================================
+  // Content Security Policy (CSP) Documentation - IQS-947
+  // ============================================================================
+  // This webview uses a strict CSP to prevent security vulnerabilities:
+  //
+  // - default-src 'none': Block all resources by default (deny-by-default)
+  // - style-src ${cspSource} 'nonce-...': Allow styles from extension and nonce-protected inline
+  // - script-src 'nonce-...': Only allow scripts with the cryptographic nonce (no eval, no inline)
+  // - img-src ${cspSource} data:: Allow images from extension resources and data URIs (for SVG)
+  // - connect-src 'none': CRITICAL - The webview CANNOT make network requests.
+  //   All data flows through VS Code's postMessage API between webview and extension host.
+  //   This prevents XSS attacks from exfiltrating data to external servers.
+  // - form-action 'none': Prevent form submissions to external URLs
+  // - frame-ancestors 'none': Prevent embedding in external frames
+  // - base-uri 'none': Prevent base URL hijacking
+  //
+  // Data Flow Security Model:
+  // 1. Webview sends typed messages via vscode.postMessage()
+  // 2. Extension host receives, validates, and processes messages
+  // 3. Extension host queries database and sends response via panel.webview.postMessage()
+  // 4. Webview receives and renders data locally using D3.js
+  //
+  // This architecture ensures all data access is controlled by the extension host,
+  // and the webview cannot bypass security controls or access network resources directly.
+  // ============================================================================
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Content Security Policy - Strict webview security (IQS-947)
+    - connect-src 'none': Webview uses postMessage API only, no direct network access
+    - script-src with nonce: Only extension-controlled scripts can execute
+    See CSP documentation comments in hot-spots-html.ts for full security model explanation.
+  -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src ${cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src ${cspSource} data:; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none';">
   <link rel="stylesheet" href="${styleUri.toString()}">

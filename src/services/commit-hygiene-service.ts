@@ -252,6 +252,8 @@ export class CommitHygieneDataService {
       fullName: row.full_name,
       team: row.team,
       hasConventionalPrefix: row.has_conventional_prefix,
+      hasTicketPrefix: row.has_ticket_prefix ?? false,
+      ticketReference: row.ticket_reference ?? null,
       commitType: row.commit_type,
       hasScope: row.has_scope,
       scope: row.scope,

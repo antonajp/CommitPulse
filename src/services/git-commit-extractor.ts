@@ -32,6 +32,7 @@ import type {
   ExtractedCommit,
   ExtractedFileDiff,
 } from './git-analysis-types.js';
+import { buildCommitUrl } from '../utils/git-provider-detector.js';
 
 /**
  * Class name constant for structured logging context.
@@ -297,7 +298,10 @@ export function buildCommitHistoryRow(
   extracted: ExtractedCommit,
   repoContext: RepoContext,
 ): CommitHistoryRow {
-  const commitUrl = `${repoContext.repositoryUrl.replace('.git', '')}/commit/${extracted.sha}`;
+  // Use provider-aware URL building (IQS-938)
+  // Supports GitHub, Bitbucket, and GitLab URL formats
+  const urlResult = buildCommitUrl(repoContext.repositoryUrl, extracted.sha);
+  const commitUrl = urlResult.url ?? `${repoContext.repositoryUrl.replace('.git', '')}/commit/${extracted.sha}`;
 
   return {
     sha: extracted.sha,

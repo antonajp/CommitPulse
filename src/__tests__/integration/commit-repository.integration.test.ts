@@ -330,17 +330,20 @@ describe('CommitRepository & CommitJiraRepository Integration Tests', () => {
 
       await commitRepo.insertCommitBranchRelationship(sha1, 'main', 'user', new Date());
       await commitRepo.insertCommitBranchRelationship(sha1, 'develop', 'user', new Date());
-      // sha2 has no branch relationship
+      // sha2 has no branch relationship - IQS-941: with INNER JOIN, it will NOT be in results
+      // This is correct behavior: orphaned commits should be re-processed as new
 
       const rels = await commitRepo.getKnownCommitBranchRelationships('repo-x');
 
-      expect(rels.size).toBe(2); // sha1 and sha2
+      // IQS-941: Only sha1 has branch relationships, so map size is 1
+      expect(rels.size).toBe(1); // Only sha1 (sha2 has no relationships, excluded by INNER JOIN)
       const sha1Branches = rels.get(sha1);
       expect(sha1Branches).toContain('main');
       expect(sha1Branches).toContain('develop');
 
+      // IQS-941: sha2 is NOT in the map since it has no branch relationships
       const sha2Branches = rels.get(sha2);
-      expect(sha2Branches).toContain('N-O-B-R-A-N-C-H');
+      expect(sha2Branches).toBeUndefined(); // Orphaned commits excluded to allow re-processing
     });
 
     it('should get unlinked commits (no Jira link)', async () => {

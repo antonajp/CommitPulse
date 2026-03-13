@@ -7,9 +7,10 @@
  * - Click to open file in VS Code or view history
  * - CSP nonce-based script authorization
  * - D3.js v7 bundled with SHA-256 integrity verification
+ * - Rate limiting on message handlers (IQS-947)
  * - Proper disposal and resource cleanup
  *
- * Ticket: IQS-902
+ * Ticket: IQS-902, IQS-947
  */
 
 import * as vscode from 'vscode';
@@ -21,6 +22,7 @@ import { DatabaseService, buildConfigFromSettings } from '../../database/databas
 import { HotSpotsDataService } from '../../services/hot-spots-data-service.js';
 import { generateHotSpotsHtml } from './hot-spots-html.js';
 import { getSettings } from '../../config/settings.js';
+import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { HotSpotsWebviewToHost, HotSpotsHostToWebview } from './hot-spots-protocol.js';
 import type { RiskTier } from '../../services/hot-spots-data-types.js';
@@ -59,6 +61,7 @@ export class HotSpotsPanel implements vscode.Disposable {
   private readonly extensionUri: vscode.Uri;
   private readonly secretService: SecretStorageService;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly rateLimiter: MessageRateLimiter;
   private db: DatabaseService | undefined;
   private dataService: HotSpotsDataService | undefined;
 
@@ -149,6 +152,10 @@ export class HotSpotsPanel implements vscode.Disposable {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.secretService = secretService;
+    this.rateLimiter = new MessageRateLimiter({
+      minIntervalMs: DEFAULT_RATE_LIMIT_INTERVAL_MS,
+      className: CLASS_NAME,
+    });
 
     this.logger.debug(CLASS_NAME, 'constructor', 'Initializing HotSpotsPanel');
 
@@ -207,9 +214,21 @@ export class HotSpotsPanel implements vscode.Disposable {
 
   /**
    * Handle incoming messages from the webview.
+   * Rate limited to prevent excessive database queries (IQS-947, CWE-770).
    */
   private async handleMessage(message: HotSpotsWebviewToHost): Promise<void> {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
+
+    // Rate limiting check (IQS-947: 500ms minimum interval between requests)
+    const rateLimitCheck = this.rateLimiter.checkRateLimit(message.type);
+    if (!rateLimitCheck.allowed) {
+      this.logger.debug(
+        CLASS_NAME,
+        'handleMessage',
+        `Rate limited: ${message.type}, wait ${rateLimitCheck.waitMs}ms`,
+      );
+      return;
+    }
 
     try {
       switch (message.type) {
@@ -481,6 +500,9 @@ export class HotSpotsPanel implements vscode.Disposable {
     this.logger.info(CLASS_NAME, 'dispose', 'Disposing HotSpotsPanel');
 
     HotSpotsPanel.currentPanel = undefined;
+
+    // Reset rate limiter state
+    this.rateLimiter.reset();
 
     if (this.db) {
       this.logger.debug(CLASS_NAME, 'dispose', 'Shutting down hot spots database connection');

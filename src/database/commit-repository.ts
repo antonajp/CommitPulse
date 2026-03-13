@@ -99,9 +99,9 @@ const SQL_GET_KNOWN_SHAS_FOR_REPO = `
 `;
 
 const SQL_GET_KNOWN_COMMIT_BRANCH_RELATIONSHIPS = `
-  SELECT ch.sha AS sha, COALESCE(cbr.branch, 'N-O-B-R-A-N-C-H') AS branch
-  FROM commit_history ch
-  LEFT JOIN commit_branch_relationship cbr ON ch.sha = cbr.sha
+  SELECT cbr.sha AS sha, cbr.branch AS branch
+  FROM commit_branch_relationship cbr
+  INNER JOIN commit_history ch ON cbr.sha = ch.sha
   WHERE ch.repository = $1
 `;
 
@@ -520,7 +520,14 @@ export class CommitRepository {
   /**
    * Get known commit-to-branch relationships for a given repository.
    * Maps from Python PostgresDB.py get_known_commit_branch_relationships().
-   * Uses 'N-O-B-R-A-N-C-H' sentinel when no branch exists.
+   *
+   * Returns only commits that have actual branch relationships recorded.
+   * Commits without branch relationships (orphaned) are not included,
+   * allowing them to be re-processed as new commits on subsequent runs.
+   *
+   * Ticket: IQS-941 - Changed from LEFT JOIN to INNER JOIN to fix
+   * incremental commit detection bug where orphaned commits were
+   * incorrectly marked as "known" via a sentinel value.
    */
   async getKnownCommitBranchRelationships(repo: string): Promise<Map<string, string[]>> {
     this.logger.debug(CLASS_NAME, 'getKnownCommitBranchRelationships', `Querying for repo: ${repo}`);

@@ -49,11 +49,43 @@ export interface DashboardHtmlConfig {
 export function generateDashboardHtml(config: DashboardHtmlConfig): string {
   const { nonce, d3Uri, styleUri, cspSource } = config;
 
+  // ============================================================================
+  // Content Security Policy (CSP) Documentation - IQS-947
+  // ============================================================================
+  // This webview uses a strict CSP to prevent security vulnerabilities:
+  //
+  // - default-src 'none': Block all resources by default (deny-by-default)
+  // - style-src ${cspSource} 'nonce-...': Allow styles from extension and nonce-protected inline
+  // - script-src 'nonce-...': Only allow scripts with the cryptographic nonce (no eval, no inline)
+  // - font-src ${cspSource}: Allow fonts from extension resources only
+  // - img-src ${cspSource} data:: Allow images from extension resources and data URIs (for SVG/charts)
+  // - connect-src 'none': CRITICAL - The webview CANNOT make network requests.
+  //   All data flows through VS Code's postMessage API between webview and extension host.
+  //   This prevents XSS attacks from exfiltrating data to external servers.
+  // - form-action 'none': Prevent form submissions to external URLs
+  // - frame-ancestors 'none': Prevent embedding in external frames
+  // - base-uri 'none': Prevent base URL hijacking
+  //
+  // Data Flow Security Model:
+  // 1. Webview sends typed messages via vscode.postMessage()
+  // 2. Extension host receives, validates, and processes messages
+  // 3. Extension host queries database and sends response via panel.webview.postMessage()
+  // 4. Webview receives and renders data locally using D3.js
+  //
+  // This architecture ensures all data access is controlled by the extension host,
+  // and the webview cannot bypass security controls or access network resources directly.
+  // ============================================================================
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Content Security Policy - Strict webview security (IQS-947)
+    - connect-src 'none': Webview uses postMessage API only, no direct network access
+    - script-src with nonce: Only extension-controlled scripts can execute
+    See CSP documentation comments in dashboard-html.ts for full security model explanation.
+  -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
              style-src ${cspSource} 'nonce-${nonce}';
@@ -174,6 +206,10 @@ export function generateDashboardHtml(config: DashboardHtmlConfig): string {
               <tr>
                 <th class="sortable-header" data-sort-key="fullName" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
                   <span class="header-text">Contributor</span>
+                  <span class="sort-indicator" aria-hidden="true">⇅</span>
+                </th>
+                <th class="sortable-header" data-sort-key="profile" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                  <span class="header-text">Profile</span>
                   <span class="sort-indicator" aria-hidden="true">⇅</span>
                 </th>
                 <th class="sortable-header" data-sort-key="team" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
@@ -526,7 +562,91 @@ ${generateFileChurnStateScript()}
       }
 
       /**
-       * Render just the scorecard table body rows (IQS-892).
+       * Get profile icon for a given profile type (IQS-942).
+       * @param {string} profile - The contributor profile name
+       * @returns {string} Unicode emoji icon
+       */
+      function getProfileIcon(profile) {
+        if (!profile) { return ''; }
+        if (profile === 'Quality Guardian') { return '🛡️'; }
+        if (profile === 'Architect') { return '🏗️'; }
+        if (profile === 'Coordinator') { return '🚂'; }
+        if (profile === 'Documentation Champion') { return '📚'; }
+        if (profile === 'Emerging Talent') { return '🌱'; }
+        // All Pragmatic Engineer variations
+        return '🎯';
+      }
+
+      /**
+       * Get CSS class for profile badge styling (IQS-942).
+       * @param {string} profile - The contributor profile name
+       * @returns {string} CSS class name
+       */
+      function getProfileClass(profile) {
+        if (!profile) { return ''; }
+        if (profile === 'Quality Guardian') { return 'profile-quality'; }
+        if (profile === 'Architect') { return 'profile-architect'; }
+        if (profile === 'Coordinator') { return 'profile-coordinator'; }
+        if (profile === 'Documentation Champion') { return 'profile-documentation'; }
+        if (profile === 'Emerging Talent') { return 'profile-emerging'; }
+        return 'profile-pragmatic';
+      }
+
+      /**
+       * Get tooltip description for a profile (IQS-942).
+       * @param {string} profile - The contributor profile name
+       * @returns {string} Description text for tooltip
+       */
+      function getProfileDescription(profile) {
+        if (!profile) { return ''; }
+        switch (profile) {
+          case 'Pragmatic Engineer':
+            return 'Balanced across all metrics - solid all-around contributor';
+          case 'Pragmatic Engineer (leans quality)':
+            return 'Balanced with focus on quality practices (Test + Comments)';
+          case 'Pragmatic Engineer (leans delivery)':
+            return 'Balanced with focus on shipping features (Release Assist)';
+          case 'Pragmatic Engineer (leans architecture)':
+            return 'Balanced with focus on architectural concerns (Complexity)';
+          case 'Quality Guardian':
+            return 'High Test + Comments scores - focused on quality and maintainability';
+          case 'Architect':
+            return 'High Complexity score - tackles complex problems and manages technical debt';
+          case 'Coordinator':
+            return 'High Release Assist + Complexity - keeps the trains moving, strong in integration work';
+          case 'Documentation Champion':
+            return 'High Comments score - invests in code documentation and clarity';
+          case 'Emerging Talent':
+            return 'New or part-time contributor building their track record';
+          default:
+            return '';
+        }
+      }
+
+      /**
+       * Render profile badge HTML (IQS-942).
+       * @param {string} profile - The contributor profile name
+       * @returns {string} HTML for profile badge with tooltip
+       */
+      function renderProfileBadge(profile) {
+        if (!profile) {
+          return '<td class="profile-cell" aria-label="No profile assigned"><span class="profile-empty">—</span></td>';
+        }
+        var icon = getProfileIcon(profile);
+        var cssClass = getProfileClass(profile);
+        var description = getProfileDescription(profile);
+        var ariaLabel = escapeHtml(profile) + ' profile';
+
+        return '<td class="profile-cell" aria-label="' + ariaLabel + '" title="' + escapeHtml(description) + '">' +
+          '<span class="profile-badge ' + cssClass + '">' +
+          '<span class="profile-icon" aria-hidden="true">' + icon + '</span>' +
+          '<span class="profile-label">' + escapeHtml(profile) + '</span>' +
+          '</span>' +
+          '</td>';
+      }
+
+      /**
+       * Render just the scorecard table body rows (IQS-892, IQS-942).
        * Uses cached data with current sort applied.
        */
       function renderScorecardRows() {
@@ -536,6 +656,7 @@ ${generateFileChurnStateScript()}
           var totalScore = calculateTotalScore(row);
           return '<tr>' +
             '<td>' + escapeHtml(row.fullName || 'Unknown') + '</td>' +
+            renderProfileBadge(row.profile) +
             '<td>' + escapeHtml(row.team || 'Unassigned') + '</td>' +
             '<td class="score-cell">' + Number(row.releaseAssistScore || 0).toFixed(2) + '</td>' +
             '<td class="score-cell">' + Number(row.testScore || 0).toFixed(2) + '</td>' +
@@ -763,11 +884,12 @@ ${generateFileChurnHelperFunctions()}
       });
 
       document.getElementById('exportScorecard').addEventListener('click', function() {
-        // IQS-892: Export with all 7 columns and current sort order
+        // IQS-892, IQS-942: Export with all 8 columns (including Profile) and current sort order
         if (!cachedScorecardData || cachedScorecardData.length === 0) { return; }
         var sortedData = sortScorecardData(cachedScorecardData);
         var headers = [
           'Contributor',
+          'Profile',
           'Team',
           'Release Assist (10%)',
           'Test (35%)',
@@ -779,6 +901,7 @@ ${generateFileChurnHelperFunctions()}
           var totalScore = calculateTotalScore(row);
           return [
             row.fullName || 'Unknown',
+            row.profile || '',
             row.team || 'Unassigned',
             Number(row.releaseAssistScore || 0).toFixed(2),
             Number(row.testScore || 0).toFixed(2),

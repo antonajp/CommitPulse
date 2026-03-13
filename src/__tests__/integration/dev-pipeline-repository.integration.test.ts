@@ -51,6 +51,7 @@ async function createSchema(dbService: DatabaseService): Promise<void> {
     '002_create_views.sql',
     '004_add_linear_support.sql',
     '010_dev_pipeline_baseline.sql',
+    '026_fix_delta_calculation.sql',
   ];
 
   for (const migration of migrations) {
@@ -84,17 +85,19 @@ async function insertTestData(dbService: DatabaseService): Promise<void> {
   `);
 
   // Insert commit_files with metrics (using correct column names from schema)
+  // Note: line_diff = line_inserts + line_deletes (total lines changed)
+  // After IQS-945 fix, deltas use line_diff/complexity_change instead of baseline calculation
   await dbService.query(`
-    INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
+    INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, line_diff, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
     VALUES
-      ('sha001', 'src/feature1.ts', 80, 0, 10, 80, 5, FALSE, 10, 80, 5),
-      ('sha001', 'src/__tests__/feature1.test.ts', 20, 0, 2, 20, 2, TRUE, 2, 20, 2),
-      ('sha001', 'src/utils.ts', 10, 5, 3, 50, 3, FALSE, 1, 5, 0),
-      ('sha002', 'src/feature2.ts', 150, 0, 20, 150, 10, FALSE, 20, 150, 10),
-      ('sha002', 'src/config.ts', 30, 10, 5, 100, 8, FALSE, 2, 20, 3),
-      ('sha002', 'src/__tests__/feature2.test.ts', 40, 0, 3, 40, 5, TRUE, 3, 40, 5),
-      ('sha003', 'src/bugfix.ts', 30, 15, 5, 80, 4, FALSE, -2, 15, 1),
-      ('sha003', 'src/__tests__/bugfix.test.ts', 15, 0, 1, 15, 1, TRUE, 1, 15, 1)
+      ('sha001', 'src/feature1.ts', 80, 0, 80, 10, 80, 5, FALSE, 10, 80, 5),
+      ('sha001', 'src/__tests__/feature1.test.ts', 20, 0, 20, 2, 20, 2, TRUE, 2, 20, 2),
+      ('sha001', 'src/utils.ts', 10, 5, 15, 3, 50, 3, FALSE, 1, 5, 0),
+      ('sha002', 'src/feature2.ts', 150, 0, 150, 20, 150, 10, FALSE, 20, 150, 10),
+      ('sha002', 'src/config.ts', 30, 10, 40, 5, 100, 8, FALSE, 2, 20, 3),
+      ('sha002', 'src/__tests__/feature2.test.ts', 40, 0, 40, 3, 40, 5, TRUE, 3, 40, 5),
+      ('sha003', 'src/bugfix.ts', 30, 15, 45, 5, 80, 4, FALSE, -2, 15, 1),
+      ('sha003', 'src/__tests__/bugfix.test.ts', 15, 0, 15, 1, 15, 1, TRUE, 1, 15, 1)
     ON CONFLICT (sha, filename) DO NOTHING
   `);
 
@@ -196,12 +199,11 @@ describe('DevPipelineDataService Integration Tests', () => {
       // Find sha001 and verify aggregated deltas
       const commit1 = result.find(r => r.sha === 'sha001');
       expect(commit1).toBeDefined();
-      // complexity_delta is calculated as SUM(cf.complexity - baseline_complexity)
-      // Since no baseline exists, it equals SUM(cf.complexity) = 10 + 2 + 3 = 15
-      expect(commit1?.complexityDelta).toBe(15);
-      // loc_delta = SUM(total_code_lines - baseline_code_lines) = 80 + 20 + 50 = 150
-      expect(commit1?.locDelta).toBe(150);
-      // tests_delta = SUM of total_code_lines for test files = 20
+      // IQS-945 fix: complexity_delta uses SUM(cf.complexity_change) = 10 + 2 + 1 = 13
+      expect(commit1?.complexityDelta).toBe(13);
+      // IQS-945 fix: loc_delta uses SUM(cf.line_diff) = 80 + 20 + 15 = 115
+      expect(commit1?.locDelta).toBe(115);
+      // IQS-945 fix: tests_delta uses SUM(line_diff) for test files = 20
       expect(commit1?.testsDelta).toBe(20);
       // file_count: 3
       expect(commit1?.fileCount).toBe(3);
@@ -298,8 +300,8 @@ describe('DevPipelineDataService Integration Tests', () => {
         VALUES ('sha_old', 'https://github.com/org/repo/commit/sha_old', 'main', 'test-repo', 'https://github.com/org/test-repo.git', 'user1', NOW() - INTERVAL '30 days', 'old commit', 1, 10, 0, FALSE, FALSE, 'TestOrg')
       `);
       await service.query(`
-        INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
-        VALUES ('sha_old', 'src/old.ts', 10, 0, 1, 10, 1, FALSE, 1, 10, 1)
+        INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, line_diff, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
+        VALUES ('sha_old', 'src/old.ts', 10, 0, 10, 1, 10, 1, FALSE, 1, 10, 1)
       `);
 
       // Insert a commit from 2 weeks ago (should be included with default filter)
@@ -308,8 +310,8 @@ describe('DevPipelineDataService Integration Tests', () => {
         VALUES ('sha_recent', 'https://github.com/org/repo/commit/sha_recent', 'main', 'test-repo', 'https://github.com/org/test-repo.git', 'user1', NOW() - INTERVAL '14 days', 'recent commit', 1, 10, 0, FALSE, FALSE, 'TestOrg')
       `);
       await service.query(`
-        INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
-        VALUES ('sha_recent', 'src/recent.ts', 10, 0, 1, 10, 1, FALSE, 1, 10, 1)
+        INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, line_diff, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
+        VALUES ('sha_recent', 'src/recent.ts', 10, 0, 10, 1, 10, 1, FALSE, 1, 10, 1)
       `);
 
       const result = await devPipelineService.getDevPipelineMetrics();
@@ -339,10 +341,10 @@ describe('DevPipelineDataService Integration Tests', () => {
       const ticket100 = result.find(r => r.ticketId === 'IQS-100');
       expect(ticket100).toBeDefined();
       expect(ticket100?.commitCount).toBe(2);
-      // Total complexity delta = sha001(15) + sha002(28) = 43 (since no baseline)
-      expect(ticket100?.totalComplexityDelta).toBe(43);
-      // Total LOC delta = sha001(150) + sha002(290) = 440 (since no baseline)
-      expect(ticket100?.totalLocDelta).toBe(440);
+      // IQS-945 fix: Total complexity delta = sha001(10+2+1=13) + sha002(20+2+3=25) = 38
+      expect(ticket100?.totalComplexityDelta).toBe(38);
+      // IQS-945 fix: Total LOC delta = sha001(80+20+15=115) + sha002(150+40+40=230) = 345
+      expect(ticket100?.totalLocDelta).toBe(345);
 
       // Find IQS-101 (has 1 commit)
       const ticket101 = result.find(r => r.ticketId === 'IQS-101');
@@ -410,6 +412,90 @@ describe('DevPipelineDataService Integration Tests', () => {
     });
   });
 
+  describe('IQS-945 delta calculation fix', () => {
+    it('should use line_diff for LOC delta instead of total_code_lines minus missing baseline', async () => {
+      // This is a regression test for IQS-945
+      // The bug was: loc_delta = total_code_lines - COALESCE(baseline, 0) = total_code_lines
+      // The fix is: loc_delta = line_diff (from git diff stats)
+
+      // Insert a commit where total_code_lines (1000) is very different from line_diff (5)
+      await service.query(`
+        INSERT INTO commit_history (sha, url, branch, repository, repository_url, author, commit_date, commit_message, file_count, lines_added, lines_removed, is_merge, is_jira_ref, organization)
+        VALUES ('sha_delta_test', 'https://github.com/org/repo/commit/sha_delta_test', 'main', 'test-repo', 'https://github.com/org/test-repo.git', 'user1', '2024-06-20 12:00:00', 'Small change to large file', 1, 3, 2, FALSE, FALSE, 'TestOrg')
+      `);
+
+      // Large file (1000 lines) with small change (5 lines diff)
+      await service.query(`
+        INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, line_diff, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
+        VALUES ('sha_delta_test', 'src/large-file.ts', 3, 2, 5, 50, 1000, 100, FALSE, 1, 1, 0)
+      `);
+
+      const result = await devPipelineService.getDevPipelineMetrics({
+        startDate: '2024-06-01',
+        endDate: '2024-06-30',
+      });
+
+      const commit = result.find(r => r.sha === 'sha_delta_test');
+      expect(commit).toBeDefined();
+
+      // LOC delta should be 5 (from line_diff), NOT 1000 (total_code_lines)
+      expect(commit?.locDelta).toBe(5);
+
+      // Complexity delta should be 1 (from complexity_change), NOT 50 (total complexity)
+      expect(commit?.complexityDelta).toBe(1);
+    });
+
+    it('should handle NULL line_diff gracefully with COALESCE', async () => {
+      // Edge case: line_diff might be NULL for some older records
+      await service.query(`
+        INSERT INTO commit_history (sha, url, branch, repository, repository_url, author, commit_date, commit_message, file_count, lines_added, lines_removed, is_merge, is_jira_ref, organization)
+        VALUES ('sha_null_diff', 'https://github.com/org/repo/commit/sha_null_diff', 'main', 'test-repo', 'https://github.com/org/test-repo.git', 'user1', '2024-06-21 12:00:00', 'Record with NULL diff', 1, 0, 0, FALSE, FALSE, 'TestOrg')
+      `);
+
+      // Insert with NULL line_diff and NULL complexity_change
+      await service.query(`
+        INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, line_diff, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
+        VALUES ('sha_null_diff', 'src/null-diff.ts', 10, 5, NULL, 5, 100, 10, FALSE, NULL, NULL, NULL)
+      `);
+
+      const result = await devPipelineService.getDevPipelineMetrics({
+        startDate: '2024-06-01',
+        endDate: '2024-06-30',
+      });
+
+      const commit = result.find(r => r.sha === 'sha_null_diff');
+      expect(commit).toBeDefined();
+
+      // COALESCE should return 0 for NULL values
+      expect(commit?.locDelta).toBe(0);
+      expect(commit?.complexityDelta).toBe(0);
+    });
+
+    it('should use line_diff for test file delta instead of total_code_lines', async () => {
+      await service.query(`
+        INSERT INTO commit_history (sha, url, branch, repository, repository_url, author, commit_date, commit_message, file_count, lines_added, lines_removed, is_merge, is_jira_ref, organization)
+        VALUES ('sha_test_delta', 'https://github.com/org/repo/commit/sha_test_delta', 'main', 'test-repo', 'https://github.com/org/test-repo.git', 'user1', '2024-06-22 12:00:00', 'Small test change', 1, 2, 1, FALSE, FALSE, 'TestOrg')
+      `);
+
+      // Large test file (500 lines) with small change (3 lines diff)
+      await service.query(`
+        INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, line_diff, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
+        VALUES ('sha_test_delta', 'src/__tests__/large.test.ts', 2, 1, 3, 10, 500, 50, TRUE, 0, 1, 0)
+      `);
+
+      const result = await devPipelineService.getDevPipelineMetrics({
+        startDate: '2024-06-01',
+        endDate: '2024-06-30',
+      });
+
+      const commit = result.find(r => r.sha === 'sha_test_delta');
+      expect(commit).toBeDefined();
+
+      // tests_delta should be 3 (from line_diff), NOT 500 (total_code_lines)
+      expect(commit?.testsDelta).toBe(3);
+    });
+  });
+
   describe('performance', () => {
     it('should handle 500+ commits efficiently', async () => {
       // Insert 500 commits
@@ -425,8 +511,8 @@ describe('DevPipelineDataService Integration Tests', () => {
         `, [sha, `https://github.com/org/repo/commit/${sha}`, dateStr]);
 
         await service.query(`
-          INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
-          VALUES ($1, 'src/file.ts', 10, 0, 5, 100, 10, FALSE, 1, 10, 1)
+          INSERT INTO commit_files (sha, filename, line_inserts, line_deletes, line_diff, complexity, total_code_lines, total_comment_lines, is_test_file, complexity_change, code_change, comments_change)
+          VALUES ($1, 'src/file.ts', 10, 0, 10, 5, 100, 10, FALSE, 1, 10, 1)
         `, [sha]);
       }
 

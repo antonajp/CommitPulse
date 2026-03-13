@@ -89,13 +89,14 @@ describe('generateDashboardHtml', () => {
     expect(html).not.toContain('<canvas id="complexityChart"');
   });
 
-  it('should include scorecard table structure with sortable columns (IQS-892)', () => {
+  it('should include scorecard table structure with sortable columns (IQS-892, IQS-942)', () => {
     const html = generateDashboardHtml(config);
 
     expect(html).toContain('id="scorecardBody"');
-    // IQS-892: Sortable headers with 7 columns
+    // IQS-892, IQS-942: Sortable headers with 8 columns (added Profile)
     expect(html).toContain('class="sortable-header"');
     expect(html).toContain('data-sort-key="fullName"');
+    expect(html).toContain('data-sort-key="profile"');
     expect(html).toContain('data-sort-key="team"');
     expect(html).toContain('data-sort-key="releaseAssistScore"');
     expect(html).toContain('data-sort-key="testScore"');
@@ -104,6 +105,7 @@ describe('generateDashboardHtml', () => {
     expect(html).toContain('data-sort-key="totalScore"');
     // Column headers with weight percentages
     expect(html).toContain('Contributor</span>');
+    expect(html).toContain('Profile</span>');
     expect(html).toContain('Team</span>');
     expect(html).toContain('Release Assist (10%)</span>');
     expect(html).toContain('Test (35%)</span>');
@@ -403,14 +405,76 @@ describe('generateDashboardHtml', () => {
     expect(html).toContain("e.key === ' '");
   });
 
-  it('should export scorecard with all 7 columns', () => {
+  it('should export scorecard with all 8 columns (IQS-942)', () => {
     const html = generateDashboardHtml(config);
 
-    // CSV export with weighted column headers
+    // CSV export with weighted column headers including Profile
+    expect(html).toContain("'Contributor'");
+    expect(html).toContain("'Profile'");
+    expect(html).toContain("'Team'");
     expect(html).toContain("'Release Assist (10%)'");
     expect(html).toContain("'Test (35%)'");
     expect(html).toContain("'Complexity (45%)'");
     expect(html).toContain("'Comments (10%)'");
     expect(html).toContain("'Total Score'");
+  });
+
+  // ===========================================================================
+  // IQS-942: Profile Badges
+  // ===========================================================================
+  it('should include profile badge rendering functions', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('function getProfileIcon(');
+    expect(html).toContain('function getProfileClass(');
+    expect(html).toContain('function getProfileDescription(');
+    expect(html).toContain('function renderProfileBadge(');
+  });
+
+  it('should include profile badge HTML in scorecard rows', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('renderProfileBadge(row.profile)');
+  });
+
+  it('should include profile icons for all profile types', () => {
+    const html = generateDashboardHtml(config);
+
+    // Check for emoji icons in getProfileIcon function
+    expect(html).toContain('🎯'); // Pragmatic Engineer
+    expect(html).toContain('🛡️'); // Quality Guardian
+    expect(html).toContain('🏗️'); // Architect
+    expect(html).toContain('🚂'); // Coordinator
+    expect(html).toContain('📚'); // Documentation Champion
+    expect(html).toContain('🌱'); // Emerging Talent
+  });
+
+  it('should include profile descriptions for tooltips', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('Balanced across all metrics');
+    expect(html).toContain('High Test + Comments scores');
+    expect(html).toContain('tackles complex problems');
+    expect(html).toContain('keeps the trains moving');
+    expect(html).toContain('code documentation and clarity');
+    expect(html).toContain('building their track record');
+  });
+
+  it('should include profile CSS classes', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('profile-pragmatic');
+    expect(html).toContain('profile-quality');
+    expect(html).toContain('profile-architect');
+    expect(html).toContain('profile-coordinator');
+    expect(html).toContain('profile-documentation');
+    expect(html).toContain('profile-emerging');
+  });
+
+  it('should include ARIA labels on profile badges', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('aria-label=');
+    expect(html).toContain('profile');
   });
 });

@@ -5,9 +5,10 @@
  * - Message routing between webview and extension host
  * - D3.js v7 bundled as a local resource with SHA-256 integrity verification
  * - CSP nonce-based script authorization
+ * - Rate limiting on message handlers (IQS-947)
  * - Proper disposal and resource cleanup
  *
- * Ticket: IQS-888
+ * Ticket: IQS-888, IQS-947
  */
 
 import * as vscode from 'vscode';
@@ -18,6 +19,7 @@ import { DatabaseService, buildConfigFromSettings } from '../../database/databas
 import { VelocityDataService } from '../../services/velocity-data-service.js';
 import { generateVelocityChartHtml } from './velocity-chart-html.js';
 import { getSettings } from '../../config/settings.js';
+import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { VelocityWebviewToHost, VelocityHostToWebview } from './velocity-chart-protocol.js';
 
@@ -53,6 +55,7 @@ export class VelocityChartPanel implements vscode.Disposable {
   private readonly extensionUri: vscode.Uri;
   private readonly secretService: SecretStorageService;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly rateLimiter: MessageRateLimiter;
   private db: DatabaseService | undefined;
   private dataService: VelocityDataService | undefined;
 
@@ -143,6 +146,10 @@ export class VelocityChartPanel implements vscode.Disposable {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.secretService = secretService;
+    this.rateLimiter = new MessageRateLimiter({
+      minIntervalMs: DEFAULT_RATE_LIMIT_INTERVAL_MS,
+      className: CLASS_NAME,
+    });
 
     this.logger.debug(CLASS_NAME, 'constructor', 'Initializing VelocityChartPanel');
 
@@ -201,9 +208,21 @@ export class VelocityChartPanel implements vscode.Disposable {
 
   /**
    * Handle incoming messages from the webview.
+   * Rate limited to prevent excessive database queries (IQS-947, CWE-770).
    */
   private async handleMessage(message: VelocityWebviewToHost): Promise<void> {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
+
+    // Rate limiting check (IQS-947: 500ms minimum interval between requests)
+    const rateLimitCheck = this.rateLimiter.checkRateLimit(message.type);
+    if (!rateLimitCheck.allowed) {
+      this.logger.debug(
+        CLASS_NAME,
+        'handleMessage',
+        `Rate limited: ${message.type}, wait ${rateLimitCheck.waitMs}ms`,
+      );
+      return;
+    }
 
     try {
       await this.ensureDbConnection();
@@ -318,6 +337,9 @@ export class VelocityChartPanel implements vscode.Disposable {
     this.logger.info(CLASS_NAME, 'dispose', 'Disposing VelocityChartPanel');
 
     VelocityChartPanel.currentPanel = undefined;
+
+    // Reset rate limiter state
+    this.rateLimiter.reset();
 
     if (this.db) {
       this.logger.debug(CLASS_NAME, 'dispose', 'Shutting down velocity chart database connection');

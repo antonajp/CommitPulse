@@ -23,9 +23,9 @@ export interface MigrationFile {
 /**
  * Regex pattern that matches migration SQL files.
  * Expects format: NNN_description.sql (e.g., 001_create_tables.sql).
- * Excludes rollback files (*.rollback.sql).
+ * Excludes rollback files (*.rollback.sql) and test files (*.test.sql).
  */
-const MIGRATION_FILE_PATTERN = /^(\d{3})_.+\.sql$/;
+const MIGRATION_FILE_PATTERN = /^(\d{3})_(?!.*\.(rollback|test)\.sql$).+\.sql$/;
 
 /**
  * Regex pattern that matches rollback SQL files.

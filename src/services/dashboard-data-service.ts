@@ -20,6 +20,7 @@
 import { DatabaseService } from '../database/database-service.js';
 import { LoggerService } from '../logging/logger.js';
 import { isValidDateString } from '../utils/date-validation.js';
+import { classifyProfile } from './contributor-profile-classifier.js';
 import type {
   CommitVelocityPoint,
   VelocityGranularity,
@@ -30,6 +31,7 @@ import type {
   DashboardFilters,
   FilterOptions,
 } from './dashboard-data-types.js';
+import type { ContributorMetrics, TeamPercentiles } from './contributor-profile-classifier.js';
 
 /**
  * Class name constant for structured logging context.
@@ -507,6 +509,197 @@ export class DashboardDataService {
       complexityChange: row.complexity_change,
       category: row.category,
     }));
+  }
+
+  /**
+   * Fetch detailed scorecard breakdown with profile badges.
+   * Computes team percentiles for each team and classifies each contributor.
+   *
+   * Ticket: IQS-942
+   *
+   * @param filters - Optional team filter
+   * @returns Array of ScorecardDetailRow with profile and commitCount populated
+   */
+  async getScorecardDetailWithProfiles(filters: DashboardFilters = {}): Promise<ScorecardDetailRow[]> {
+    // IQS-890: Validate filter inputs (CWE-20 fix)
+    this.validateFilters(filters, 'getScorecardDetailWithProfiles');
+
+    this.logger.debug(CLASS_NAME, 'getScorecardDetailWithProfiles', `Fetching scorecard with profiles: filters=${JSON.stringify(filters)}`);
+
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (filters.team) {
+      conditions.push(`vsd.team = $${paramIndex}`);
+      params.push(filters.team);
+      paramIndex++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Step 1: Fetch contributor scorecard detail with commit counts
+    const contributorSql = `
+      SELECT
+        vsd.full_name,
+        vsd.team,
+        vsd.vendor,
+        vsd.release_assist_score,
+        vsd.test_score,
+        vsd.complexity_score,
+        vsd.comments_score,
+        vsd.code_score,
+        (
+          SELECT COUNT(DISTINCT ch.sha)::INTEGER
+          FROM commit_history ch
+          INNER JOIN commit_contributors cc ON ch.author = cc.login
+          WHERE cc.full_name = vsd.full_name
+        ) AS commit_count
+      FROM vw_scorecard_detail vsd
+      ${whereClause}
+      ORDER BY (vsd.release_assist_score * 0.1 + vsd.test_score * 0.35 +
+                vsd.complexity_score * 0.45 + vsd.comments_score * 0.1) DESC
+    `;
+
+    this.logger.trace(CLASS_NAME, 'getScorecardDetailWithProfiles', `Contributor SQL: ${contributorSql.trim()}`);
+    this.logger.trace(CLASS_NAME, 'getScorecardDetailWithProfiles', `Params: ${JSON.stringify(params)}`);
+
+    const contributorResult = await this.db.query<{
+      full_name: string;
+      team: string;
+      vendor: string;
+      release_assist_score: string;
+      test_score: string;
+      complexity_score: string;
+      comments_score: string;
+      code_score: string;
+      commit_count: number;
+    }>(contributorSql, params);
+
+    this.logger.debug(CLASS_NAME, 'getScorecardDetailWithProfiles', `Fetched ${contributorResult.rowCount} contributors`);
+
+    if (contributorResult.rowCount === 0) {
+      this.logger.debug(CLASS_NAME, 'getScorecardDetailWithProfiles', 'No contributors found');
+      return [];
+    }
+
+    // Step 2: Fetch team percentiles for classification
+    const percentilesSql = `
+      WITH team_scores AS (
+        SELECT
+          vsd.team,
+          vsd.full_name,
+          vsd.release_assist_score,
+          vsd.test_score,
+          vsd.complexity_score,
+          vsd.comments_score
+        FROM vw_scorecard_detail vsd
+        ${whereClause}
+      )
+      SELECT
+        team,
+        PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY release_assist_score)::NUMERIC(12,2) AS release_assist_median,
+        PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY test_score)::NUMERIC(12,2) AS test_median,
+        PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY complexity_score)::NUMERIC(12,2) AS complexity_median,
+        PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY comments_score)::NUMERIC(12,2) AS comments_median,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY release_assist_score)::NUMERIC(12,2) AS release_assist_p75,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY complexity_score)::NUMERIC(12,2) AS complexity_p75,
+        COUNT(DISTINCT full_name)::INTEGER AS contributor_count
+      FROM team_scores
+      GROUP BY team
+    `;
+
+    this.logger.trace(CLASS_NAME, 'getScorecardDetailWithProfiles', `Percentiles SQL: ${percentilesSql.trim()}`);
+
+    const percentilesResult = await this.db.query<{
+      team: string;
+      release_assist_median: string;
+      test_median: string;
+      complexity_median: string;
+      comments_median: string;
+      release_assist_p75: string;
+      complexity_p75: string;
+      contributor_count: number;
+    }>(percentilesSql, params);
+
+    this.logger.debug(CLASS_NAME, 'getScorecardDetailWithProfiles', `Fetched percentiles for ${percentilesResult.rowCount} teams`);
+
+    // Build team percentiles map
+    const teamPercentilesMap = new Map<string, TeamPercentiles>();
+    for (const row of percentilesResult.rows) {
+      teamPercentilesMap.set(row.team, {
+        team: row.team,
+        releaseAssistMedian: parseFloat(row.release_assist_median),
+        testMedian: parseFloat(row.test_median),
+        complexityMedian: parseFloat(row.complexity_median),
+        commentsMedian: parseFloat(row.comments_median),
+        releaseAssistP75: parseFloat(row.release_assist_p75),
+        complexityP75: parseFloat(row.complexity_p75),
+        contributorCount: row.contributor_count,
+      });
+    }
+
+    // Step 3: Classify each contributor and build result rows
+    const results: ScorecardDetailRow[] = [];
+
+    for (const row of contributorResult.rows) {
+      const teamStats = teamPercentilesMap.get(row.team);
+
+      if (!teamStats) {
+        this.logger.warn(
+          CLASS_NAME,
+          'getScorecardDetailWithProfiles',
+          `No team percentiles found for team=${row.team}, contributor=${row.full_name}`
+        );
+        // Return row without profile
+        results.push({
+          fullName: row.full_name,
+          team: row.team,
+          vendor: row.vendor,
+          releaseAssistScore: parseFloat(row.release_assist_score),
+          testScore: parseFloat(row.test_score),
+          complexityScore: parseFloat(row.complexity_score),
+          commentsScore: parseFloat(row.comments_score),
+          codeScore: parseFloat(row.code_score),
+          commitCount: row.commit_count,
+        });
+        continue;
+      }
+
+      const contributorMetrics: ContributorMetrics = {
+        fullName: row.full_name,
+        team: row.team,
+        releaseAssistScore: parseFloat(row.release_assist_score),
+        testScore: parseFloat(row.test_score),
+        complexityScore: parseFloat(row.complexity_score),
+        commentsScore: parseFloat(row.comments_score),
+        commitCount: row.commit_count,
+      };
+
+      const profile = classifyProfile(contributorMetrics, teamStats);
+
+      this.logger.trace(
+        CLASS_NAME,
+        'getScorecardDetailWithProfiles',
+        `Classified ${row.full_name} as ${profile}`
+      );
+
+      results.push({
+        fullName: row.full_name,
+        team: row.team,
+        vendor: row.vendor,
+        releaseAssistScore: parseFloat(row.release_assist_score),
+        testScore: parseFloat(row.test_score),
+        complexityScore: parseFloat(row.complexity_score),
+        commentsScore: parseFloat(row.comments_score),
+        codeScore: parseFloat(row.code_score),
+        profile,
+        commitCount: row.commit_count,
+      });
+    }
+
+    this.logger.debug(CLASS_NAME, 'getScorecardDetailWithProfiles', `Returning ${results.length} rows with profiles`);
+    return results;
   }
 
   // ==========================================================================

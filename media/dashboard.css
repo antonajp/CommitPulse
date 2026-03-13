@@ -291,6 +291,134 @@ body {
 }
 
 /* ============================================================================
+   Profile Badges (IQS-942)
+   ============================================================================ */
+
+.profile-cell {
+  width: 160px;
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+}
+
+.profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.15s, transform 0.15s;
+  cursor: help;
+}
+
+.profile-badge:hover {
+  transform: scale(1.02);
+}
+
+.profile-badge:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
+.profile-icon {
+  font-size: 1.1em;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.profile-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Profile Badge Color Variants (using VS Code theme-aware colors) */
+
+.profile-pragmatic {
+  background-color: var(--vscode-charts-blue, rgba(75, 166, 223, 0.2));
+  color: var(--vscode-charts-blue, #4ba6df);
+  border: 1px solid var(--vscode-charts-blue, rgba(75, 166, 223, 0.4));
+}
+
+.profile-quality {
+  background-color: var(--vscode-charts-green, rgba(137, 221, 116, 0.2));
+  color: var(--vscode-charts-green, #89dd74);
+  border: 1px solid var(--vscode-charts-green, rgba(137, 221, 116, 0.4));
+}
+
+.profile-architect {
+  background-color: var(--vscode-charts-purple, rgba(186, 137, 221, 0.2));
+  color: var(--vscode-charts-purple, #ba89dd);
+  border: 1px solid var(--vscode-charts-purple, rgba(186, 137, 221, 0.4));
+}
+
+.profile-coordinator {
+  background-color: var(--vscode-charts-orange, rgba(242, 161, 87, 0.2));
+  color: var(--vscode-charts-orange, #f2a157);
+  border: 1px solid var(--vscode-charts-orange, rgba(242, 161, 87, 0.4));
+}
+
+.profile-documentation {
+  background-color: var(--vscode-charts-yellow, rgba(231, 197, 71, 0.2));
+  color: var(--vscode-charts-yellow, #e7c547);
+  border: 1px solid var(--vscode-charts-yellow, rgba(231, 197, 71, 0.4));
+}
+
+.profile-emerging {
+  background-color: var(--vscode-charts-foreground, rgba(204, 204, 204, 0.15));
+  color: var(--vscode-descriptionForeground, #888888);
+  border: 1px solid var(--vscode-panel-border, #444444);
+}
+
+.profile-empty {
+  color: var(--vscode-descriptionForeground, #888888);
+  font-style: italic;
+}
+
+/* Loading skeleton for profile cells */
+.profile-cell.loading {
+  background: linear-gradient(90deg, var(--vscode-editor-background) 25%, var(--vscode-panel-border) 50%, var(--vscode-editor-background) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 6px;
+  height: 24px;
+}
+
+/* Accessibility: Ensure sufficient contrast (WCAG AA 4.5:1) */
+@media (prefers-color-scheme: light) {
+  .profile-pragmatic {
+    background-color: rgba(75, 166, 223, 0.25);
+    color: #0066a8;
+  }
+
+  .profile-quality {
+    background-color: rgba(137, 221, 116, 0.25);
+    color: #2d7a1f;
+  }
+
+  .profile-architect {
+    background-color: rgba(186, 137, 221, 0.25);
+    color: #7042a8;
+  }
+
+  .profile-coordinator {
+    background-color: rgba(242, 161, 87, 0.25);
+    color: #b35f0f;
+  }
+
+  .profile-documentation {
+    background-color: rgba(231, 197, 71, 0.25);
+    /* IQS-942: Darkened from #9a7300 to #8a6700 for WCAG AA contrast (4.87:1 vs 4.35:1) */
+    color: #8a6700;
+  }
+}
+
+/* ============================================================================
    Scrollbar Styling (WebKit-based for VS Code)
    ============================================================================ */
 

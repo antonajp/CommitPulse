@@ -100,6 +100,8 @@ export const QUERY_COMMIT_HYGIENE_ALL = `
     full_name,
     team,
     has_conventional_prefix,
+    has_ticket_prefix,
+    ticket_reference,
     commit_type,
     has_scope,
     scope,
@@ -145,6 +147,8 @@ export const QUERY_COMMIT_HYGIENE_DATE_RANGE = `
     full_name,
     team,
     has_conventional_prefix,
+    has_ticket_prefix,
+    ticket_reference,
     commit_type,
     has_scope,
     scope,
@@ -190,6 +194,8 @@ export const QUERY_COMMIT_HYGIENE_BY_REPOSITORY = `
     full_name,
     team,
     has_conventional_prefix,
+    has_ticket_prefix,
+    ticket_reference,
     commit_type,
     has_scope,
     scope,
@@ -235,6 +241,8 @@ export const QUERY_COMMIT_HYGIENE_BY_QUALITY_TIER = `
     full_name,
     team,
     has_conventional_prefix,
+    has_ticket_prefix,
+    ticket_reference,
     commit_type,
     has_scope,
     scope,
@@ -280,6 +288,8 @@ export const QUERY_COMMIT_HYGIENE_BY_COMMIT_TYPE = `
     full_name,
     team,
     has_conventional_prefix,
+    has_ticket_prefix,
+    ticket_reference,
     commit_type,
     has_scope,
     scope,
@@ -335,6 +345,8 @@ export const QUERY_COMMIT_HYGIENE_COMBINED = `
     full_name,
     team,
     has_conventional_prefix,
+    has_ticket_prefix,
+    ticket_reference,
     commit_type,
     has_scope,
     scope,
@@ -558,6 +570,8 @@ export interface CommitHygieneDbRow {
   readonly full_name: string | null;
   readonly team: string | null;
   readonly has_conventional_prefix: boolean;
+  readonly has_ticket_prefix: boolean;
+  readonly ticket_reference: string | null;
   readonly commit_type: ConventionalCommitType | null;
   readonly has_scope: boolean;
   readonly scope: string | null;

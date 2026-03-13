@@ -5,6 +5,24 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+[0;34m[INFO][0m Generating changelog from commits since v0.1.8...
+## [0.1.9] - 2026-03-13
+
+### Added
+
+- Add rate limiting and CSP documentation to webview panels
+- Sprint Velocity vs LOC dual story points comparison
+- Add Contributor Profile Badges to Team Scorecard Chart
+- Story Points Trend Chart - Development vs QA Status
+
+### Fixed
+
+- Fix LOC/Complexity delta charts showing 1000-2000% inflated values
+- Fix Team Scorecard commit count query join
+- Fix incremental commit detection for subsequent pipeline runs
+- Expand commit hygiene prefix detection and add Issues tooltip
+- Support Bitbucket and GitLab commit URL formats
+
 [0;34m[INFO][0m Generating changelog from commits since v0.1.7...
 ## [0.1.8] - 2026-03-11
 

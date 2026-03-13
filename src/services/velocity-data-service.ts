@@ -6,13 +6,14 @@
  *
  * All queries use parameterized SQL ($1, $2 placeholders).
  *
- * Ticket: IQS-888
+ * Ticket: IQS-888, IQS-944
  */
 
 import { DatabaseService } from '../database/database-service.js';
 import { LoggerService } from '../logging/logger.js';
 import { isValidDateString } from '../utils/date-validation.js';
 import { isValidRepositoryName } from '../utils/repository-validation.js';
+import { isValidTeamName } from '../utils/team-validation.js';
 import {
   QUERY_SPRINT_VELOCITY_VS_LOC,
   QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE,
@@ -103,6 +104,12 @@ export class VelocityDataService {
       throw new Error(`Invalid repository name: ${filters.repository}. Must be 1-100 alphanumeric characters, dots, hyphens, or underscores.`);
     }
 
+    // Validate team input (IQS-944)
+    if (filters.team && !isValidTeamName(filters.team)) {
+      this.logger.warn(CLASS_NAME, 'getSprintVelocityVsLoc', `Invalid team name rejected: ${filters.team}`);
+      throw new Error(`Invalid team name: ${filters.team}. Must be 1-100 alphanumeric characters, spaces, hyphens, underscores, or periods.`);
+    }
+
     // Select the appropriate query based on filters (8 combinations with repository)
     let sql: string;
     let params: unknown[];
@@ -152,6 +159,8 @@ export class VelocityDataService {
       team: string | null;
       project: string | null;
       repository: string | null;
+      human_story_points: number;
+      ai_story_points: number;
       total_story_points: number;
       issue_count: number;
       total_loc_changed: number;
@@ -175,6 +184,8 @@ export class VelocityDataService {
       team: row.team,
       project: row.project,
       repository: row.repository,
+      humanStoryPoints: Number(row.human_story_points ?? 0),
+      aiStoryPoints: Number(row.ai_story_points ?? 0),
       totalStoryPoints: Number(row.total_story_points),
       issueCount: Number(row.issue_count),
       totalLocChanged: Number(row.total_loc_changed),

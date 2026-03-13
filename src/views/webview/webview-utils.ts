@@ -415,14 +415,17 @@ export function generateKeyboardAccessibilityScript(): string {
 }
 
 // ============================================================================
-// GitHub URL Navigation Utilities (injected into webview script)
+// Git URL Navigation Utilities (injected into webview script)
 // ============================================================================
 
 /**
- * Generate the JavaScript source for GitHub URL navigation functionality.
+ * Generate the JavaScript source for Git URL navigation functionality.
  * Returns a string to be embedded in a <script> block.
  *
  * The generated code provides:
+ * - `detectGitProviderFromUrl(repoUrl)` - Detect provider from URL
+ * - `isValidCommitSha(sha)` - Validate SHA format
+ * - `buildCommitUrlForProvider(repoUrl, sha)` - Build commit URL for provider
  * - `openCommit(repository, sha, commitUrl)` - Open a commit in the browser
  * - `openPr(repository, prNumber)` - Open a PR in the browser
  * - `openBranch(repository, branch)` - Open a branch in the browser
@@ -432,22 +435,70 @@ export function generateKeyboardAccessibilityScript(): string {
  *
  * Security:
  * - URLs are validated by the extension host before opening
+ * - SHA format validated (hex, 7-40 chars)
  * - Rate limiting prevents URL flooding
  * - Domain allowlist ensures only trusted hosts
  *
- * Ticket: IQS-925
+ * Ticket: IQS-925, IQS-938 (multi-provider support)
  */
 export function generateGitHubUrlNavigationScript(): string {
   return `
       // ======================================================================
-      // GitHub URL Navigation (IQS-925)
+      // Git URL Navigation (IQS-925, IQS-938)
       // ======================================================================
+
+      /**
+       * Detect Git provider from repository URL.
+       * @param {string} repoUrl - Repository URL
+       * @returns {string} Provider: 'github', 'bitbucket', 'gitlab', or 'unknown'
+       */
+      function detectGitProviderFromUrl(repoUrl) {
+        if (!repoUrl) return 'unknown';
+        var url = repoUrl.toLowerCase();
+        if (url.indexOf('bitbucket.org') !== -1 || url.indexOf('bitbucket.') !== -1) return 'bitbucket';
+        if (url.indexOf('gitlab.com') !== -1 || url.indexOf('gitlab.') !== -1) return 'gitlab';
+        if (url.indexOf('github.com') !== -1 || url.indexOf('github.') !== -1) return 'github';
+        return 'unknown';
+      }
+
+      /**
+       * Validate SHA format (hex string, 7-40 characters).
+       * @param {string} sha - Commit SHA to validate
+       * @returns {boolean} true if valid SHA format
+       */
+      function isValidCommitSha(sha) {
+        if (!sha || typeof sha !== 'string') return false;
+        return /^[0-9a-f]{7,40}$/i.test(sha);
+      }
+
+      /**
+       * Build commit URL for the detected provider.
+       * @param {string} repoUrl - Repository URL
+       * @param {string} sha - Commit SHA
+       * @returns {string|null} Commit URL or null if invalid
+       */
+      function buildCommitUrlForProvider(repoUrl, sha) {
+        if (!repoUrl || !sha || !isValidCommitSha(sha)) return null;
+        var baseUrl = repoUrl.replace(/\\/$/, '').replace(/\\.git$/i, '');
+        var provider = detectGitProviderFromUrl(repoUrl);
+        var encodedSha = encodeURIComponent(sha);
+        switch (provider) {
+          case 'bitbucket':
+            return baseUrl + '/commits/' + encodedSha;
+          case 'gitlab':
+            return baseUrl + '/-/commit/' + encodedSha;
+          case 'github':
+          case 'unknown':
+          default:
+            return baseUrl + '/commit/' + encodedSha;
+        }
+      }
 
       /**
        * Open a commit in the external browser.
        * Uses vscode.postMessage to send URL to extension host for validation.
        *
-       * @param {string} repository - Repository in 'owner/repo' format
+       * @param {string} repository - Repository URL or 'owner/repo' format
        * @param {string} sha - The commit SHA (full or abbreviated)
        * @param {string} [commitUrl] - Optional pre-built commit URL
        */
@@ -456,7 +507,22 @@ export function generateGitHubUrlNavigationScript(): string {
           console.warn('[Webview] openCommit: missing repository or sha');
           return;
         }
-        var url = commitUrl || ('https://github.com/' + encodeURIComponent(repository) + '/commit/' + encodeURIComponent(sha));
+        // Use pre-built URL if provided, otherwise build for the provider
+        var url = commitUrl;
+        if (!url) {
+          // Check if repository is a full URL or owner/repo format
+          if (repository.indexOf('://') !== -1 || repository.indexOf('@') !== -1) {
+            // Full URL - use provider detection
+            url = buildCommitUrlForProvider(repository, sha);
+          } else {
+            // owner/repo format - default to GitHub
+            url = 'https://github.com/' + encodeURIComponent(repository) + '/commit/' + encodeURIComponent(sha);
+          }
+        }
+        if (!url) {
+          console.warn('[Webview] openCommit: could not build URL');
+          return;
+        }
         vscode.postMessage({ type: 'openExternal', url: url });
       }
 
