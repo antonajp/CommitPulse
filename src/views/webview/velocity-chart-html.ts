@@ -9,7 +9,7 @@
  * - ARIA accessibility and colorblind-accessible markers
  * - All data values HTML-escaped before SVG/DOM insertion
  *
- * Ticket: IQS-888
+ * Ticket: IQS-888, IQS-944
  */
 
 import type * as vscode from 'vscode';
@@ -38,11 +38,42 @@ export interface VelocityChartHtmlConfig {
 export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): string {
   const { nonce, d3Uri, styleUri, cspSource } = config;
 
+  // ============================================================================
+  // Content Security Policy (CSP) Documentation - IQS-947
+  // ============================================================================
+  // This webview uses a strict CSP to prevent security vulnerabilities:
+  //
+  // - default-src 'none': Block all resources by default (deny-by-default)
+  // - style-src ${cspSource} 'nonce-...': Allow styles from extension and nonce-protected inline
+  // - script-src 'nonce-...': Only allow scripts with the cryptographic nonce (no eval, no inline)
+  // - img-src ${cspSource} data:: Allow images from extension resources and data URIs (for SVG)
+  // - connect-src 'none': CRITICAL - The webview CANNOT make network requests.
+  //   All data flows through VS Code's postMessage API between webview and extension host.
+  //   This prevents XSS attacks from exfiltrating data to external servers.
+  // - form-action 'none': Prevent form submissions to external URLs
+  // - frame-ancestors 'none': Prevent embedding in external frames
+  // - base-uri 'none': Prevent base URL hijacking
+  //
+  // Data Flow Security Model:
+  // 1. Webview sends typed messages via vscode.postMessage()
+  // 2. Extension host receives, validates, and processes messages
+  // 3. Extension host queries database and sends response via panel.webview.postMessage()
+  // 4. Webview receives and renders data locally using D3.js
+  //
+  // This architecture ensures all data access is controlled by the extension host,
+  // and the webview cannot bypass security controls or access network resources directly.
+  // ============================================================================
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Content Security Policy - Strict webview security (IQS-947)
+    - connect-src 'none': Webview uses postMessage API only, no direct network access
+    - script-src with nonce: Only extension-controlled scripts can execute
+    See CSP documentation comments above for full security model explanation.
+  -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src ${cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src ${cspSource} data:; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none';">
   <link rel="stylesheet" href="${styleUri.toString()}">
@@ -53,6 +84,14 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
     <div class="chart-header">
       <h1 id="chartTitle">Sprint Velocity vs LOC</h1>
       <div class="controls">
+        <div class="filter-group" id="aggregationFilterGroup">
+          <label for="aggregationFilter">Group By</label>
+          <select id="aggregationFilter" aria-label="Aggregation period" tabindex="0">
+            <option value="day">Daily</option>
+            <option value="week" selected>Weekly</option>
+            <option value="biweekly">Bi-weekly</option>
+          </select>
+        </div>
         <div class="filter-group" id="repoFilterGroup">
           <label for="repoFilter">Repository</label>
           <select id="repoFilter" aria-label="Repository filter" tabindex="0">
@@ -82,7 +121,8 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
           <span>What does this chart show?</span>
         </summary>
         <div class="explanation-content">
-          <p>This dual-axis chart compares sprint velocity (story points and issues completed) against lines of code changed over time. Use it to understand if velocity metrics align with actual code output and identify periods where story point estimates may be miscalibrated.</p>
+          <p>This dual-axis chart compares <strong>human story point estimates</strong> (assigned during planning) against <strong>AI-measured story points</strong> (calculated from actual issue duration) over time. The LOC line provides context for code output.</p>
+          <p><strong>Interpretation:</strong> When the human line consistently exceeds the AI line, your team may be over-estimating. When the AI line is higher, you're under-estimating. Use this to calibrate future sprint planning.</p>
         </div>
       </details>
       <div id="legendContainer" class="chart-legend velocity-legend" role="img" aria-label="Series legend"></div>
@@ -101,8 +141,9 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
         <table class="data-table" id="dataTable">
           <thead>
             <tr>
-              <th scope="col">Week</th>
-              <th scope="col">Story Points</th>
+              <th scope="col">Period</th>
+              <th scope="col">Human Est.</th>
+              <th scope="col">AI Calc.</th>
               <th scope="col">Issues</th>
               <th scope="col">LOC Changed</th>
               <th scope="col">Commits</th>
@@ -147,17 +188,27 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
       // ======================================================================
       var chartData = null;
 
-      // Series Configuration (colorblind-accessible: distinct color + marker)
+      // Series Configuration (colorblind-accessible: Okabe-Ito palette + distinct markers)
+      // IQS-944: Added humanEstimate and aiMeasurement for dual story points comparison
       var SERIES_CONFIG = {
-        storyPoints: {
-          color: '#4dc9f6',
-          label: 'Story Points',
+        humanEstimate: {
+          color: '#0072B2',  // Okabe-Ito Blue - 7.15:1 contrast on white
+          label: 'Human Estimate (Story Points)',
+          shortLabel: 'Human Est.',
           marker: 'circle',
           markerSize: 5,
         },
+        aiMeasurement: {
+          color: '#009E73',  // Okabe-Ito Bluish Green - 4.64:1 contrast on white
+          label: 'AI Measurement (Duration-Based)',
+          shortLabel: 'AI Calc.',
+          marker: 'square',
+          markerSize: 5,
+        },
         locChanged: {
-          color: '#f67019',
+          color: '#D55E00',  // Okabe-Ito Vermillion - high contrast
           label: 'LOC Changed',
+          shortLabel: 'LOC',
           marker: 'triangle',
           markerSize: 6,
         },
@@ -168,6 +219,7 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
       var applyFiltersBtn = document.getElementById('applyFiltersBtn');
       var repoFilter = document.getElementById('repoFilter');
       var repoFilterGroup = document.getElementById('repoFilterGroup');
+      var aggregationFilter = document.getElementById('aggregationFilter');
       var chartTitle = document.getElementById('chartTitle');
       var loadingState = document.getElementById('loadingState');
       var errorState = document.getElementById('errorState');
@@ -180,41 +232,56 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
       var dataTableContainer = document.getElementById('dataTableContainer');
       var tooltip = document.getElementById('tooltip');
 
-      // Filter state (IQS-920)
+      // Filter state (IQS-920, IQS-944)
       var currentRepository = '';
+      var currentAggregation = 'week';  // IQS-944: default to weekly
       var availableRepositories = [];
 
       // Event Handlers
       exportCsvBtn.addEventListener('click', function() {
         if (!chartData || !chartData.aggregated || chartData.aggregated.length === 0) { return; }
-        var headers = ['Week', 'Story Points', 'Issue Count', 'LOC Changed', 'Lines Added', 'Lines Deleted', 'Commit Count'];
+        // IQS-944: Include both human and AI story points in export
+        var headers = ['Period', 'Human Estimate', 'AI Calculated', 'Issue Count', 'LOC Changed', 'Lines Added', 'Lines Deleted', 'Commit Count'];
         if (currentRepository) {
           headers.push('Repository');
         }
+        headers.push('Aggregation');
         var rows = chartData.aggregated.map(function(d) {
-          var row = [d.weekStart, d.totalStoryPoints, d.issueCount, d.totalLocChanged, d.totalLinesAdded, d.totalLinesDeleted, d.commitCount];
+          var row = [d.weekStart, d.humanStoryPoints, d.aiStoryPoints, d.issueCount, d.totalLocChanged, d.totalLinesAdded, d.totalLinesDeleted, d.commitCount];
           if (currentRepository) {
             row.push(currentRepository);
           }
+          row.push(currentAggregation);
           return row;
         });
-        // Include repository context in filename when filtered (IQS-920)
-        var filename = currentRepository
-          ? 'sprint-velocity-vs-loc-' + currentRepository.replace(/[^a-zA-Z0-9._-]/g, '_') + '.csv'
-          : 'sprint-velocity-vs-loc.csv';
+        // Include repository and aggregation context in filename (IQS-920, IQS-944)
+        var filenameParts = ['sprint-velocity-vs-loc'];
+        if (currentAggregation !== 'week') {
+          filenameParts.push(currentAggregation);
+        }
+        if (currentRepository) {
+          filenameParts.push(currentRepository.replace(/[^a-zA-Z0-9._-]/g, '_'));
+        }
+        var filename = filenameParts.join('-') + '.csv';
         exportCsvFromData(headers, rows, filename);
       });
 
-      // Apply filters button handler (IQS-920)
+      // Apply filters button handler (IQS-920, IQS-944)
       applyFiltersBtn.addEventListener('click', function() {
         currentRepository = repoFilter.value;
+        currentAggregation = aggregationFilter.value;
         saveFilterState();
         updateChartTitle();
         requestData();
       });
 
-      // Allow Enter key on filter dropdown (IQS-920)
+      // Allow Enter key on filter dropdowns (IQS-920, IQS-944)
       repoFilter.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+          applyFiltersBtn.click();
+        }
+      });
+      aggregationFilter.addEventListener('keydown', function(event) {
         if (event.key === 'Enter') {
           applyFiltersBtn.click();
         }
@@ -275,12 +342,28 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
           populateRepositoryFilter(message.rows);
         }
 
-        // Aggregate rows by week (sum across teams/projects/repos)
-        var weekMap = {};
+        // Aggregate rows by period (sum across teams/projects/repos)
+        // IQS-944: Now includes humanStoryPoints and aiStoryPoints
+        var periodMap = {};
         message.rows.forEach(function(r) {
-          if (!weekMap[r.weekStart]) {
-            weekMap[r.weekStart] = {
-              weekStart: r.weekStart,
+          // Apply aggregation based on currentAggregation setting
+          var periodKey = r.weekStart;
+          if (currentAggregation === 'biweekly') {
+            // Group into 2-week periods (round down to nearest 2-week boundary)
+            var d = new Date(r.weekStart);
+            var weekOfYear = Math.floor((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+            var biweeklyStart = weekOfYear - (weekOfYear % 2);
+            var yearStart = new Date(d.getFullYear(), 0, 1);
+            var biweeklyDate = new Date(yearStart.getTime() + biweeklyStart * 7 * 24 * 60 * 60 * 1000);
+            periodKey = biweeklyDate.toISOString().split('T')[0];
+          }
+          // 'day' and 'week' use the weekStart as-is (server already aggregates appropriately)
+
+          if (!periodMap[periodKey]) {
+            periodMap[periodKey] = {
+              weekStart: periodKey,
+              humanStoryPoints: 0,
+              aiStoryPoints: 0,
               totalStoryPoints: 0,
               issueCount: 0,
               totalLocChanged: 0,
@@ -289,15 +372,17 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
               commitCount: 0,
             };
           }
-          weekMap[r.weekStart].totalStoryPoints += r.totalStoryPoints;
-          weekMap[r.weekStart].issueCount += r.issueCount;
-          weekMap[r.weekStart].totalLocChanged += r.totalLocChanged;
-          weekMap[r.weekStart].totalLinesAdded += r.totalLinesAdded;
-          weekMap[r.weekStart].totalLinesDeleted += r.totalLinesDeleted;
-          weekMap[r.weekStart].commitCount += r.commitCount;
+          periodMap[periodKey].humanStoryPoints += r.humanStoryPoints || 0;
+          periodMap[periodKey].aiStoryPoints += r.aiStoryPoints || 0;
+          periodMap[periodKey].totalStoryPoints += r.totalStoryPoints;
+          periodMap[periodKey].issueCount += r.issueCount;
+          periodMap[periodKey].totalLocChanged += r.totalLocChanged;
+          periodMap[periodKey].totalLinesAdded += r.totalLinesAdded;
+          periodMap[periodKey].totalLinesDeleted += r.totalLinesDeleted;
+          periodMap[periodKey].commitCount += r.commitCount;
         });
 
-        var aggregated = Object.values(weekMap);
+        var aggregated = Object.values(periodMap);
         aggregated.sort(function(a, b) { return a.weekStart < b.weekStart ? -1 : 1; });
 
         chartData = { raw: message.rows, aggregated: aggregated };
@@ -309,6 +394,7 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
       }
 
       // Dual-Axis Line Chart Rendering with D3.js
+      // IQS-944: Now renders three series (Human Est., AI Calc., LOC)
       function renderChart(data) {
         if (!data || data.length === 0) { return; }
 
@@ -325,18 +411,21 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
         svg.selectAll('*').remove();
         svg.attr('width', width).attr('height', height)
            .attr('role', 'img')
-           .attr('aria-label', 'Dual-axis line chart: Story Points (left) vs LOC Changed (right) by week');
+           .attr('aria-label', 'Dual-axis line chart: Human vs AI Story Points (left) and LOC Changed (right) by period');
 
         var g = svg.append('g').attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
         var innerWidth = width - margin.left - margin.right;
         var innerHeight = height - margin.top - margin.bottom;
 
-        // X Scale: week dates
-        var weeks = data.map(function(d) { return d.weekStart; });
-        var x = d3.scalePoint().domain(weeks).range([0, innerWidth]).padding(0.5);
+        // X Scale: period dates
+        var periods = data.map(function(d) { return d.weekStart; });
+        var x = d3.scalePoint().domain(periods).range([0, innerWidth]).padding(0.5);
 
-        // Left Y Scale: Story Points
-        var maxSP = d3.max(data, function(d) { return d.totalStoryPoints; }) || 1;
+        // Left Y Scale: Story Points (shared for Human and AI)
+        // IQS-944: Scale to max of either human or AI story points
+        var maxSP = d3.max(data, function(d) {
+          return Math.max(d.humanStoryPoints || 0, d.aiStoryPoints || 0);
+        }) || 1;
         var yLeft = d3.scaleLinear().domain([0, maxSP]).nice().range([innerHeight, 0]);
 
         // Right Y Scale: LOC Changed
@@ -350,10 +439,10 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
         g.selectAll('.grid .domain').remove();
 
         // X Axis
-        var tickValues = weeks;
-        if (weeks.length > 15) {
-          var step = Math.ceil(weeks.length / 15);
-          tickValues = weeks.filter(function(_, i) { return i % step === 0; });
+        var tickValues = periods;
+        if (periods.length > 15) {
+          var step = Math.ceil(periods.length / 15);
+          tickValues = periods.filter(function(_, i) { return i % step === 0; });
         }
         g.append('g').attr('class', 'axis')
           .attr('transform', 'translate(0,' + innerHeight + ')')
@@ -363,17 +452,17 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
           .attr('text-anchor', 'end')
           .attr('font-size', '10px');
 
-        // Left Y Axis (Story Points) - colored to match series
+        // Left Y Axis (Story Points) - neutral color since two series share it
         var leftAxis = g.append('g').attr('class', 'axis')
           .call(d3.axisLeft(yLeft).ticks(6));
-        leftAxis.selectAll('text').attr('fill', SERIES_CONFIG.storyPoints.color);
-        leftAxis.selectAll('line').attr('stroke', SERIES_CONFIG.storyPoints.color + '44');
-        leftAxis.select('.domain').attr('stroke', SERIES_CONFIG.storyPoints.color + '66');
+        leftAxis.selectAll('text').attr('fill', 'var(--vscode-foreground, #cccccc)');
+        leftAxis.selectAll('line').attr('stroke', 'var(--vscode-foreground, #cccccc)44');
+        leftAxis.select('.domain').attr('stroke', 'var(--vscode-foreground, #cccccc)66');
 
         // Left Y Axis Label
         g.append('text').attr('transform', 'rotate(-90)')
           .attr('y', -45).attr('x', -innerHeight / 2).attr('text-anchor', 'middle')
-          .attr('fill', SERIES_CONFIG.storyPoints.color).attr('font-size', '11px')
+          .attr('fill', 'var(--vscode-foreground, #cccccc)').attr('font-size', '11px')
           .text('Story Points');
 
         // Right Y Axis (LOC) - colored to match series
@@ -394,31 +483,56 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
           .attr('fill', SERIES_CONFIG.locChanged.color).attr('font-size', '11px')
           .text('LOC Changed');
 
-        // ---- Story Points Line (Left Y) ----
-        var spLine = d3.line()
+        // ---- Human Estimate Line (Left Y) - IQS-944 ----
+        var humanLine = d3.line()
           .x(function(d) { return x(d.weekStart); })
-          .y(function(d) { return yLeft(d.totalStoryPoints); })
+          .y(function(d) { return yLeft(d.humanStoryPoints || 0); })
           .curve(d3.curveMonotoneX);
 
         g.append('path').datum(data)
           .attr('fill', 'none')
-          .attr('stroke', SERIES_CONFIG.storyPoints.color)
+          .attr('stroke', SERIES_CONFIG.humanEstimate.color)
           .attr('stroke-width', 2.5)
-          .attr('d', spLine);
+          .attr('d', humanLine);
 
-        // Circle markers for story points
+        // Circle markers for human estimates
         data.forEach(function(d) {
           g.append('circle')
             .attr('cx', x(d.weekStart))
-            .attr('cy', yLeft(d.totalStoryPoints))
-            .attr('r', SERIES_CONFIG.storyPoints.markerSize)
-            .attr('fill', SERIES_CONFIG.storyPoints.color)
+            .attr('cy', yLeft(d.humanStoryPoints || 0))
+            .attr('r', SERIES_CONFIG.humanEstimate.markerSize)
+            .attr('fill', SERIES_CONFIG.humanEstimate.color)
             .attr('stroke', 'var(--vscode-editor-background, #1e1e1e)')
             .attr('stroke-width', 1.5)
-            .attr('aria-label', 'Week ' + escapeHtml(d.weekStart) + ': ' + d.totalStoryPoints + ' story points')
-            .on('mouseover', function(event) {
-              showTooltip(event, d);
-            })
+            .attr('aria-label', 'Period ' + escapeHtml(d.weekStart) + ': ' + (d.humanStoryPoints || 0) + ' human estimate points')
+            .on('mouseover', function(event) { showTooltip(event, d); })
+            .on('mousemove', function(event) { moveTooltip(event); })
+            .on('mouseout', hideTooltip);
+        });
+
+        // ---- AI Measurement Line (Left Y) - IQS-944 ----
+        var aiLine = d3.line()
+          .x(function(d) { return x(d.weekStart); })
+          .y(function(d) { return yLeft(d.aiStoryPoints || 0); })
+          .curve(d3.curveMonotoneX);
+
+        g.append('path').datum(data)
+          .attr('fill', 'none')
+          .attr('stroke', SERIES_CONFIG.aiMeasurement.color)
+          .attr('stroke-width', 2.5)
+          .attr('d', aiLine);
+
+        // Square markers for AI measurements
+        var squareSymbol = d3.symbol().type(d3.symbolSquare).size(50);
+        data.forEach(function(d) {
+          g.append('path')
+            .attr('d', squareSymbol())
+            .attr('transform', 'translate(' + x(d.weekStart) + ',' + yLeft(d.aiStoryPoints || 0) + ')')
+            .attr('fill', SERIES_CONFIG.aiMeasurement.color)
+            .attr('stroke', 'var(--vscode-editor-background, #1e1e1e)')
+            .attr('stroke-width', 1.5)
+            .attr('aria-label', 'Period ' + escapeHtml(d.weekStart) + ': ' + (d.aiStoryPoints || 0) + ' AI calculated points')
+            .on('mouseover', function(event) { showTooltip(event, d); })
             .on('mousemove', function(event) { moveTooltip(event); })
             .on('mouseout', hideTooltip);
         });
@@ -444,10 +558,8 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
             .attr('fill', SERIES_CONFIG.locChanged.color)
             .attr('stroke', 'var(--vscode-editor-background, #1e1e1e)')
             .attr('stroke-width', 1.5)
-            .attr('aria-label', 'Week ' + escapeHtml(d.weekStart) + ': ' + d.totalLocChanged.toLocaleString() + ' LOC changed')
-            .on('mouseover', function(event) {
-              showTooltip(event, d);
-            })
+            .attr('aria-label', 'Period ' + escapeHtml(d.weekStart) + ': ' + d.totalLocChanged.toLocaleString() + ' LOC changed')
+            .on('mouseover', function(event) { showTooltip(event, d); })
             .on('mousemove', function(event) { moveTooltip(event); })
             .on('mouseout', hideTooltip);
         });
@@ -459,12 +571,24 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
         }
       }
 
-      // Tooltip
+      // Tooltip - IQS-944: Show both human and AI values with variance
       function showTooltip(event, d) {
+        var humanPts = d.humanStoryPoints || 0;
+        var aiPts = d.aiStoryPoints || 0;
+        var delta = humanPts - aiPts;
+        var deltaPercent = aiPts > 0 ? ((Math.abs(delta) / aiPts) * 100).toFixed(0) : (humanPts > 0 ? '100' : '0');
+        var deltaLabel = delta > 0 ? 'overestimated' : delta < 0 ? 'underestimated' : 'matched';
+
+        var periodLabel = currentAggregation === 'day' ? 'Day' : currentAggregation === 'biweekly' ? 'Bi-week of' : 'Week of';
+
         tooltip.innerHTML =
-          '<div class="tt-component"><strong>Week of ' + escapeHtml(d.weekStart) + '</strong></div>' +
-          '<div class="tt-value" style="color:' + SERIES_CONFIG.storyPoints.color + '">' +
-            escapeHtml(String(d.totalStoryPoints)) + ' story points (' + escapeHtml(String(d.issueCount)) + ' issues)</div>' +
+          '<div class="tt-component"><strong>' + periodLabel + ' ' + escapeHtml(d.weekStart) + '</strong></div>' +
+          '<div class="tt-value" style="color:' + SERIES_CONFIG.humanEstimate.color + '">' +
+            'Human: ' + escapeHtml(String(humanPts)) + ' points (' + escapeHtml(String(d.issueCount)) + ' issues)</div>' +
+          '<div class="tt-value" style="color:' + SERIES_CONFIG.aiMeasurement.color + '">' +
+            'AI: ' + escapeHtml(String(aiPts)) + ' points (calculated)</div>' +
+          '<hr style="border-color: var(--vscode-panel-border, #444); margin: 4px 0;">' +
+          '<div class="tt-variance"><strong>Variance:</strong> ' + Math.abs(delta) + ' points (' + deltaPercent + '%) ' + deltaLabel + '</div>' +
           '<div class="tt-value" style="color:' + SERIES_CONFIG.locChanged.color + '">' +
             escapeHtml(d.totalLocChanged.toLocaleString()) + ' LOC changed (' + escapeHtml(String(d.commitCount)) + ' commits)</div>' +
           '<div class="tt-team">+' + escapeHtml(d.totalLinesAdded.toLocaleString()) + ' / -' +
@@ -484,35 +608,62 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
         tooltip.setAttribute('aria-hidden', 'true');
       }
 
-      // Legend
+      // Legend - IQS-944: Three series (Human, AI, LOC)
       function renderLegend() {
         legendContainer.innerHTML = '';
 
-        // Story Points legend entry with circle marker
-        var spItem = document.createElement('div');
-        spItem.className = 'legend-item';
-        var spSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        spSvg.setAttribute('width', '30');
-        spSvg.setAttribute('height', '14');
-        var spLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        spLine.setAttribute('x1', '0');
-        spLine.setAttribute('y1', '7');
-        spLine.setAttribute('x2', '20');
-        spLine.setAttribute('y2', '7');
-        spLine.setAttribute('stroke', SERIES_CONFIG.storyPoints.color);
-        spLine.setAttribute('stroke-width', '2');
-        spSvg.appendChild(spLine);
-        var spCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        spCircle.setAttribute('cx', '10');
-        spCircle.setAttribute('cy', '7');
-        spCircle.setAttribute('r', '4');
-        spCircle.setAttribute('fill', SERIES_CONFIG.storyPoints.color);
-        spSvg.appendChild(spCircle);
-        spItem.appendChild(spSvg);
-        var spLabel = document.createElement('span');
-        spLabel.textContent = SERIES_CONFIG.storyPoints.label;
-        spItem.appendChild(spLabel);
-        legendContainer.appendChild(spItem);
+        // Human Estimate legend entry with circle marker
+        var humanItem = document.createElement('div');
+        humanItem.className = 'legend-item';
+        var humanSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        humanSvg.setAttribute('width', '30');
+        humanSvg.setAttribute('height', '14');
+        var humanLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        humanLine.setAttribute('x1', '0');
+        humanLine.setAttribute('y1', '7');
+        humanLine.setAttribute('x2', '20');
+        humanLine.setAttribute('y2', '7');
+        humanLine.setAttribute('stroke', SERIES_CONFIG.humanEstimate.color);
+        humanLine.setAttribute('stroke-width', '2');
+        humanSvg.appendChild(humanLine);
+        var humanCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        humanCircle.setAttribute('cx', '10');
+        humanCircle.setAttribute('cy', '7');
+        humanCircle.setAttribute('r', '4');
+        humanCircle.setAttribute('fill', SERIES_CONFIG.humanEstimate.color);
+        humanSvg.appendChild(humanCircle);
+        humanItem.appendChild(humanSvg);
+        var humanLabel = document.createElement('span');
+        humanLabel.textContent = SERIES_CONFIG.humanEstimate.label;
+        humanItem.appendChild(humanLabel);
+        legendContainer.appendChild(humanItem);
+
+        // AI Measurement legend entry with square marker
+        var aiItem = document.createElement('div');
+        aiItem.className = 'legend-item';
+        var aiSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        aiSvg.setAttribute('width', '30');
+        aiSvg.setAttribute('height', '14');
+        var aiLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        aiLine.setAttribute('x1', '0');
+        aiLine.setAttribute('y1', '7');
+        aiLine.setAttribute('x2', '20');
+        aiLine.setAttribute('y2', '7');
+        aiLine.setAttribute('stroke', SERIES_CONFIG.aiMeasurement.color);
+        aiLine.setAttribute('stroke-width', '2');
+        aiSvg.appendChild(aiLine);
+        var aiSquare = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        aiSquare.setAttribute('x', '6');
+        aiSquare.setAttribute('y', '3');
+        aiSquare.setAttribute('width', '8');
+        aiSquare.setAttribute('height', '8');
+        aiSquare.setAttribute('fill', SERIES_CONFIG.aiMeasurement.color);
+        aiSvg.appendChild(aiSquare);
+        aiItem.appendChild(aiSvg);
+        var aiLabel = document.createElement('span');
+        aiLabel.textContent = SERIES_CONFIG.aiMeasurement.label;
+        aiItem.appendChild(aiLabel);
+        legendContainer.appendChild(aiItem);
 
         // LOC legend entry with triangle marker
         var locItem = document.createElement('div');
@@ -539,23 +690,43 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
         legendContainer.appendChild(locItem);
       }
 
-      // Summary Stats
+      // Summary Stats - IQS-944: Added calibration ratio
       function renderSummaryStats(data) {
-        var totalSP = 0;
+        var totalHuman = 0;
+        var totalAI = 0;
         var totalLOC = 0;
         var totalIssues = 0;
         var totalCommits = 0;
 
         data.forEach(function(d) {
-          totalSP += d.totalStoryPoints;
+          totalHuman += d.humanStoryPoints || 0;
+          totalAI += d.aiStoryPoints || 0;
           totalLOC += d.totalLocChanged;
           totalIssues += d.issueCount;
           totalCommits += d.commitCount;
         });
 
+        // Calculate calibration ratio and label
+        var calibrationRatio = totalAI > 0 ? (totalHuman / totalAI).toFixed(2) : 'N/A';
+        var calibrationLabel = '';
+        if (totalAI > 0) {
+          var ratio = totalHuman / totalAI;
+          if (ratio > 1.2) {
+            calibrationLabel = 'Over-estimating';
+          } else if (ratio < 0.8) {
+            calibrationLabel = 'Under-estimating';
+          } else {
+            calibrationLabel = 'Well-calibrated';
+          }
+        }
+
+        var periodLabel = currentAggregation === 'day' ? 'Days' : currentAggregation === 'biweekly' ? 'Bi-weeks' : 'Weeks';
+
         summaryStats.innerHTML =
-          createStatCard(data.length, 'Weeks') +
-          createStatCard(totalSP.toLocaleString(), 'Story Points') +
+          createStatCard(data.length, periodLabel) +
+          createStatCard(totalHuman.toLocaleString(), 'Human Est.') +
+          createStatCard(totalAI.toLocaleString(), 'AI Calc.') +
+          createStatCardWithSublabel(calibrationRatio, 'Calibration', calibrationLabel) +
           createStatCard(totalLOC.toLocaleString(), 'LOC Changed') +
           createStatCard(totalIssues.toLocaleString(), 'Issues') +
           createStatCard(totalCommits.toLocaleString(), 'Commits');
@@ -567,18 +738,31 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
           escapeHtml(label) + '</div></div>';
       }
 
-      // Data Table (Accessibility Fallback)
+      // IQS-944: Stat card with sublabel for calibration ratio
+      function createStatCardWithSublabel(value, label, sublabel) {
+        var sublabelHtml = sublabel
+          ? '<div class="stat-sublabel" style="font-size: 10px; color: var(--vscode-descriptionForeground, #888);">' + escapeHtml(sublabel) + '</div>'
+          : '';
+        return '<div class="stat-card"><div class="stat-value">' +
+          escapeHtml(String(value)) + '</div><div class="stat-label">' +
+          escapeHtml(label) + '</div>' + sublabelHtml + '</div>';
+      }
+
+      // Data Table (Accessibility Fallback) - IQS-944: Updated for dual story points
       function renderDataTable(data) {
         var tbody = document.getElementById('dataTableBody');
         tbody.innerHTML = '';
         data.forEach(function(d) {
           var tr = document.createElement('tr');
-          var tdWeek = document.createElement('td');
-          tdWeek.textContent = d.weekStart;
-          tr.appendChild(tdWeek);
-          var tdSP = document.createElement('td');
-          tdSP.textContent = String(d.totalStoryPoints);
-          tr.appendChild(tdSP);
+          var tdPeriod = document.createElement('td');
+          tdPeriod.textContent = d.weekStart;
+          tr.appendChild(tdPeriod);
+          var tdHuman = document.createElement('td');
+          tdHuman.textContent = String(d.humanStoryPoints || 0);
+          tr.appendChild(tdHuman);
+          var tdAI = document.createElement('td');
+          tdAI.textContent = String(d.aiStoryPoints || 0);
+          tr.appendChild(tdAI);
           var tdIssues = document.createElement('td');
           tdIssues.textContent = String(d.issueCount);
           tr.appendChild(tdIssues);
@@ -630,12 +814,15 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
         emptyState.innerHTML = '';
       }
 
-      // Data Request (IQS-920: include repository filter)
+      // Data Request (IQS-920: include repository filter, IQS-944: include aggregation)
       function requestData() {
         showLoading();
         var message = { type: 'requestVelocityData' };
         if (currentRepository) {
           message.repository = currentRepository;
+        }
+        if (currentAggregation) {
+          message.aggregation = currentAggregation;
         }
         vscode.postMessage(message);
       }
@@ -691,16 +878,22 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
         }
       }
 
-      // Save filter state to VS Code (IQS-920)
+      // Save filter state to VS Code (IQS-920, IQS-944: include aggregation)
       function saveFilterState() {
-        vscode.setState({ repository: currentRepository });
+        vscode.setState({ repository: currentRepository, aggregation: currentAggregation });
       }
 
-      // Restore filter state from VS Code (IQS-920)
+      // Restore filter state from VS Code (IQS-920, IQS-944: include aggregation)
       function restoreFilterState() {
         var state = vscode.getState();
-        if (state && state.repository) {
-          currentRepository = state.repository;
+        if (state) {
+          if (state.repository) {
+            currentRepository = state.repository;
+          }
+          if (state.aggregation) {
+            currentAggregation = state.aggregation;
+            aggregationFilter.value = currentAggregation;
+          }
         }
       }
 

@@ -5,9 +5,10 @@
  * - Message routing between webview and extension host
  * - D3.js v7 bundled as a local resource
  * - CSP nonce generation for script authorization
+ * - Rate limiting on message handlers (IQS-947)
  * - Proper disposal and resource cleanup
  *
- * Tickets: IQS-870, IQS-887
+ * Tickets: IQS-870, IQS-887, IQS-947
  */
 
 import * as vscode from 'vscode';
@@ -18,6 +19,7 @@ import { LinkageDataService } from '../../services/linkage-data-service.js';
 import { generateLinkageHtml } from './linkage-html.js';
 import { getSettings } from '../../config/settings.js';
 import { validateExternalUrl } from '../../utils/url-validator.js';
+import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { LinkageWebviewToHost, LinkageHostToWebview } from './linkage-protocol.js';
 
@@ -55,6 +57,7 @@ export class LinkagePanel implements vscode.Disposable {
   private readonly extensionUri: vscode.Uri;
   private readonly secretService: SecretStorageService;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly rateLimiter: MessageRateLimiter;
   private db: DatabaseService | undefined;
   private dataService: LinkageDataService | undefined;
 
@@ -114,6 +117,10 @@ export class LinkagePanel implements vscode.Disposable {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.secretService = secretService;
+    this.rateLimiter = new MessageRateLimiter({
+      minIntervalMs: DEFAULT_RATE_LIMIT_INTERVAL_MS,
+      className: CLASS_NAME,
+    });
 
     this.logger.debug(CLASS_NAME, 'constructor', 'Initializing LinkagePanel');
 
@@ -173,11 +180,23 @@ export class LinkagePanel implements vscode.Disposable {
   /**
    * Handle incoming messages from the webview.
    * Routes each message type to the appropriate data service method.
+   * Rate limited to prevent excessive database queries (IQS-947, CWE-770).
    *
    * @param message - The typed message from the webview
    */
   private async handleMessage(message: LinkageWebviewToHost): Promise<void> {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
+
+    // Rate limiting check (IQS-947: 500ms minimum interval between requests)
+    const rateLimitCheck = this.rateLimiter.checkRateLimit(message.type);
+    if (!rateLimitCheck.allowed) {
+      this.logger.debug(
+        CLASS_NAME,
+        'handleMessage',
+        `Rate limited: ${message.type}, wait ${rateLimitCheck.waitMs}ms`,
+      );
+      return;
+    }
 
     try {
       // Ensure database connection is established
@@ -366,6 +385,9 @@ export class LinkagePanel implements vscode.Disposable {
     this.logger.info(CLASS_NAME, 'dispose', 'Disposing LinkagePanel');
 
     LinkagePanel.currentPanel = undefined;
+
+    // Reset rate limiter state
+    this.rateLimiter.reset();
 
     // Shut down the database connection
     if (this.db) {

@@ -195,6 +195,14 @@ export const CHART_CATALOG: readonly ChartDefinition[] = [
     description: 'Component drift heat map with cross-component analysis',
     icon: 'symbol-structure',
   },
+  {
+    type: 'storyPointsTrend',
+    label: 'Story Points Trend',
+    category: 'Productivity',
+    command: 'gitrx.openStoryPointsTrend',
+    description: 'Development vs QA story points over time',
+    icon: 'graph-line',
+  },
 ] as const;
 
 /**

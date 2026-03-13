@@ -553,4 +553,60 @@ describe('generateHygieneHtml', () => {
       expect(html).toContain('function getCommitIssues');
     });
   });
+
+  describe('Issues column tooltip (IQS-939)', () => {
+    it('should include issues tooltip handler attachment', () => {
+      const config = createMockConfig();
+      const html = generateHygieneHtml(config);
+
+      expect(html).toContain('function attachIssuesTooltipHandlers');
+    });
+
+    it('should include showIssuesTooltip function', () => {
+      const config = createMockConfig();
+      const html = generateHygieneHtml(config);
+
+      expect(html).toContain('function showIssuesTooltip');
+    });
+
+    it('should include issues tooltip timeout for debounce', () => {
+      const config = createMockConfig();
+      const html = generateHygieneHtml(config);
+
+      expect(html).toContain('issuesTooltipTimeout');
+    });
+
+    it('should include 200ms debounce delay', () => {
+      const config = createMockConfig();
+      const html = generateHygieneHtml(config);
+
+      // Check for the 200ms timeout in showIssuesTooltip setup
+      expect(html).toContain('200'); // 200ms debounce
+    });
+
+    it('should attach tooltip handlers after rendering commits table', () => {
+      const config = createMockConfig();
+      const html = generateHygieneHtml(config);
+
+      // Verify tooltip handlers are attached in renderCommitsTable
+      expect(html).toContain('attachIssuesTooltipHandlers()');
+    });
+
+    it('should include keyboard accessibility for issues tooltip', () => {
+      const config = createMockConfig();
+      const html = generateHygieneHtml(config);
+
+      // Check for focus/blur event handlers for keyboard accessibility
+      expect(html).toContain("cell.addEventListener('focus'");
+      expect(html).toContain("cell.addEventListener('blur'");
+    });
+
+    it('should escape HTML content in issues tooltip', () => {
+      const config = createMockConfig();
+      const html = generateHygieneHtml(config);
+
+      // Verify escapeHtml is used in showIssuesTooltip
+      expect(html).toContain('escapeHtml(issue.trim())');
+    });
+  });
 });

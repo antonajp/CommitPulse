@@ -629,7 +629,9 @@ export function generateHygieneHtml(config: HygieneHtmlConfig): string {
 
       function getCommitIssues(commit) {
         var issues = [];
-        if (!commit.hasConventionalPrefix) { issues.push('No conventional prefix'); }
+        // IQS-939: Check for either conventional prefix OR ticket prefix
+        var hasAnyPrefix = commit.hasConventionalPrefix || commit.hasTicketPrefix;
+        if (!hasAnyPrefix) { issues.push('No conventional prefix'); }
         if (commit.subjectLength > 72) { issues.push('Subject too long'); }
         if (commit.subjectLength < 10) { issues.push('Subject too short'); }
         if (!commit.hasProperCapitalization) { issues.push('Bad capitalization'); }
@@ -1083,7 +1085,7 @@ export function generateHygieneHtml(config: HygieneHtmlConfig): string {
             '<td>' + escapeHtml(commit.author) + '</td>' +
             '<td class="message-cell">' + escapeHtml(commit.commitMessageSubject.substring(0, 40)) + (commit.commitMessageSubject.length > 40 ? '...' : '') + '</td>' +
             '<td><span class="score-badge ' + tierClass + '">' + commit.hygieneScore.toFixed(0) + '</span></td>' +
-            '<td class="issues-cell">' + escapeHtml(issues) + '</td>' +
+            '<td class="issues-cell" tabindex="0" data-full-issues="' + escapeHtml(issues) + '" aria-label="Issues: ' + escapeHtml(issues) + '">' + escapeHtml(issues) + '</td>' +
             '<td><button class="action-btn-small view-diff-btn" data-sha="' + escapeHtml(commit.sha) + '" data-repo="' + escapeHtml(commit.repository) + '">Diff</button></td>' +
             '</tr>';
         }).join('');
@@ -1111,6 +1113,69 @@ export function generateHygieneHtml(config: HygieneHtmlConfig): string {
             });
           });
         });
+
+        // Attach Issues cell tooltip handlers
+        attachIssuesTooltipHandlers();
+      }
+
+      // ======================================================================
+      // Issues Column Tooltip (IQS-939)
+      // ======================================================================
+      var issuesTooltipTimeout = null;
+
+      function attachIssuesTooltipHandlers() {
+        var issuesCells = document.querySelectorAll('.issues-cell[data-full-issues]');
+        issuesCells.forEach(function(cell) {
+          // Mouse events
+          cell.addEventListener('mouseenter', function(e) {
+            var fullIssues = this.getAttribute('data-full-issues');
+            if (fullIssues) {
+              issuesTooltipTimeout = setTimeout(function() {
+                showIssuesTooltip(e, fullIssues);
+              }, 200); // 200ms debounce delay
+            }
+          });
+
+          cell.addEventListener('mouseleave', function() {
+            clearTimeout(issuesTooltipTimeout);
+            hideTooltip();
+          });
+
+          cell.addEventListener('mousemove', function(e) {
+            if (tooltip.classList.contains('visible')) {
+              moveTooltip(e);
+            }
+          });
+
+          // Keyboard accessibility - show tooltip on focus
+          cell.addEventListener('focus', function(e) {
+            var fullIssues = this.getAttribute('data-full-issues');
+            if (fullIssues) {
+              showIssuesTooltip(e, fullIssues);
+            }
+          });
+
+          cell.addEventListener('blur', function() {
+            hideTooltip();
+          });
+        });
+      }
+
+      function showIssuesTooltip(event, issues) {
+        // Split issues by comma for better readability
+        var issuesList = issues.split(', ');
+        var html = '<div class="tt-title"><strong>Commit Issues</strong></div>' +
+                   '<hr class="tt-divider">' +
+                   '<ul class="issues-list">';
+        issuesList.forEach(function(issue) {
+          html += '<li>' + escapeHtml(issue.trim()) + '</li>';
+        });
+        html += '</ul>';
+
+        tooltip.innerHTML = html;
+        tooltip.classList.add('visible');
+        tooltip.setAttribute('aria-hidden', 'false');
+        moveTooltip(event);
       }
 
       // ======================================================================

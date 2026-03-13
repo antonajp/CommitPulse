@@ -195,13 +195,13 @@ describe('MigrationRunner Integration Tests', () => {
     await pool.query('DROP INDEX IF EXISTS idx_commit_files_arc_component');
 
     // Run migrations again - should only apply 004, 005, 006, 007, and 021
-    // 001-003, 008-020 were not deleted so they're skipped (16 total)
+    // 001-003, 008-020, 022, 023, 024, 025, and 026 were not deleted so they're skipped (21 total)
     const secondRunner = new MigrationRunner(pool, migrationsDir);
     const secondResult = await secondRunner.migrate();
 
     expect(secondResult.success).toBe(true);
     expect(secondResult.applied).toBe(5);
-    expect(secondResult.skipped).toBe(16);
+    expect(secondResult.skipped).toBe(21);
     expect(secondResult.appliedMigrations).toContain('004_add_linear_support.sql');
     expect(secondResult.appliedMigrations).toContain('005_add_calculated_story_points.sql');
     expect(secondResult.appliedMigrations).toContain('006_add_arc_component.sql');
@@ -223,6 +223,11 @@ describe('MigrationRunner Integration Tests', () => {
     expect(secondResult.skippedMigrations).toContain('018_release_risk.sql');
     expect(secondResult.skippedMigrations).toContain('019_test_debt.sql');
     expect(secondResult.skippedMigrations).toContain('020_commit_hygiene.sql');
+    expect(secondResult.skippedMigrations).toContain('022_velocity_view_jira_support.sql');
+    expect(secondResult.skippedMigrations).toContain('023_commit_hygiene_ticket_prefix.sql');
+    expect(secondResult.skippedMigrations).toContain('024_contributor_profiles.sql');
+    expect(secondResult.skippedMigrations).toContain('025_velocity_dual_story_points.sql');
+    expect(secondResult.skippedMigrations).toContain('026_fix_delta_calculation.sql');
   }, 30_000);
 
   it('should be idempotent - fully migrated database triggers no execution', async () => {

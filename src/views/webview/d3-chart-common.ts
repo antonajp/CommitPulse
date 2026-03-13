@@ -1,8 +1,14 @@
 /**
  * D3 chart common utilities shared across dashboard charts.
- * Provides chart dimension calculations, theme color helpers, and GitHub navigation.
+ * Provides chart dimension calculations, theme color helpers, and Git commit navigation.
+ *
+ * Supports multiple Git providers:
+ * - GitHub: /commit/{sha}
+ * - Bitbucket: /commits/{sha}
+ * - GitLab: /-/commit/{sha}
  *
  * Ticket: IQS-930 (extracted from d3-dev-pipeline-section.ts)
+ * Ticket: IQS-938 (multi-provider support)
  */
 
 /**
@@ -45,19 +51,58 @@ export function generateChartCommonScript(): string {
     }
 
     // ======================================================================
-    // GitHub Commit Navigation (IQS-930)
+    // Git Commit Navigation (IQS-930, IQS-938)
     // ======================================================================
 
     /**
-     * Build the GitHub URL for a commit.
-     * Returns null if repoUrl or latestSha is missing.
+     * Detect Git provider from repository URL.
+     * Supports GitHub, Bitbucket, GitLab, and enterprise instances.
+     * @param {string} repoUrl - Repository URL
+     * @returns {string} Provider type: 'github', 'bitbucket', 'gitlab', or 'unknown'
+     */
+    function detectGitProvider(repoUrl) {
+      if (!repoUrl) return 'unknown';
+      var url = repoUrl.toLowerCase();
+      if (url.indexOf('bitbucket.org') !== -1 || url.indexOf('bitbucket.') !== -1) return 'bitbucket';
+      if (url.indexOf('gitlab.com') !== -1 || url.indexOf('gitlab.') !== -1) return 'gitlab';
+      if (url.indexOf('github.com') !== -1 || url.indexOf('github.') !== -1) return 'github';
+      return 'unknown';
+    }
+
+    /**
+     * Validate SHA format (hex string, 7-40 characters).
+     * @param {string} sha - Commit SHA to validate
+     * @returns {boolean} true if valid SHA format
+     */
+    function isValidSha(sha) {
+      if (!sha || typeof sha !== 'string') return false;
+      return /^[0-9a-f]{7,40}$/i.test(sha);
+    }
+
+    /**
+     * Build the commit URL for a Git provider.
+     * Returns null if repoUrl or latestSha is missing or invalid.
      * @param {object} d - Data point with repoUrl and latestSha
-     * @returns {string|null} GitHub commit URL or null
+     * @returns {string|null} Commit URL or null
      */
     function buildGitHubCommitUrl(d) {
       if (!d.repoUrl || !d.latestSha) return null;
-      var baseUrl = d.repoUrl.replace(/\\/$/, '');
-      return baseUrl + '/commit/' + d.latestSha;
+      if (!isValidSha(d.latestSha)) return null;
+
+      var baseUrl = d.repoUrl.replace(/\\/$/, '').replace(/\\.git$/i, '');
+      var provider = detectGitProvider(d.repoUrl);
+      var sha = encodeURIComponent(d.latestSha);
+
+      switch (provider) {
+        case 'bitbucket':
+          return baseUrl + '/commits/' + sha;
+        case 'gitlab':
+          return baseUrl + '/-/commit/' + sha;
+        case 'github':
+        case 'unknown':
+        default:
+          return baseUrl + '/commit/' + sha;
+      }
     }
 
     /**
@@ -74,7 +119,7 @@ export function generateChartCommonScript(): string {
         '<span class="ticket-link" data-commit-url="' + escapeHtml(url) + '" style="cursor: pointer;">' +
         '\\ud83d\\udd17 View latest commit (' + escapeHtml(shortSha) + ')' +
         '</span></div>' +
-        '<div class="tt-hint">Click point or link to open in GitHub</div>';
+        '<div class="tt-hint">Click point or link to open in browser</div>';
     }
 
     /**

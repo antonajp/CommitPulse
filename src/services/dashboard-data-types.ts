@@ -71,8 +71,27 @@ export interface ScorecardRow {
 }
 
 /**
+ * Contributor profile badge classification.
+ * Based on normalized metrics and team medians.
+ *
+ * Ticket: IQS-942
+ */
+export type ContributorProfile =
+  | 'Pragmatic Engineer'
+  | 'Pragmatic Engineer (leans quality)'
+  | 'Pragmatic Engineer (leans delivery)'
+  | 'Pragmatic Engineer (leans architecture)'
+  | 'Quality Guardian'
+  | 'Architect'
+  | 'Coordinator'
+  | 'Documentation Champion'
+  | 'Emerging Talent';
+
+/**
  * Detailed scorecard breakdown row.
  * Maps from vw_scorecard_detail view.
+ *
+ * Ticket: IQS-942 - Added profile and commitCount fields
  */
 export interface ScorecardDetailRow {
   /** Contributor full name */
@@ -91,6 +110,10 @@ export interface ScorecardDetailRow {
   readonly commentsScore: number;
   /** Code change score */
   readonly codeScore: number;
+  /** Contributor profile badge (optional, IQS-942) */
+  readonly profile?: ContributorProfile;
+  /** Total commit count for this contributor (optional, IQS-942) */
+  readonly commitCount?: number;
 }
 
 // ============================================================================

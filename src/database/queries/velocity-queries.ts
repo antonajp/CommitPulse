@@ -3,9 +3,10 @@
  * All queries use $N placeholders -- zero string interpolation.
  *
  * Queries operate against the vw_sprint_velocity_vs_loc view created
- * by migration 008_sprint_velocity_loc_view.sql.
+ * by migration 008_sprint_velocity_loc_view.sql and updated in
+ * migration 025_velocity_dual_story_points.sql.
  *
- * Ticket: IQS-888
+ * Ticket: IQS-888, IQS-944
  */
 
 /**
@@ -17,6 +18,8 @@
  *
  * Returns rows ordered by week_start ASC for chronological charting.
  * Limited to 200 weeks (~4 years) for safety.
+ *
+ * IQS-944: Now includes human_story_points and ai_story_points for comparison.
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC = `
   SELECT
@@ -24,6 +27,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC = `
     team,
     project,
     repository,
+    human_story_points,
+    ai_story_points,
     total_story_points,
     issue_count,
     total_loc_changed,
@@ -40,6 +45,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC = `
  * Parameters:
  *   $1 - start_date (DATE) - beginning of date range
  *   $2 - end_date (DATE) - end of date range
+ *
+ * IQS-944: Now includes human_story_points and ai_story_points for comparison.
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE = `
   SELECT
@@ -47,6 +54,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE = `
     team,
     project,
     repository,
+    human_story_points,
+    ai_story_points,
     total_story_points,
     issue_count,
     total_loc_changed,
@@ -63,6 +72,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE = `
  * Query to fetch sprint velocity vs LOC data with team filter.
  * Parameters:
  *   $1 - team (TEXT) - team name to filter by
+ *
+ * IQS-944: Now includes human_story_points and ai_story_points for comparison.
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM = `
   SELECT
@@ -70,6 +81,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM = `
     team,
     project,
     repository,
+    human_story_points,
+    ai_story_points,
     total_story_points,
     issue_count,
     total_loc_changed,
@@ -88,6 +101,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM = `
  *   $1 - start_date (DATE) - beginning of date range
  *   $2 - end_date (DATE) - end of date range
  *   $3 - team (TEXT) - team name to filter by
+ *
+ * IQS-944: Now includes human_story_points and ai_story_points for comparison.
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM = `
   SELECT
@@ -95,6 +110,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM = `
     team,
     project,
     repository,
+    human_story_points,
+    ai_story_points,
     total_story_points,
     issue_count,
     total_loc_changed,
@@ -113,7 +130,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM = `
  * Parameters:
  *   $1 - repository (TEXT) - repository name to filter by
  *
- * Ticket: IQS-920
+ * Ticket: IQS-920, IQS-944
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_REPOSITORY = `
   SELECT
@@ -121,6 +138,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_REPOSITORY = `
     team,
     project,
     repository,
+    human_story_points,
+    ai_story_points,
     total_story_points,
     issue_count,
     total_loc_changed,
@@ -140,7 +159,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_REPOSITORY = `
  *   $2 - end_date (DATE) - end of date range
  *   $3 - repository (TEXT) - repository name to filter by
  *
- * Ticket: IQS-920
+ * Ticket: IQS-920, IQS-944
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_REPOSITORY = `
   SELECT
@@ -148,6 +167,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_REPOSITORY = `
     team,
     project,
     repository,
+    human_story_points,
+    ai_story_points,
     total_story_points,
     issue_count,
     total_loc_changed,
@@ -167,7 +188,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_REPOSITORY = `
  *   $1 - team (TEXT) - team name to filter by
  *   $2 - repository (TEXT) - repository name to filter by
  *
- * Ticket: IQS-920
+ * Ticket: IQS-920, IQS-944
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_REPOSITORY = `
   SELECT
@@ -175,6 +196,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_REPOSITORY = `
     team,
     project,
     repository,
+    human_story_points,
+    ai_story_points,
     total_story_points,
     issue_count,
     total_loc_changed,
@@ -196,7 +219,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_REPOSITORY = `
  *   $3 - team (TEXT) - team name to filter by
  *   $4 - repository (TEXT) - repository name to filter by
  *
- * Ticket: IQS-920
+ * Ticket: IQS-920, IQS-944
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_REPOSITORY = `
   SELECT
@@ -204,6 +227,8 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_REPOSITORY = `
     team,
     project,
     repository,
+    human_story_points,
+    ai_story_points,
     total_story_points,
     issue_count,
     total_loc_changed,

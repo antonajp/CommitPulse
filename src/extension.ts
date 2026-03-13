@@ -25,6 +25,7 @@ import { ReleaseRiskPanel } from './views/webview/release-risk-panel.js';
 import { TestDebtPanel } from './views/webview/test-debt-panel.js';
 import { HygienePanel } from './views/webview/hygiene-panel.js';
 import { DriftPanel } from './views/webview/drift-panel.js';
+import { StoryPointsTrendPanel } from './views/webview/story-points-trend-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 
 /**
@@ -708,6 +709,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     DriftPanel.createOrShow(context.extensionUri, secretService);
   });
   disposables.push(openArchitectureDriftDisposable);
+
+  // gitrx.openStoryPointsTrend - Open the Story Points Trend chart (IQS-940)
+  const openStoryPointsTrendDisposable = vscode.commands.registerCommand('gitrx.openStoryPointsTrend', () => {
+    logger?.info(CLASS_NAME, 'openStoryPointsTrend', 'Command executed: gitrx.openStoryPointsTrend');
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'openStoryPointsTrend', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    StoryPointsTrendPanel.createOrShow(context.extensionUri, secretService);
+  });
+  disposables.push(openStoryPointsTrendDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }

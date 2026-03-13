@@ -79,6 +79,10 @@ export interface CommitHygiene {
 
   /** Whether the commit follows conventional commit format */
   readonly hasConventionalPrefix: boolean;
+  /** Whether the commit has a Jira/Linear ticket prefix (IQS-939) */
+  readonly hasTicketPrefix: boolean;
+  /** The extracted ticket reference (e.g., "AST4-902") if present (IQS-939) */
+  readonly ticketReference: string | null;
   /** The conventional commit type (feat, fix, etc.) or null */
   readonly commitType: ConventionalCommitType | null;
   /** Whether a scope is present: feat(scope): */

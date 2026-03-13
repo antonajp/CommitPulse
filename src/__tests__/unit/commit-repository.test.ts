@@ -398,23 +398,23 @@ describe('CommitRepository', () => {
 
   describe('getKnownCommitBranchRelationships', () => {
     it('should return map of SHA to branch arrays', async () => {
+      // IQS-941: Test data no longer includes sentinel value since we use INNER JOIN
+      // Only commits with actual branch relationships are returned
       mockQuery.mockResolvedValueOnce({
         rows: [
           { sha: 'sha1', branch: 'main' },
           { sha: 'sha1', branch: 'develop' },
           { sha: 'sha2', branch: 'feature/test' },
-          { sha: 'sha3', branch: 'N-O-B-R-A-N-C-H' },
         ],
-        rowCount: 4,
+        rowCount: 3,
       });
 
       const result = await repo.getKnownCommitBranchRelationships('test-repo');
 
       expect(result).toBeInstanceOf(Map);
-      expect(result.size).toBe(3);
+      expect(result.size).toBe(2);
       expect(result.get('sha1')).toEqual(['main', 'develop']);
       expect(result.get('sha2')).toEqual(['feature/test']);
-      expect(result.get('sha3')).toEqual(['N-O-B-R-A-N-C-H']);
     });
 
     it('should pass repo as parameterized value', async () => {
@@ -422,8 +422,10 @@ describe('CommitRepository', () => {
 
       await repo.getKnownCommitBranchRelationships('my-repo');
 
+      // IQS-941: Changed from LEFT JOIN with COALESCE to INNER JOIN
+      // Now looking for INNER JOIN pattern instead of COALESCE
       const selectCall = mockQuery.mock.calls.find(
-        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('COALESCE'),
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INNER JOIN'),
       );
       expect(selectCall).toBeDefined();
       expect(selectCall![1]).toEqual(['my-repo']);

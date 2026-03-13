@@ -9,7 +9,7 @@
  * All messages are typed discriminated unions using the 'type' field
  * as the discriminant for exhaustive switch-case handling.
  *
- * Ticket: IQS-888
+ * Ticket: IQS-888, IQS-944
  */
 
 import type { SprintVelocityVsLocPoint } from '../../services/velocity-data-types.js';
@@ -17,6 +17,16 @@ import type { SprintVelocityVsLocPoint } from '../../services/velocity-data-type
 // ============================================================================
 // Webview -> Extension (Requests)
 // ============================================================================
+
+/**
+ * Aggregation period for velocity data.
+ * - 'day': Daily aggregation
+ * - 'week': Weekly aggregation (ISO week, Monday start) - default
+ * - 'biweekly': Bi-weekly aggregation (2-week periods)
+ *
+ * Ticket: IQS-944
+ */
+export type VelocityAggregation = 'day' | 'week' | 'biweekly';
 
 /**
  * Request to load sprint velocity vs LOC chart data.
@@ -29,6 +39,11 @@ export interface RequestVelocityData {
   readonly team?: string;
   /** Filter by repository name (IQS-920) */
   readonly repository?: string;
+  /**
+   * Aggregation period: 'day', 'week' (default), or 'biweekly'.
+   * Ticket: IQS-944
+   */
+  readonly aggregation?: VelocityAggregation;
 }
 
 /**
