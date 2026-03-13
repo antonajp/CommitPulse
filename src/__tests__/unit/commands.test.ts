@@ -23,11 +23,12 @@ describe('Command Registration', () => {
     const context = createMockContext();
     const disposables = registerCommands(context);
 
-    // 4 database commands + 1 SecretStorageService disposable + 5 secret commands = 10
-    expect(disposables.length).toBe(10);
+    // 5 pipeline/database commands + 1 SecretStorageService disposable + 5 secret commands = 11
+    expect(disposables.length).toBe(11);
 
     const registeredCommands = commands.getRegisteredCommands();
     expect(registeredCommands.has('gitr.runPipeline')).toBe(true);
+    expect(registeredCommands.has('gitr.runGitExtraction')).toBe(true);
     expect(registeredCommands.has('gitr.startDatabase')).toBe(true);
     expect(registeredCommands.has('gitr.stopDatabase')).toBe(true);
     expect(registeredCommands.has('gitr.resetDatabase')).toBe(true);
@@ -116,6 +117,16 @@ describe('Command Registration', () => {
     registerCommands(context);
 
     await expect(commands.executeCommand('gitrx.setMigrationPassword')).resolves.not.toThrow();
+
+    LoggerService.getInstance().dispose();
+  });
+
+  it('should execute gitr.runGitExtraction command without error (IQS-949)', async () => {
+    const context = createMockContext();
+    registerCommands(context);
+
+    // Command should show warning because no repositories are configured
+    await expect(commands.executeCommand('gitr.runGitExtraction')).resolves.not.toThrow();
 
     LoggerService.getInstance().dispose();
   });
