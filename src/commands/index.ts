@@ -204,6 +204,121 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
   });
   disposables.push(runPipelineDisposable);
 
+  // gitr.runGitExtraction - Run Git commit extraction only (IQS-949)
+  const runGitExtractionDisposable = vscode.commands.registerCommand('gitr.runGitExtraction', async () => {
+    logger.info(CLASS_NAME, 'runGitExtraction', 'Command executed: gitr.runGitExtraction');
+    logger.debug(CLASS_NAME, 'runGitExtraction', 'Git extraction starting...');
+
+    if (pipelineRunning) {
+      logger.warn(CLASS_NAME, 'runGitExtraction', 'Pipeline already running, cannot start Git extraction');
+      void vscode.window.showWarningMessage('Gitr: A pipeline run is already in progress. Please wait for it to complete.');
+      return;
+    }
+
+    const settings = getSettings();
+    if (settings.repositories.length === 0) {
+      logger.warn(CLASS_NAME, 'runGitExtraction', 'No repositories configured');
+      void vscode.window.showWarningMessage('Gitr: No repositories configured. Add repos in Settings.');
+      return;
+    }
+
+    pipelineRunning = true;
+    logger.debug(CLASS_NAME, 'runGitExtraction', 'Pipeline running flag set to true');
+
+    const startTime = Date.now();
+
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Gitr: Running Git Extraction',
+          cancellable: true,
+        },
+        async (progress, token) => {
+          if (token.isCancellationRequested) {
+            logger.info(CLASS_NAME, 'runGitExtraction', 'Git extraction cancelled by user');
+            return;
+          }
+
+          // Build lightweight database connection
+          progress.report({ message: 'Connecting to database...' });
+          const buildResult = await buildDatabaseConnection(secretService, logger);
+          if (!buildResult) {
+            return; // buildDatabaseConnection already showed error messages
+          }
+
+          const { dbService, commitRepo } = buildResult;
+
+          try {
+            // Create PipelineRepository for run tracking and GitAnalysisService
+            const pipelineRepo = new PipelineRepository(dbService);
+            const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo);
+
+            // Build options from settings
+            const options: { sinceDate?: string; debugLogging?: boolean } = {};
+            if (settings.pipeline.sinceDate) {
+              options.sinceDate = settings.pipeline.sinceDate;
+            }
+            if (settings.git.debugLogging) {
+              options.debugLogging = settings.git.debugLogging;
+            }
+
+            logger.info(CLASS_NAME, 'runGitExtraction', `Extracting commits from ${settings.repositories.length} repositories`);
+            if (options.sinceDate) {
+              logger.info(CLASS_NAME, 'runGitExtraction', `Using sinceDate filter: ${options.sinceDate}`);
+            }
+
+            // Run Git extraction
+            progress.report({ message: 'Extracting commits...' });
+            const result = await gitAnalysisService.analyzeRepositories(settings.repositories, options);
+
+            // Calculate totals
+            const totalCommits = result.repoResults.reduce((sum, r) => sum + r.commitsInserted, 0);
+            const totalBranches = result.repoResults.reduce((sum, r) => sum + r.branchesProcessed, 0);
+            const reposProcessed = result.repoResults.length;
+            const reposFailed = result.repoResults.filter((r) => r.error !== undefined).length;
+            const durationSecs = Math.round((Date.now() - startTime) / 1000);
+
+            // Build result message
+            let message: string;
+            if (result.status === 'SUCCESS') {
+              message = `Gitr: Extracted ${totalCommits.toLocaleString()} commits from ${totalBranches} branches across ${reposProcessed} repos (${durationSecs}s)`;
+              void vscode.window.showInformationMessage(message);
+            } else if (result.status === 'PARTIAL') {
+              const successCount = reposProcessed - reposFailed;
+              message = `Gitr: Extracted ${totalCommits.toLocaleString()} commits from ${successCount}/${reposProcessed} repos. ${reposFailed} repo(s) failed—check Output.`;
+              void vscode.window.showWarningMessage(message);
+            } else {
+              message = 'Gitr: Git extraction failed. Ensure repositories exist and are accessible.';
+              void vscode.window.showErrorMessage(message);
+            }
+
+            logger.info(CLASS_NAME, 'runGitExtraction', message);
+            logger.debug(CLASS_NAME, 'runGitExtraction', `Result status: ${result.status}, pipelineRunId: ${result.pipelineRunId ?? 'N/A'}`);
+
+          } finally {
+            // Always shut down the database connection pool
+            try {
+              await dbService.shutdown();
+              logger.debug(CLASS_NAME, 'runGitExtraction', 'Database connection pool shut down');
+            } catch (shutdownError: unknown) {
+              const msg = shutdownError instanceof Error ? shutdownError.message : String(shutdownError);
+              logger.warn(CLASS_NAME, 'runGitExtraction', `Database shutdown warning: ${msg}`);
+            }
+          }
+        }
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(CLASS_NAME, 'runGitExtraction', `Git extraction failed: ${message}`, error instanceof Error ? error : undefined);
+      void vscode.window.showErrorMessage(`Gitr: Git extraction failed - ${message}`);
+    } finally {
+      pipelineRunning = false;
+      logger.debug(CLASS_NAME, 'runGitExtraction', 'Pipeline running flag set to false');
+    }
+  });
+  disposables.push(runGitExtractionDisposable);
+
   // gitr.startDatabase - Start the PostgreSQL Docker container
   const startDatabaseDisposable = vscode.commands.registerCommand('gitr.startDatabase', async () => {
     logger.info(CLASS_NAME, 'startDatabase', 'Command executed: gitr.startDatabase');
