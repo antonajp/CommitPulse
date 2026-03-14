@@ -379,15 +379,17 @@ export class GitAnalysisService {
       return { newCommits: 0, newRelationships: 0 };
     }
 
-    this.logger.debug(CLASS_NAME, 'processBranch', `Branch ${branchName}: ${logResult.all.length} commits in range`);
+    const totalInRange = logResult.all.length;
+    this.logger.debug(CLASS_NAME, 'processBranch', `Branch ${branchName}: ${totalInRange} commits in range`);
 
     // IQS-936: Debug logging for commit range
     if (debugLogging) {
       this.logger.debug(CLASS_NAME, 'processBranch', `[GIT DEBUG] Processing branch: ${branchName}`);
-      this.logger.debug(CLASS_NAME, 'processBranch', `[GIT DEBUG]   Commits in range: ${logResult.all.length}`);
+      this.logger.debug(CLASS_NAME, 'processBranch', `[GIT DEBUG]   Commits in range: ${totalInRange}`);
     }
 
     let newCommits = 0;
+    let existingCommits = 0;
     let newRelationships = 0;
 
     for (const logEntry of logResult.all) {
@@ -397,6 +399,7 @@ export class GitAnalysisService {
       const existingBranches = knownRelationships.get(sha);
       if (existingBranches !== undefined) {
         // Known SHA - only record new branch relationship
+        existingCommits++;
         if (!existingBranches.includes(branchName)) {
           await this.commitRepo.insertCommitBranchRelationship(
             sha, branchName, logEntry.author_name, new Date(logEntry.date),
@@ -477,7 +480,12 @@ export class GitAnalysisService {
       this.logger.debug(CLASS_NAME, 'processBranch', `Committed ${sha.substring(0, 8)} (${newCommits} new so far)`);
     }
 
-    this.logger.info(CLASS_NAME, 'processBranch', `Branch ${branchName}: ${newCommits} new commits, ${newRelationships} relationships`);
+    // IQS-950: Log accurate commit breakdown (total = new + existing)
+    this.logger.info(
+      CLASS_NAME,
+      'processBranch',
+      `Branch ${branchName}: ${totalInRange} commits in range (${newCommits} new, ${existingCommits} existing), ${newRelationships} new relationships`,
+    );
     return { newCommits, newRelationships };
   }
 
@@ -540,6 +548,11 @@ export class GitAnalysisService {
   /**
    * Get the commit log for a branch with optional date filtering.
    * Returns null on error (branch not found, etc).
+   *
+   * IQS-950: Uses refs/heads/ prefix to explicitly reference branches and avoid
+   * ambiguity when a tag has the same name as a branch. Without this prefix,
+   * Git may interpret the name as a tag reference instead of a branch, which
+   * can result in missing commits during extraction.
    */
   private async getBranchLog(
     git: SimpleGit,
@@ -561,13 +574,20 @@ export class GitAnalysisService {
       // from the branch" -- giving 0 results when HEAD is on that branch.
       // Using '--numstat' only (not --stat) since they are mutually exclusive.
       // Ticket: IQS-873 (discovered via E2E test)
-      const rawArgs: string[] = [branchName, '--numstat'];
+      //
+      // IQS-950: Use refs/heads/ prefix to explicitly reference branches.
+      // Without this prefix, Git may interpret branch names as tag references
+      // when a tag with the same name exists, causing commits to be filtered
+      // incorrectly (only tagged commits would be returned).
+      const branchRef = `refs/heads/${branchName}`;
+      const rawArgs: string[] = [branchRef, '--numstat'];
       if (options.sinceDate) {
         rawArgs.push(`--after=${options.sinceDate}`);
       }
       if (options.untilDate) {
         rawArgs.push(`--before=${options.untilDate}`);
       }
+      this.logger.trace(CLASS_NAME, 'getBranchLog', `Querying log for branch ref: ${branchRef}`);
       return await git.log(rawArgs);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
