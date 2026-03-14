@@ -337,42 +337,45 @@ body {
   white-space: nowrap;
 }
 
-/* Profile Badge Color Variants (using VS Code theme-aware colors) */
+/* Profile Badge Color Variants (IQS-951: WCAG AA compliant contrast)
+ * Dark theme (default): Brightened text colors for 4.5:1+ contrast on #252526 background.
+ * Increased background opacity (0.25) and border opacity (0.6) for better visibility.
+ */
 
 .profile-pragmatic {
-  background-color: var(--vscode-charts-blue, rgba(75, 166, 223, 0.2));
-  color: var(--vscode-charts-blue, #4ba6df);
-  border: 1px solid var(--vscode-charts-blue, rgba(75, 166, 223, 0.4));
+  background-color: rgba(75, 166, 223, 0.25);
+  color: #6bb6ef; /* Brightened from #4ba6df for WCAG AA (4.5:1+) */
+  border: 1px solid rgba(75, 166, 223, 0.6);
 }
 
 .profile-quality {
-  background-color: var(--vscode-charts-green, rgba(137, 221, 116, 0.2));
-  color: var(--vscode-charts-green, #89dd74);
-  border: 1px solid var(--vscode-charts-green, rgba(137, 221, 116, 0.4));
+  background-color: rgba(137, 221, 116, 0.25);
+  color: #a0e68f; /* Brightened from #89dd74 for WCAG AA (4.5:1+) */
+  border: 1px solid rgba(137, 221, 116, 0.6);
 }
 
 .profile-architect {
-  background-color: var(--vscode-charts-purple, rgba(186, 137, 221, 0.2));
-  color: var(--vscode-charts-purple, #ba89dd);
-  border: 1px solid var(--vscode-charts-purple, rgba(186, 137, 221, 0.4));
+  background-color: rgba(186, 137, 221, 0.25);
+  color: #c199ed; /* Brightened from #ba89dd for WCAG AA (4.5:1+) */
+  border: 1px solid rgba(186, 137, 221, 0.6);
 }
 
 .profile-coordinator {
-  background-color: var(--vscode-charts-orange, rgba(242, 161, 87, 0.2));
-  color: var(--vscode-charts-orange, #f2a157);
-  border: 1px solid var(--vscode-charts-orange, rgba(242, 161, 87, 0.4));
+  background-color: rgba(242, 161, 87, 0.25);
+  color: #ffb87a; /* Brightened from #f2a157 for WCAG AA (4.5:1+) */
+  border: 1px solid rgba(242, 161, 87, 0.6);
 }
 
 .profile-documentation {
-  background-color: var(--vscode-charts-yellow, rgba(231, 197, 71, 0.2));
-  color: var(--vscode-charts-yellow, #e7c547);
-  border: 1px solid var(--vscode-charts-yellow, rgba(231, 197, 71, 0.4));
+  background-color: rgba(231, 197, 71, 0.25);
+  color: #f5d76e; /* Brightened from #e7c547 for WCAG AA (4.5:1+) */
+  border: 1px solid rgba(231, 197, 71, 0.6);
 }
 
 .profile-emerging {
-  background-color: var(--vscode-charts-foreground, rgba(204, 204, 204, 0.15));
-  color: var(--vscode-descriptionForeground, #888888);
-  border: 1px solid var(--vscode-panel-border, #444444);
+  background-color: rgba(204, 204, 204, 0.2);
+  color: #b0b0b0; /* Brightened from #888888 for WCAG AA (4.5:1+) */
+  border: 1px solid rgba(204, 204, 204, 0.5);
 }
 
 .profile-empty {
@@ -389,32 +392,46 @@ body {
   height: 24px;
 }
 
-/* Accessibility: Ensure sufficient contrast (WCAG AA 4.5:1) */
+/* Light theme overrides (IQS-951: WCAG AA compliant contrast)
+ * prefers-color-scheme: light handles OS-level light theme preference.
+ * Darkened text colors for 4.5:1+ contrast on light backgrounds.
+ */
 @media (prefers-color-scheme: light) {
   .profile-pragmatic {
     background-color: rgba(75, 166, 223, 0.25);
     color: #0066a8;
+    border: 1px solid rgba(75, 166, 223, 0.6);
   }
 
   .profile-quality {
     background-color: rgba(137, 221, 116, 0.25);
     color: #2d7a1f;
+    border: 1px solid rgba(137, 221, 116, 0.6);
   }
 
   .profile-architect {
     background-color: rgba(186, 137, 221, 0.25);
     color: #7042a8;
+    border: 1px solid rgba(186, 137, 221, 0.6);
   }
 
   .profile-coordinator {
     background-color: rgba(242, 161, 87, 0.25);
     color: #b35f0f;
+    border: 1px solid rgba(242, 161, 87, 0.6);
   }
 
   .profile-documentation {
     background-color: rgba(231, 197, 71, 0.25);
     /* IQS-942: Darkened from #9a7300 to #8a6700 for WCAG AA contrast (4.87:1 vs 4.35:1) */
     color: #8a6700;
+    border: 1px solid rgba(231, 197, 71, 0.6);
+  }
+
+  .profile-emerging {
+    background-color: rgba(136, 136, 136, 0.2);
+    color: #555555; /* Darkened for light theme WCAG AA (4.5:1+) */
+    border: 1px solid rgba(136, 136, 136, 0.5);
   }
 }
 

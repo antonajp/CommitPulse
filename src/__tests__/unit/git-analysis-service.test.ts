@@ -774,6 +774,162 @@ describe('GitAnalysisService', () => {
       expect(result.newCommits).toBe(0);
       expect(result.newRelationships).toBe(0);
     });
+
+    // IQS-950: Test for accurate commit counting (new + existing = total)
+    it('should accurately count new vs existing commits', async () => {
+      // Set up: 2 existing commits (sha1, sha2), 1 new commit (sha3)
+      const knownRelationships = new Map<string, string[]>([
+        ['sha1sha1sha1sha1sha1sha1sha1sha1sha1sha1', ['main']],
+        ['sha2sha2sha2sha2sha2sha2sha2sha2sha2sha2', ['main', 'develop']],
+      ]);
+
+      // Return 3 commits from log: 2 existing + 1 new
+      mockGitLog.mockResolvedValue({
+        all: [
+          createSampleLogEntry({ hash: 'sha1sha1sha1sha1sha1sha1sha1sha1sha1sha1' }),
+          createSampleLogEntry({ hash: 'sha2sha2sha2sha2sha2sha2sha2sha2sha2sha2' }),
+          createSampleLogEntry({ hash: 'sha3sha3sha3sha3sha3sha3sha3sha3sha3sha3' }),
+        ],
+        latest: null,
+        total: 3,
+      });
+
+      const insertCommitSpy = vi.spyOn(commitRepo, 'insertCommitHistory');
+      const insertBranchSpy = vi.spyOn(commitRepo, 'insertCommitBranchRelationship');
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { log: mockGitLog, show: vi.fn() } as any;
+      const tagMap = new Map<string, readonly string[]>();
+      const repoContext = {
+        path: '/path', name: 'repo', organization: 'Org',
+        repositoryUrl: 'https://github.com/Org/repo.git',
+      };
+
+      const result = await service.processBranch(
+        mockGit, repoContext, 'feature', {},
+        knownRelationships, tagMap, 1,
+      );
+
+      // 3 commits in range: 1 new (sha3), 2 existing (sha1, sha2)
+      // Only sha3 should be fully processed as new commit
+      expect(result.newCommits).toBe(1);
+      // sha1 needs branch relationship 'feature' added (not in 'main' or 'develop')
+      // sha2 needs branch relationship 'feature' added
+      // sha3 gets initial relationship
+      // Total: 3 new relationships
+      expect(result.newRelationships).toBe(3);
+      expect(insertCommitSpy).toHaveBeenCalledTimes(1); // Only sha3
+      expect(insertBranchSpy).toHaveBeenCalledTimes(3); // All 3 commits
+    });
+
+    // IQS-950: Test that refs/heads/ prefix is used for branch names
+    it('should use refs/heads/ prefix when querying branch log', async () => {
+      // This test verifies the fix for branch/tag name collision
+      mockGitLog.mockResolvedValue({
+        all: [createSampleLogEntry()],
+        latest: null,
+        total: 1,
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { log: mockGitLog, show: vi.fn() } as any;
+      const tagMap = new Map<string, readonly string[]>();
+      const repoContext = {
+        path: '/path', name: 'repo', organization: 'Org',
+        repositoryUrl: 'https://github.com/Org/repo.git',
+      };
+
+      await service.processBranch(
+        mockGit, repoContext, 'release-v1.0', {},
+        new Map(), tagMap, 1,
+      );
+
+      // Verify git log was called with refs/heads/ prefix
+      expect(mockGitLog).toHaveBeenCalledWith(
+        expect.arrayContaining(['refs/heads/release-v1.0', '--numstat']),
+      );
+    });
+
+    // IQS-950: Test branch/tag name collision scenario
+    it('should handle branch name that matches a tag name', async () => {
+      // Simulate a repository where both a branch and tag named "release-v1.0" exist
+      // Without the refs/heads/ fix, git might interpret this as the tag
+      mockGitLog.mockResolvedValue({
+        all: [
+          createSampleLogEntry({ hash: 'commit1commit1commit1commit1commit1commit1' }),
+          createSampleLogEntry({ hash: 'commit2commit2commit2commit2commit2commit2' }),
+        ],
+        latest: null,
+        total: 2,
+      });
+
+      const insertCommitSpy = vi.spyOn(commitRepo, 'insertCommitHistory');
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { log: mockGitLog, show: vi.fn() } as any;
+      const tagMap = new Map<string, readonly string[]>();
+      const repoContext = {
+        path: '/path', name: 'repo', organization: 'Org',
+        repositoryUrl: 'https://github.com/Org/repo.git',
+      };
+
+      const result = await service.processBranch(
+        mockGit, repoContext, 'release-v1.0', {}, // Branch name that could match a tag
+        new Map(), tagMap, 1,
+      );
+
+      // Should extract both commits (not just tagged commit)
+      expect(result.newCommits).toBe(2);
+      expect(insertCommitSpy).toHaveBeenCalledTimes(2);
+
+      // Verify the branch ref format was used
+      expect(mockGitLog).toHaveBeenCalledWith(
+        expect.arrayContaining(['refs/heads/release-v1.0']),
+      );
+    });
+
+    // IQS-950: Test mixed tagged/untagged commits extraction
+    it('should extract both tagged and untagged commits', async () => {
+      const sha1 = 'tagged1tagged1tagged1tagged1tagged1tagged1';
+      const sha2 = 'untaggeduntaggeduntaggeduntaggeduntagged1';
+      const sha3 = 'tagged2tagged2tagged2tagged2tagged2tagged2';
+
+      mockGitLog.mockResolvedValue({
+        all: [
+          createSampleLogEntry({ hash: sha1 }),
+          createSampleLogEntry({ hash: sha2 }),
+          createSampleLogEntry({ hash: sha3 }),
+        ],
+        latest: null,
+        total: 3,
+      });
+
+      const insertCommitSpy = vi.spyOn(commitRepo, 'insertCommitHistory');
+      const insertTagsSpy = vi.spyOn(commitRepo, 'insertCommitTags');
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { log: mockGitLog, show: vi.fn() } as any;
+      // Only sha1 and sha3 have tags; sha2 is untagged
+      const tagMap = new Map<string, readonly string[]>([
+        [sha1, ['v1.0.0']],
+        [sha3, ['v1.0.1']],
+      ]);
+      const repoContext = {
+        path: '/path', name: 'repo', organization: 'Org',
+        repositoryUrl: 'https://github.com/Org/repo.git',
+      };
+
+      const result = await service.processBranch(
+        mockGit, repoContext, 'main', {},
+        new Map(), tagMap, 1,
+      );
+
+      // All 3 commits should be extracted regardless of tag status
+      expect(result.newCommits).toBe(3);
+      expect(insertCommitSpy).toHaveBeenCalledTimes(3);
+      // Tags should be inserted for sha1 and sha3 only
+      expect(insertTagsSpy).toHaveBeenCalledTimes(2);
+    });
   });
 
   // --------------------------------------------------------------------------
