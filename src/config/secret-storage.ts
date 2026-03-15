@@ -18,6 +18,8 @@ export const SecretKeys = {
   GITHUB_TOKEN: 'gitrx.github.token',
   /** Linear API key for authentication */
   LINEAR_TOKEN: 'gitrx.linear.token',
+  /** Bitbucket Repository/Workspace Access Token (GITX-2) */
+  BITBUCKET_TOKEN: 'gitrx.bitbucket.token',
 } as const;
 
 /**
@@ -34,6 +36,7 @@ const SecretLabels: Record<SecretKey, string> = {
   [SecretKeys.JIRA_TOKEN]: 'Jira API Token',
   [SecretKeys.GITHUB_TOKEN]: 'GitHub Personal Access Token',
   [SecretKeys.LINEAR_TOKEN]: 'Linear API Token',
+  [SecretKeys.BITBUCKET_TOKEN]: 'Bitbucket Access Token',
 };
 
 /**
@@ -45,6 +48,7 @@ const SecretPrompts: Record<SecretKey, string> = {
   [SecretKeys.JIRA_TOKEN]: 'Enter your Jira API token',
   [SecretKeys.GITHUB_TOKEN]: 'Enter your GitHub personal access token',
   [SecretKeys.LINEAR_TOKEN]: 'Enter your Linear API key (starts with lin_api_)',
+  [SecretKeys.BITBUCKET_TOKEN]: 'Enter your Bitbucket Repository or Workspace Access Token',
 };
 
 /**
@@ -154,6 +158,25 @@ export class SecretStorageService implements vscode.Disposable {
     this.logger.debug(CLASS_NAME, 'getLinearToken', 'Retrieving Linear API key');
     this.logger.info(CLASS_NAME, 'getLinearToken', 'Credential access: LINEAR_TOKEN requested');
     return this.getSecretOrPrompt(SecretKeys.LINEAR_TOKEN);
+  }
+
+  /**
+   * Retrieve the Bitbucket access token from secure storage.
+   * If the secret is not set, prompts the user to enter it.
+   *
+   * Supports:
+   * - Bitbucket Cloud: Repository Access Tokens or Workspace Access Tokens
+   * - Bitbucket Server/Data Center: Personal Access Tokens
+   *
+   * Note: App Passwords are deprecated for Bitbucket Cloud. Use access tokens instead.
+   *
+   * @returns The Bitbucket access token, or undefined if the user cancels the prompt
+   * @ticket GITX-2
+   */
+  async getBitbucketToken(): Promise<string | undefined> {
+    this.logger.debug(CLASS_NAME, 'getBitbucketToken', 'Retrieving Bitbucket access token');
+    this.logger.info(CLASS_NAME, 'getBitbucketToken', 'Credential access: BITBUCKET_TOKEN requested');
+    return this.getSecretOrPrompt(SecretKeys.BITBUCKET_TOKEN);
   }
 
   /**

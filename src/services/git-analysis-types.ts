@@ -116,12 +116,21 @@ export interface ExtractedFileDiff {
 /**
  * Information about a git branch with its latest commit date.
  * Used for filtering branches by recency.
+ *
+ * GITX-2: Added isRemote flag to distinguish local from remote branches.
+ * This is needed because local branch names can contain "/" (e.g., "feature/foo"),
+ * so we cannot rely on the presence of "/" to detect remote branches.
  */
 export interface BranchInfo {
-  /** Branch name (e.g., "main", "feature/foo"). */
+  /** Branch name (e.g., "main", "feature/foo", "origin/main"). */
   readonly name: string;
   /** Timestamp of the latest commit on this branch (epoch seconds). */
   readonly lastCommitTimestamp: number;
+  /**
+   * Whether this branch is a remote branch (GITX-2).
+   * Remote branches use refs/remotes/ prefix, local use refs/heads/.
+   */
+  readonly isRemote?: boolean;
 }
 
 // ============================================================================

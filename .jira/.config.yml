@@ -1,0 +1,79 @@
+auth_type: basic
+installation: Cloud
+login: jp@iqaccel.com
+server: https://improviselabs.atlassian.net
+timezone: America/New_York
+project:
+  key: GITX
+  type: next-gen
+board: ""
+epic:
+  name: ""
+  link: ""
+issue:
+  fields:
+    custom:
+      - name: Design
+        key: customfield_10035
+        schema:
+          datatype: array
+          items: design.field.name
+      - name: Sprint
+        key: customfield_10020
+        schema:
+          datatype: array
+          items: json
+      - name: Flagged
+        key: customfield_10021
+        schema:
+          datatype: array
+          items: option
+      - name: Story point estimate
+        key: customfield_10016
+        schema:
+          datatype: number
+      - name: Issue color
+        key: customfield_10017
+        schema:
+          datatype: string
+      - name: Rank
+        key: customfield_10019
+        schema:
+          datatype: any
+      - name: Start date
+        key: customfield_10015
+        schema:
+          datatype: date
+      - name: Development
+        key: customfield_10000
+        schema:
+          datatype: any
+      - name: Team
+        key: customfield_10001
+        schema:
+          datatype: team
+  types:
+    - id: "10001"
+      name: Epic
+      handle: Epic
+      subtask: false
+    - id: "10002"
+      name: Subtask
+      handle: Subtask
+      subtask: true
+    - id: "10003"
+      name: Task
+      handle: Task
+      subtask: false
+    - id: "10004"
+      name: Story
+      handle: Story
+      subtask: false
+    - id: "10005"
+      name: Feature
+      handle: Feature
+      subtask: false
+    - id: "10006"
+      name: Bug
+      handle: Bug
+      subtask: false

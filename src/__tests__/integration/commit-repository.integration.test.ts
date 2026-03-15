@@ -422,6 +422,80 @@ describe('CommitRepository & CommitJiraRepository Integration Tests', () => {
       expect(repos[1]?.repo).toBe('repo-new');
     });
 
+    // --------------------------------------------------------------------------
+    // Per-repo watermark query (GITX-1)
+    // --------------------------------------------------------------------------
+
+    it('should get last commit date for a specific repository and URL', async () => {
+      const date1 = new Date('2024-01-01T10:00:00Z');
+      const date2 = new Date('2024-06-15T14:30:00Z');
+      const repoUrl = 'https://github.com/org/test-repo.git';
+
+      await commitRepo.insertCommitHistory(createTestCommit({
+        sha: 'a'.repeat(40), repository: 'test-repo', repositoryUrl: repoUrl, commitDate: date1,
+      }));
+      await commitRepo.insertCommitHistory(createTestCommit({
+        sha: 'b'.repeat(40), repository: 'test-repo', repositoryUrl: repoUrl, commitDate: date2,
+      }));
+
+      const result = await commitRepo.getLastCommitDateForRepo('test-repo', repoUrl);
+
+      expect(result).not.toBeNull();
+      expect(result!.getTime()).toBe(date2.getTime());
+    });
+
+    it('should return null when no commits exist for repository', async () => {
+      const result = await commitRepo.getLastCommitDateForRepo('non-existent-repo', 'https://github.com/org/non-existent.git');
+
+      expect(result).toBeNull();
+    });
+
+    it('should isolate watermarks per repository (multi-repo state isolation)', async () => {
+      const repoAUrl = 'https://github.com/org/repo-a.git';
+      const repoBUrl = 'https://github.com/org/repo-b.git';
+
+      // Repo A has older commits
+      await commitRepo.insertCommitHistory(createTestCommit({
+        sha: 'a'.repeat(40), repository: 'repo-a', repositoryUrl: repoAUrl,
+        commitDate: new Date('2024-01-01T00:00:00Z'),
+      }));
+
+      // Repo B has newer commits
+      await commitRepo.insertCommitHistory(createTestCommit({
+        sha: 'b'.repeat(40), repository: 'repo-b', repositoryUrl: repoBUrl,
+        commitDate: new Date('2024-06-15T00:00:00Z'),
+      }));
+
+      // Get watermarks for each repo independently
+      const repoAWatermark = await commitRepo.getLastCommitDateForRepo('repo-a', repoAUrl);
+      const repoBWatermark = await commitRepo.getLastCommitDateForRepo('repo-b', repoBUrl);
+
+      // Verify each repo has its own watermark (no state leakage)
+      expect(repoAWatermark!.toISOString()).toBe('2024-01-01T00:00:00.000Z');
+      expect(repoBWatermark!.toISOString()).toBe('2024-06-15T00:00:00.000Z');
+    });
+
+    it('should distinguish same repo name with different URLs', async () => {
+      const url1 = 'https://github.com/org1/shared-name.git';
+      const url2 = 'https://github.com/org2/shared-name.git';
+
+      await commitRepo.insertCommitHistory(createTestCommit({
+        sha: 'a'.repeat(40), repository: 'shared-name', repositoryUrl: url1,
+        commitDate: new Date('2024-01-01T00:00:00Z'),
+      }));
+      await commitRepo.insertCommitHistory(createTestCommit({
+        sha: 'b'.repeat(40), repository: 'shared-name', repositoryUrl: url2,
+        commitDate: new Date('2024-06-15T00:00:00Z'),
+      }));
+
+      // Same repo name but different URLs should be isolated
+      const watermark1 = await commitRepo.getLastCommitDateForRepo('shared-name', url1);
+      const watermark2 = await commitRepo.getLastCommitDateForRepo('shared-name', url2);
+
+      expect(watermark1!.toISOString()).toBe('2024-01-01T00:00:00.000Z');
+      expect(watermark2!.toISOString()).toBe('2024-06-15T00:00:00.000Z');
+    });
+
     it('should get commit file base metrics for a file', async () => {
       const commit = createTestCommit();
       await commitRepo.insertCommitHistory(commit);

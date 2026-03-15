@@ -23,8 +23,9 @@ describe('Command Registration', () => {
     const context = createMockContext();
     const disposables = registerCommands(context);
 
-    // 5 pipeline/database commands + 1 SecretStorageService disposable + 5 secret commands = 11
-    expect(disposables.length).toBe(11);
+    // 5 pipeline/database commands + 1 SecretStorageService disposable + 6 secret commands = 12
+    // GITX-2: Added setBitbucketToken command
+    expect(disposables.length).toBe(12);
 
     const registeredCommands = commands.getRegisteredCommands();
     expect(registeredCommands.has('gitr.runPipeline')).toBe(true);
@@ -37,6 +38,7 @@ describe('Command Registration', () => {
     expect(registeredCommands.has('gitrx.setGitHubToken')).toBe(true);
     expect(registeredCommands.has('gitrx.setLinearToken')).toBe(true);
     expect(registeredCommands.has('gitrx.setMigrationPassword')).toBe(true);
+    expect(registeredCommands.has('gitrx.setBitbucketToken')).toBe(true);
 
     LoggerService.getInstance().dispose();
   });

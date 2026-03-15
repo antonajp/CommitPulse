@@ -57,6 +57,7 @@ const mockGitBranchLocal = vi.fn();
 const mockGitTags = vi.fn();
 const mockGitRevparse = vi.fn();
 const mockGitGetRemotes = vi.fn();
+const mockGitRaw = vi.fn();
 
 vi.mock('simple-git', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -65,6 +66,7 @@ vi.mock('simple-git', () => ({
     tags: mockGitTags,
     revparse: mockGitRevparse,
     getRemotes: mockGitGetRemotes,
+    raw: mockGitRaw,
   })),
 }));
 
@@ -544,13 +546,22 @@ describe('GitAnalysisService', () => {
         detached: false,
       });
 
-      mockGitLog
-        .mockResolvedValueOnce({ latest: { date: '2024-01-15T10:00:00Z' }, all: [] })
-        .mockResolvedValueOnce({ latest: { date: '2024-01-14T10:00:00Z' }, all: [] })
-        .mockResolvedValueOnce({ latest: { date: '2024-01-13T10:00:00Z' }, all: [] });
+      // GITX-2: Mock remote branches (empty for this test)
+      const mockGitBranch = vi.fn().mockResolvedValue({
+        all: [],
+        branches: {},
+        current: '',
+        detached: false,
+      });
+
+      // GITX-1: Branch timestamps are now retrieved via git.raw() instead of git.log()
+      mockGitRaw
+        .mockResolvedValueOnce('abc123|2024-01-15 10:00:00 +0000\n')
+        .mockResolvedValueOnce('def456|2024-01-14 10:00:00 +0000\n')
+        .mockResolvedValueOnce('789abc|2024-01-13 10:00:00 +0000\n');
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mockGit = { branchLocal: mockGitBranchLocal, log: mockGitLog } as any;
+      const mockGit = { branchLocal: mockGitBranchLocal, branch: mockGitBranch, raw: mockGitRaw } as any;
       const branches = await service.getAllBranches(mockGit);
 
       expect(branches).toHaveLength(3);
@@ -567,14 +578,157 @@ describe('GitAnalysisService', () => {
         detached: false,
       });
 
-      mockGitLog
-        .mockResolvedValueOnce({ latest: { date: '2024-01-15T10:00:00Z' }, all: [] })
+      // GITX-2: Mock remote branches (empty for this test)
+      const mockGitBranch = vi.fn().mockResolvedValue({
+        all: [],
+        branches: {},
+        current: '',
+        detached: false,
+      });
+
+      // GITX-1: Branch timestamps are now retrieved via git.raw()
+      mockGitRaw
+        .mockResolvedValueOnce('abc123|2024-01-15 10:00:00 +0000\n')
         .mockRejectedValueOnce(new Error('branch not found'));
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mockGit = { branchLocal: mockGitBranchLocal, log: mockGitLog } as any;
+      const mockGit = { branchLocal: mockGitBranchLocal, branch: mockGitBranch, raw: mockGitRaw } as any;
       const branches = await service.getAllBranches(mockGit);
 
+      expect(branches).toHaveLength(1);
+      expect(branches[0]!.name).toBe('main');
+    });
+
+    // GITX-2: Remote branch discovery tests
+    it('should include remote branches alongside local branches (GITX-2)', async () => {
+      mockGitBranchLocal.mockResolvedValue({
+        all: ['main'],
+        branches: {},
+        current: 'main',
+        detached: false,
+      });
+
+      // Mock remote branches
+      const mockGitBranch = vi.fn().mockResolvedValue({
+        all: ['origin/main', 'origin/feature-remote', 'origin/HEAD -> origin/main'],
+        branches: {},
+        current: '',
+        detached: false,
+      });
+
+      // Mock timestamps: main (local), feature-remote (remote only)
+      mockGitRaw
+        .mockResolvedValueOnce('abc123|2024-01-15 10:00:00 +0000\n') // local main
+        .mockResolvedValueOnce('def456|2024-01-14 10:00:00 +0000\n'); // origin/feature-remote
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { branchLocal: mockGitBranchLocal, branch: mockGitBranch, raw: mockGitRaw } as any;
+      const branches = await service.getAllBranches(mockGit);
+
+      // Should have: main (local) + origin/feature-remote (remote, not in local)
+      // origin/main should be skipped because local 'main' exists
+      expect(branches).toHaveLength(2);
+      expect(branches.map(b => b.name)).toContain('main');
+      expect(branches.map(b => b.name)).toContain('origin/feature-remote');
+
+      // Verify isRemote flag is correctly set
+      const localMain = branches.find(b => b.name === 'main');
+      const remoteFeature = branches.find(b => b.name === 'origin/feature-remote');
+      expect(localMain?.isRemote).toBe(false);
+      expect(remoteFeature?.isRemote).toBe(true);
+    });
+
+    it('should skip remote branches that have a local equivalent (GITX-2)', async () => {
+      mockGitBranchLocal.mockResolvedValue({
+        all: ['main', 'develop'],
+        branches: {},
+        current: 'main',
+        detached: false,
+      });
+
+      // Mock remote branches - origin/main and origin/develop have local equivalents
+      const mockGitBranch = vi.fn().mockResolvedValue({
+        all: ['origin/main', 'origin/develop', 'origin/feature-only-remote'],
+        branches: {},
+        current: '',
+        detached: false,
+      });
+
+      mockGitRaw
+        .mockResolvedValueOnce('abc123|2024-01-15 10:00:00 +0000\n') // main
+        .mockResolvedValueOnce('def456|2024-01-14 10:00:00 +0000\n') // develop
+        .mockResolvedValueOnce('789abc|2024-01-13 10:00:00 +0000\n'); // origin/feature-only-remote
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { branchLocal: mockGitBranchLocal, branch: mockGitBranch, raw: mockGitRaw } as any;
+      const branches = await service.getAllBranches(mockGit);
+
+      expect(branches).toHaveLength(3);
+      expect(branches.map(b => b.name)).toContain('main');
+      expect(branches.map(b => b.name)).toContain('develop');
+      expect(branches.map(b => b.name)).toContain('origin/feature-only-remote');
+      // origin/main and origin/develop should NOT be included (local equivalents exist)
+      expect(branches.map(b => b.name)).not.toContain('origin/main');
+      expect(branches.map(b => b.name)).not.toContain('origin/develop');
+
+      // Verify isRemote flag is correctly set
+      const localMain = branches.find(b => b.name === 'main');
+      const localDevelop = branches.find(b => b.name === 'develop');
+      const remoteFeature = branches.find(b => b.name === 'origin/feature-only-remote');
+      expect(localMain?.isRemote).toBe(false);
+      expect(localDevelop?.isRemote).toBe(false);
+      expect(remoteFeature?.isRemote).toBe(true);
+    });
+
+    it('should filter out HEAD references from remote branches (GITX-2)', async () => {
+      mockGitBranchLocal.mockResolvedValue({
+        all: [],
+        branches: {},
+        current: '',
+        detached: true,
+      });
+
+      // Mock remote branches including HEAD reference
+      const mockGitBranch = vi.fn().mockResolvedValue({
+        all: ['origin/main', 'origin/HEAD -> origin/main', 'origin/develop'],
+        branches: {},
+        current: '',
+        detached: false,
+      });
+
+      mockGitRaw
+        .mockResolvedValueOnce('abc123|2024-01-15 10:00:00 +0000\n') // origin/main
+        .mockResolvedValueOnce('def456|2024-01-14 10:00:00 +0000\n'); // origin/develop
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { branchLocal: mockGitBranchLocal, branch: mockGitBranch, raw: mockGitRaw } as any;
+      const branches = await service.getAllBranches(mockGit);
+
+      expect(branches).toHaveLength(2);
+      expect(branches.map(b => b.name)).toContain('origin/main');
+      expect(branches.map(b => b.name)).toContain('origin/develop');
+      // HEAD should NOT be included
+      expect(branches.map(b => b.name).some(n => n.includes('HEAD'))).toBe(false);
+    });
+
+    it('should continue with local branches if remote listing fails (GITX-2)', async () => {
+      mockGitBranchLocal.mockResolvedValue({
+        all: ['main'],
+        branches: {},
+        current: 'main',
+        detached: false,
+      });
+
+      // Mock remote branch listing failure
+      const mockGitBranch = vi.fn().mockRejectedValue(new Error('remote listing failed'));
+
+      mockGitRaw.mockResolvedValueOnce('abc123|2024-01-15 10:00:00 +0000\n');
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { branchLocal: mockGitBranchLocal, branch: mockGitBranch, raw: mockGitRaw } as any;
+      const branches = await service.getAllBranches(mockGit);
+
+      // Should still have local branches even if remote listing fails
       expect(branches).toHaveLength(1);
       expect(branches[0]!.name).toBe('main');
     });
@@ -589,13 +743,14 @@ describe('GitAnalysisService', () => {
         detached: false,
       });
 
-      // main: recent, old-branch: old
-      mockGitLog
-        .mockResolvedValueOnce({ latest: { date: '2024-06-15T10:00:00Z' }, all: [] })
-        .mockResolvedValueOnce({ latest: { date: '2023-01-01T10:00:00Z' }, all: [] });
+      // GITX-1: Branch timestamps are now retrieved via git.raw()
+      // main: recent (2024-06-15), old-branch: old (2023-01-01)
+      mockGitRaw
+        .mockResolvedValueOnce('abc123|2024-06-15 10:00:00 +0000\n')
+        .mockResolvedValueOnce('def456|2023-01-01 10:00:00 +0000\n');
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mockGit = { branchLocal: mockGitBranchLocal, log: mockGitLog } as any;
+      const mockGit = { branchLocal: mockGitBranchLocal, raw: mockGitRaw } as any;
       const branches = await service.findRecentBranches(mockGit, '2024-01-01');
 
       expect(branches).toHaveLength(1);
@@ -888,6 +1043,90 @@ describe('GitAnalysisService', () => {
       );
     });
 
+    // GITX-2: Test remote branch ref format
+    it('should use refs/remotes/ prefix for remote branches (GITX-2)', async () => {
+      mockGitLog.mockResolvedValue({
+        all: [createSampleLogEntry()],
+        latest: null,
+        total: 1,
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { log: mockGitLog, show: vi.fn() } as any;
+      const tagMap = new Map<string, readonly string[]>();
+      const repoContext = {
+        path: '/path', name: 'repo', organization: 'Org',
+        repositoryUrl: 'https://github.com/Org/repo.git',
+      };
+
+      // Process a remote branch with isRemote=true
+      await service.processBranch(
+        mockGit, repoContext, 'origin/feature-remote', {},
+        new Map(), tagMap, 1, true, // isRemote flag
+      );
+
+      // Verify git log was called with refs/remotes/ prefix for remote branch
+      expect(mockGitLog).toHaveBeenCalledWith(
+        expect.arrayContaining(['refs/remotes/origin/feature-remote', '--numstat']),
+      );
+    });
+
+    // GITX-2: Test local branch still uses refs/heads/
+    it('should use refs/heads/ prefix for local branches (GITX-2)', async () => {
+      mockGitLog.mockResolvedValue({
+        all: [createSampleLogEntry()],
+        latest: null,
+        total: 1,
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { log: mockGitLog, show: vi.fn() } as any;
+      const tagMap = new Map<string, readonly string[]>();
+      const repoContext = {
+        path: '/path', name: 'repo', organization: 'Org',
+        repositoryUrl: 'https://github.com/Org/repo.git',
+      };
+
+      // Process a local branch (no '/'), isRemote defaults to false
+      await service.processBranch(
+        mockGit, repoContext, 'main', {},
+        new Map(), tagMap, 1,
+      );
+
+      // Verify git log was called with refs/heads/ prefix for local branch
+      expect(mockGitLog).toHaveBeenCalledWith(
+        expect.arrayContaining(['refs/heads/main', '--numstat']),
+      );
+    });
+
+    // GITX-2: Test local branch with "/" in name still uses refs/heads/
+    it('should use refs/heads/ prefix for local branches with "/" in name (GITX-2)', async () => {
+      mockGitLog.mockResolvedValue({
+        all: [createSampleLogEntry()],
+        latest: null,
+        total: 1,
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockGit = { log: mockGitLog, show: vi.fn() } as any;
+      const tagMap = new Map<string, readonly string[]>();
+      const repoContext = {
+        path: '/path', name: 'repo', organization: 'Org',
+        repositoryUrl: 'https://github.com/Org/repo.git',
+      };
+
+      // Process a local branch with "/" in name, isRemote=false
+      await service.processBranch(
+        mockGit, repoContext, 'feature/new-feature', {},
+        new Map(), tagMap, 1, false, // isRemote=false (it's a local branch)
+      );
+
+      // Verify git log was called with refs/heads/ prefix (not refs/remotes/)
+      expect(mockGitLog).toHaveBeenCalledWith(
+        expect.arrayContaining(['refs/heads/feature/new-feature', '--numstat']),
+      );
+    });
+
     // IQS-950: Test mixed tagged/untagged commits extraction
     it('should extract both tagged and untagged commits', async () => {
       const sha1 = 'tagged1tagged1tagged1tagged1tagged1tagged1';
@@ -1005,7 +1244,8 @@ describe('GitAnalysisService', () => {
         current: 'main',
         detached: false,
       });
-      mockGitLog.mockResolvedValue({ latest: { date: '2024-06-01' }, all: [], total: 0 });
+      // GITX-1: Branch timestamp is now retrieved via git.raw()
+      mockGitRaw.mockResolvedValue('abc123|2024-06-01 10:00:00 +0000\n');
 
       const options: GitAnalysisOptions = {
         sinceDate: '2024-01-01',
@@ -1015,8 +1255,8 @@ describe('GitAnalysisService', () => {
       const repos: RepositoryEntry[] = [createSampleRepoEntry()];
       await service.analyzeRepositories(repos, options);
 
-      // Verify findRecentBranches was used (the branch log was called for date check)
-      expect(mockGitLog).toHaveBeenCalled();
+      // GITX-1: Verify git.raw() was used to get branch timestamp for filtering
+      expect(mockGitRaw).toHaveBeenCalled();
     });
   });
 
@@ -1133,6 +1373,162 @@ describe('GitAnalysisService', () => {
       expect(files[0]!.isTestFile).toBe(true);
       expect(files[1]!.isTestFile).toBe(false);
       expect(files[2]!.isTestFile).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Auto-incremental watermark (GITX-1)
+  // --------------------------------------------------------------------------
+
+  describe('analyzeRepository auto-incremental watermark (GITX-1)', () => {
+    it('should use last commit date as watermark when no sinceDate is configured', async () => {
+      const lastCommitDate = new Date('2024-06-15T14:30:00Z');
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 }) // insertPipelineStart (in parent call)
+        .mockResolvedValue({ rows: [], rowCount: 0 }); // default for other queries
+
+      // Mock getLastCommitDateForRepo to return a date
+      const getLastCommitDateSpy = vi.spyOn(commitRepo, 'getLastCommitDateForRepo');
+      getLastCommitDateSpy.mockResolvedValue(lastCommitDate);
+
+      mockGitGetRemotes.mockResolvedValue([
+        { name: 'origin', refs: { fetch: 'https://github.com/Org/repo.git' } },
+      ]);
+      mockGitTags.mockResolvedValue({ all: [], latest: undefined });
+      mockGitBranchLocal.mockResolvedValue({
+        all: ['main'],
+        branches: {},
+        current: 'main',
+        detached: false,
+      });
+      // GITX-1: Branch timestamp is now retrieved via git.raw() instead of git.log()
+      // Mock a branch more recent than 2024-06-15 to pass the sinceDate filter
+      mockGitRaw.mockResolvedValue('abc123|2024-07-01 10:00:00 +0000\n');
+
+      const repoEntry = createSampleRepoEntry();
+      // No sinceDate in options
+      const result = await service.analyzeRepository(repoEntry, {}, 1);
+
+      expect(result.error).toBeUndefined();
+      // Verify getLastCommitDateForRepo was called
+      expect(getLastCommitDateSpy).toHaveBeenCalledWith(
+        'test-repo',
+        expect.stringMatching(/github\.com/),
+      );
+      // GITX-1: Verify git.raw() was used to get branch timestamp for filtering
+      expect(mockGitRaw).toHaveBeenCalled();
+
+      getLastCommitDateSpy.mockRestore();
+    });
+
+    it('should extract full history when no sinceDate and no existing commits', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 })
+        .mockResolvedValue({ rows: [], rowCount: 0 });
+
+      // Mock getLastCommitDateForRepo to return null (no existing commits)
+      const getLastCommitDateSpy = vi.spyOn(commitRepo, 'getLastCommitDateForRepo');
+      getLastCommitDateSpy.mockResolvedValue(null);
+
+      mockGitGetRemotes.mockResolvedValue([
+        { name: 'origin', refs: { fetch: 'https://github.com/Org/repo.git' } },
+      ]);
+      mockGitTags.mockResolvedValue({ all: [], latest: undefined });
+      mockGitBranchLocal.mockResolvedValue({
+        all: ['main'],
+        branches: {},
+        current: 'main',
+        detached: false,
+      });
+      // GITX-1: Branch timestamp is now retrieved via git.raw()
+      mockGitRaw.mockResolvedValue('abc123|2024-07-01 10:00:00 +0000\n');
+
+      const repoEntry = createSampleRepoEntry();
+      const result = await service.analyzeRepository(repoEntry, {}, 1);
+
+      expect(result.error).toBeUndefined();
+      expect(getLastCommitDateSpy).toHaveBeenCalled();
+      // Without a sinceDate or watermark, getAllBranches should be called
+      // (no date filtering)
+      expect(mockGitBranchLocal).toHaveBeenCalled();
+
+      getLastCommitDateSpy.mockRestore();
+    });
+
+    it('should prefer explicit sinceDate over auto-watermark', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 })
+        .mockResolvedValue({ rows: [], rowCount: 0 });
+
+      // Mock getLastCommitDateForRepo - should NOT be called when sinceDate is provided
+      const getLastCommitDateSpy = vi.spyOn(commitRepo, 'getLastCommitDateForRepo');
+      getLastCommitDateSpy.mockResolvedValue(new Date('2024-01-01T00:00:00Z'));
+
+      mockGitGetRemotes.mockResolvedValue([
+        { name: 'origin', refs: { fetch: 'https://github.com/Org/repo.git' } },
+      ]);
+      mockGitTags.mockResolvedValue({ all: [], latest: undefined });
+      mockGitBranchLocal.mockResolvedValue({
+        all: [],
+        branches: {},
+        current: 'main',
+        detached: false,
+      });
+
+      const repoEntry = createSampleRepoEntry();
+      // Explicit sinceDate in options
+      await service.analyzeRepository(repoEntry, { sinceDate: '2024-06-01' }, 1);
+
+      // getLastCommitDateForRepo should NOT be called when sinceDate is already set
+      expect(getLastCommitDateSpy).not.toHaveBeenCalled();
+
+      getLastCommitDateSpy.mockRestore();
+    });
+
+    it('should isolate watermarks between multiple repositories', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 })
+        .mockResolvedValue({ rows: [], rowCount: 0 });
+
+      // Mock different watermarks for different repos
+      const getLastCommitDateSpy = vi.spyOn(commitRepo, 'getLastCommitDateForRepo');
+      getLastCommitDateSpy
+        .mockResolvedValueOnce(new Date('2024-01-15T00:00:00Z')) // repo-a
+        .mockResolvedValueOnce(new Date('2024-06-15T00:00:00Z')); // repo-b
+
+      mockGitGetRemotes.mockResolvedValue([
+        { name: 'origin', refs: { fetch: 'https://github.com/Org/repo.git' } },
+      ]);
+      mockGitTags.mockResolvedValue({ all: [], latest: undefined });
+      mockGitBranchLocal.mockResolvedValue({
+        all: [],
+        branches: {},
+        current: 'main',
+        detached: false,
+      });
+
+      // Process two repos
+      const repoA = createSampleRepoEntry({ name: 'repo-a' });
+      const repoB = createSampleRepoEntry({ name: 'repo-b' });
+
+      await service.analyzeRepository(repoA, {}, 1);
+      await service.analyzeRepository(repoB, {}, 1);
+
+      // Each repo should have its own watermark lookup
+      expect(getLastCommitDateSpy).toHaveBeenCalledTimes(2);
+      expect(getLastCommitDateSpy).toHaveBeenNthCalledWith(
+        1,
+        'repo-a',
+        expect.any(String),
+      );
+      expect(getLastCommitDateSpy).toHaveBeenNthCalledWith(
+        2,
+        'repo-b',
+        expect.any(String),
+      );
+
+      getLastCommitDateSpy.mockRestore();
     });
   });
 

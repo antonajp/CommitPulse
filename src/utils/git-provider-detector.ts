@@ -331,3 +331,81 @@ export function buildCommitUrlForWebview(repoUrl: string | null | undefined, sha
   const result = buildCommitUrl(repoUrl, sha);
   return result.url;
 }
+
+// ============================================================================
+// URL Type Detection (GITX-2)
+// ============================================================================
+
+/**
+ * Regex pattern for Bitbucket URLs.
+ *
+ * Matches:
+ * - bitbucket.org (Bitbucket Cloud)
+ * - bitbucket.*.com (custom Bitbucket Server domains)
+ * - any domain containing 'bitbucket'
+ *
+ * @ticket GITX-2
+ */
+const BITBUCKET_URL_PATTERN = /bitbucket\.(org|com|[a-z]+\.[a-z]+)/i;
+
+/**
+ * Regex pattern for SSH URLs.
+ *
+ * Matches:
+ * - git@host:path (SSH shorthand format)
+ * - deploy@host:path (any user shorthand format)
+ * - ssh://user@host/path (SSH protocol format)
+ *
+ * @ticket GITX-2
+ */
+const SSH_URL_PATTERN = /^(?:[a-z0-9._-]+@[a-z0-9._-]+:|ssh:\/\/)/i;
+
+/**
+ * Check if a URL points to a Bitbucket repository.
+ *
+ * Detects both Bitbucket Cloud (bitbucket.org) and Bitbucket Server/Data Center
+ * (custom domains containing 'bitbucket').
+ *
+ * @param url - Repository URL or remote origin URL
+ * @returns true if the URL points to a Bitbucket repository
+ * @ticket GITX-2
+ */
+export function isBitbucketUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  return BITBUCKET_URL_PATTERN.test(url.trim());
+}
+
+/**
+ * Check if a URL uses SSH protocol.
+ *
+ * Detects both SSH shorthand (git@host:path) and SSH protocol URLs (ssh://user@host/path).
+ * SSH URLs require pre-loaded SSH keys in ssh-agent for authentication.
+ *
+ * @param url - Repository URL or remote origin URL
+ * @returns true if the URL uses SSH protocol
+ * @ticket GITX-2
+ */
+export function isSshUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  return SSH_URL_PATTERN.test(url.trim());
+}
+
+/**
+ * Check if a URL uses HTTPS protocol.
+ *
+ * HTTPS URLs can use access tokens for authentication.
+ *
+ * @param url - Repository URL or remote origin URL
+ * @returns true if the URL uses HTTPS protocol
+ * @ticket GITX-2
+ */
+export function isHttpsUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  return url.trim().toLowerCase().startsWith('https://');
+}
