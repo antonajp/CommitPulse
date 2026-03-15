@@ -135,6 +135,17 @@ const SQL_IDENTIFY_GIT_REPO_MAX_COMMIT_DATE = `
   ORDER BY mcd ASC
 `;
 
+/**
+ * Query to get the most recent commit date for a specific repository and URL.
+ * Used for incremental extraction watermarking (GITX-1).
+ * Uses the composite index idx_commit_history_repository_commit_date for optimal performance.
+ */
+const SQL_GET_LAST_COMMIT_DATE_FOR_REPO = `
+  SELECT MAX(commit_date) AS last_date
+  FROM commit_history
+  WHERE repository = $1 AND repository_url = $2
+`;
+
 const SQL_GET_COMMIT_FILE_BASE_METRICS = `
   SELECT cf.sha, ch.commit_date, cf.filename, cf.complexity,
          cf.total_comment_lines, cf.total_code_lines
@@ -605,6 +616,49 @@ export class CommitRepository {
 
     this.logger.debug(CLASS_NAME, 'identifyGitRepoMaxCommitDate', `Found ${repos.length} repositories`);
     return repos;
+  }
+
+  /**
+   * Get the most recent commit date for a specific repository and URL.
+   * Used for incremental extraction watermarking - enables automatic
+   * incremental updates when no explicit sinceDate is configured.
+   *
+   * Uses the composite index idx_commit_history_repository_commit_date
+   * for optimal MAX() query performance.
+   *
+   * @param repo - Repository name (e.g., 'gitr')
+   * @param repoUrl - Repository URL (e.g., 'https://github.com/antonajp/gitr.git')
+   * @returns The most recent commit date, or null if no commits exist
+   *
+   * Ticket: GITX-1 - Fix incremental extraction by adding per-repo watermark
+   */
+  async getLastCommitDateForRepo(repo: string, repoUrl: string): Promise<Date | null> {
+    this.logger.debug(
+      CLASS_NAME,
+      'getLastCommitDateForRepo',
+      `Querying last commit date for repo: ${repo}, url: ${repoUrl}`,
+    );
+
+    const result: DatabaseQueryResult<{ last_date: Date | null }> =
+      await this.db.query(SQL_GET_LAST_COMMIT_DATE_FOR_REPO, [repo, repoUrl]);
+
+    const lastDate = result.rows[0]?.last_date ?? null;
+
+    if (lastDate) {
+      this.logger.debug(
+        CLASS_NAME,
+        'getLastCommitDateForRepo',
+        `Last commit date for ${repo}: ${lastDate.toISOString()}`,
+      );
+    } else {
+      this.logger.debug(
+        CLASS_NAME,
+        'getLastCommitDateForRepo',
+        `No commits found for repo: ${repo}`,
+      );
+    }
+
+    return lastDate;
   }
 
   /**

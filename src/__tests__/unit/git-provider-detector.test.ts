@@ -17,6 +17,9 @@ import {
   buildCommitUrl,
   buildPrUrl,
   buildCommitUrlForWebview,
+  isBitbucketUrl,
+  isSshUrl,
+  isHttpsUrl,
 } from '../../utils/git-provider-detector.js';
 
 // Mock LoggerService
@@ -475,6 +478,166 @@ describe('Git Provider Detector', () => {
     it('should handle GitLab URLs', () => {
       const url = buildCommitUrlForWebview('https://gitlab.com/user/repo', 'abc1234');
       expect(url).toBe('https://gitlab.com/user/repo/-/commit/abc1234');
+    });
+  });
+
+  // ============================================================================
+  // URL Type Detection (GITX-2)
+  // ============================================================================
+
+  describe('isBitbucketUrl (GITX-2)', () => {
+    describe('Bitbucket Cloud', () => {
+      it('should detect bitbucket.org', () => {
+        expect(isBitbucketUrl('https://bitbucket.org/user/repo')).toBe(true);
+      });
+
+      it('should detect bitbucket.org with .git suffix', () => {
+        expect(isBitbucketUrl('https://bitbucket.org/user/repo.git')).toBe(true);
+      });
+
+      it('should detect bitbucket.org SSH shorthand', () => {
+        expect(isBitbucketUrl('git@bitbucket.org:user/repo.git')).toBe(true);
+      });
+    });
+
+    describe('Bitbucket Server/Data Center', () => {
+      it('should detect bitbucket.*.com domains', () => {
+        expect(isBitbucketUrl('https://bitbucket.mycompany.com/projects/PROJ/repos/repo')).toBe(true);
+      });
+
+      it('should detect bitbucket subdomain with different TLD', () => {
+        expect(isBitbucketUrl('https://bitbucket.internal.corp/repo')).toBe(true);
+      });
+    });
+
+    describe('Non-Bitbucket URLs', () => {
+      it('should return false for github.com', () => {
+        expect(isBitbucketUrl('https://github.com/user/repo')).toBe(false);
+      });
+
+      it('should return false for gitlab.com', () => {
+        expect(isBitbucketUrl('https://gitlab.com/user/repo')).toBe(false);
+      });
+
+      it('should return false for arbitrary domains', () => {
+        expect(isBitbucketUrl('https://git.mycompany.com/repo')).toBe(false);
+      });
+    });
+
+    describe('Edge cases', () => {
+      it('should return false for empty string', () => {
+        expect(isBitbucketUrl('')).toBe(false);
+      });
+
+      it('should return false for null', () => {
+        expect(isBitbucketUrl(null as unknown as string)).toBe(false);
+      });
+
+      it('should return false for undefined', () => {
+        expect(isBitbucketUrl(undefined as unknown as string)).toBe(false);
+      });
+    });
+  });
+
+  describe('isSshUrl (GITX-2)', () => {
+    describe('SSH shorthand format', () => {
+      it('should detect git@host:path format', () => {
+        expect(isSshUrl('git@github.com:user/repo.git')).toBe(true);
+      });
+
+      it('should detect deploy@host:path format', () => {
+        expect(isSshUrl('deploy@gitlab.company.com:group/project.git')).toBe(true);
+      });
+
+      it('should detect git@bitbucket.org:path format', () => {
+        expect(isSshUrl('git@bitbucket.org:user/repo.git')).toBe(true);
+      });
+    });
+
+    describe('SSH protocol format', () => {
+      it('should detect ssh://git@host/path format', () => {
+        expect(isSshUrl('ssh://git@github.com/user/repo.git')).toBe(true);
+      });
+
+      it('should detect ssh://deploy@host:port/path format', () => {
+        expect(isSshUrl('ssh://deploy@gitlab.company.com:2222/project.git')).toBe(true);
+      });
+    });
+
+    describe('Non-SSH URLs', () => {
+      it('should return false for https URLs', () => {
+        expect(isSshUrl('https://github.com/user/repo.git')).toBe(false);
+      });
+
+      it('should return false for http URLs', () => {
+        expect(isSshUrl('http://github.com/user/repo.git')).toBe(false);
+      });
+
+      it('should return false for git:// protocol', () => {
+        expect(isSshUrl('git://github.com/user/repo.git')).toBe(false);
+      });
+    });
+
+    describe('Edge cases', () => {
+      it('should return false for empty string', () => {
+        expect(isSshUrl('')).toBe(false);
+      });
+
+      it('should return false for null', () => {
+        expect(isSshUrl(null as unknown as string)).toBe(false);
+      });
+
+      it('should return false for undefined', () => {
+        expect(isSshUrl(undefined as unknown as string)).toBe(false);
+      });
+    });
+  });
+
+  describe('isHttpsUrl (GITX-2)', () => {
+    describe('HTTPS URLs', () => {
+      it('should detect https:// URLs', () => {
+        expect(isHttpsUrl('https://github.com/user/repo.git')).toBe(true);
+      });
+
+      it('should detect HTTPS URLs (case insensitive)', () => {
+        expect(isHttpsUrl('HTTPS://github.com/user/repo.git')).toBe(true);
+      });
+
+      it('should detect https URLs with ports', () => {
+        expect(isHttpsUrl('https://github.com:443/user/repo.git')).toBe(true);
+      });
+    });
+
+    describe('Non-HTTPS URLs', () => {
+      it('should return false for http URLs', () => {
+        expect(isHttpsUrl('http://github.com/user/repo.git')).toBe(false);
+      });
+
+      it('should return false for SSH shorthand', () => {
+        expect(isHttpsUrl('git@github.com:user/repo.git')).toBe(false);
+      });
+
+      it('should return false for ssh:// protocol', () => {
+        expect(isHttpsUrl('ssh://git@github.com/user/repo.git')).toBe(false);
+      });
+
+      it('should return false for git:// protocol', () => {
+        expect(isHttpsUrl('git://github.com/user/repo.git')).toBe(false);
+      });
+    });
+
+    describe('Edge cases', () => {
+      it('should return false for empty string', () => {
+        expect(isHttpsUrl('')).toBe(false);
+      });
+
+      it('should return false for null', () => {
+        expect(isHttpsUrl(null as unknown as string)).toBe(false);
+      });
+
+      it('should return false for undefined', () => {
+        expect(isHttpsUrl(undefined as unknown as string)).toBe(false);
+      });
     });
   });
 

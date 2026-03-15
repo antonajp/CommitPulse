@@ -576,6 +576,29 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
   );
   disposables.push(setMigrationPasswordDisposable);
 
+  // gitrx.setBitbucketToken - Prompt user to set the Bitbucket access token securely (GITX-2)
+  const setBitbucketTokenDisposable = vscode.commands.registerCommand(
+    'gitrx.setBitbucketToken',
+    async () => {
+      logger.info(CLASS_NAME, 'setBitbucketToken', 'Command executed: gitrx.setBitbucketToken');
+      logger.debug(CLASS_NAME, 'setBitbucketToken', 'Prompting user for Bitbucket access token...');
+
+      try {
+        const result = await secretService.promptAndStore(SecretKeys.BITBUCKET_TOKEN);
+        if (result !== undefined) {
+          logger.info(CLASS_NAME, 'setBitbucketToken', 'Bitbucket access token stored successfully');
+        } else {
+          logger.debug(CLASS_NAME, 'setBitbucketToken', 'User cancelled Bitbucket token prompt');
+        }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(CLASS_NAME, 'setBitbucketToken', `Failed to set Bitbucket token: ${message}`);
+        void vscode.window.showErrorMessage(`Gitr: Failed to save Bitbucket token - ${message}`);
+      }
+    }
+  );
+  disposables.push(setBitbucketTokenDisposable);
+
   // Store secretService reference for scheduled pipeline runs
   registeredSecretService = secretService;
 

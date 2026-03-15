@@ -203,17 +203,7 @@ export class GitAnalysisService {
     }
 
     // IQS-931: Compute effective since date (per-repo startDate overrides global sinceDate)
-    const effectiveSinceDate = computeEffectiveSinceDate(repoEntry.startDate, options.sinceDate);
-    const effectiveOptions: GitAnalysisOptions = {
-      ...options,
-      sinceDate: effectiveSinceDate,
-    };
-    this.logger.debug(
-      CLASS_NAME,
-      'analyzeRepository',
-      `Effective sinceDate for ${repoName}: ${effectiveSinceDate ?? '(all history)'}` +
-      ` (repo startDate: ${repoEntry.startDate ?? 'none'}, global: ${options.sinceDate ?? 'none'})`,
-    );
+    let effectiveSinceDate = computeEffectiveSinceDate(repoEntry.startDate, options.sinceDate);
 
     const git: SimpleGit = simpleGit(repoEntry.path);
 
@@ -236,6 +226,40 @@ export class GitAnalysisService {
       repositoryUrl: sanitizedRepoUrl, // Store sanitized URL in database
     };
     this.logger.debug(CLASS_NAME, 'analyzeRepository', `Repo URL: ${sanitizedRepoUrl}`);
+
+    // GITX-1: Auto-incremental extraction using per-repo watermark
+    // When no explicit sinceDate is configured, use the last commit date from the database
+    // This enables automatic incremental updates without user configuration
+    if (!effectiveSinceDate) {
+      const lastCommitDate = await this.commitRepo.getLastCommitDateForRepo(repoName, sanitizedRepoUrl);
+      if (lastCommitDate) {
+        // Use the day of the last commit as the watermark
+        // Format as YYYY-MM-DD for consistent date filtering
+        effectiveSinceDate = lastCommitDate.toISOString().split('T')[0];
+        this.logger.info(
+          CLASS_NAME,
+          'analyzeRepository',
+          `Auto-incremental: extracting commits since ${effectiveSinceDate} (last commit date for ${repoName})`,
+        );
+      } else {
+        this.logger.debug(
+          CLASS_NAME,
+          'analyzeRepository',
+          `No existing commits found for ${repoName}, will extract full history`,
+        );
+      }
+    }
+
+    const effectiveOptions: GitAnalysisOptions = {
+      ...options,
+      sinceDate: effectiveSinceDate,
+    };
+    this.logger.debug(
+      CLASS_NAME,
+      'analyzeRepository',
+      `Effective sinceDate for ${repoName}: ${effectiveSinceDate ?? '(all history)'}` +
+      ` (repo startDate: ${repoEntry.startDate ?? 'none'}, global: ${options.sinceDate ?? 'none'})`,
+    );
 
     // IQS-936: Debug logging for repository URL (sanitized for security)
     if (debugLogging) {
@@ -276,11 +300,12 @@ export class GitAnalysisService {
     let branchesProcessed = 0;
 
     for (const branch of branches) {
-      this.logger.debug(CLASS_NAME, 'analyzeRepository', `Processing branch: ${branch.name}`);
+      this.logger.debug(CLASS_NAME, 'analyzeRepository', `Processing branch: ${branch.name}${branch.isRemote ? ' (remote)' : ''}`);
       try {
+        // GITX-2: Pass isRemote flag to processBranch for correct ref resolution
         const result = await this.processBranch(
           git, repoContext, branch.name, effectiveOptions,
-          knownRelationships, tagMap, pipelineRunId,
+          knownRelationships, tagMap, pipelineRunId, branch.isRemote ?? false,
         );
         commitsInserted += result.newCommits;
         branchRelationshipsRecorded += result.newRelationships;
@@ -322,33 +347,96 @@ export class GitAnalysisService {
   }
 
   /**
-   * Get all local branches with their latest commit timestamps.
+   * Get all local and remote branches with their latest commit timestamps.
+   *
+   * GITX-2: Extended to include remote branches alongside local branches.
+   * This ensures commits on remote-only branches (CI/CD branches, feature branches
+   * not checked out locally) are captured during extraction.
+   *
    * @param debugLogging - Enable verbose debug logging (IQS-936)
    */
   async getAllBranches(git: SimpleGit, debugLogging = false): Promise<BranchInfo[]> {
-    this.logger.debug(CLASS_NAME, 'getAllBranches', 'Listing all branches');
-    const branchSummary = await git.branchLocal();
+    this.logger.debug(CLASS_NAME, 'getAllBranches', 'Listing all local and remote branches');
+
+    // GITX-2: Get local branches
+    const localBranchSummary = await git.branchLocal();
+    const localBranchNames = new Set(localBranchSummary.all);
+
+    // GITX-2: Get remote branches
+    let remoteBranchNames: string[] = [];
+    try {
+      const remoteBranchSummary = await git.branch(['-r']);
+      // Filter out HEAD references (e.g., origin/HEAD -> origin/main)
+      remoteBranchNames = remoteBranchSummary.all.filter(b => !b.includes('HEAD'));
+      this.logger.debug(
+        CLASS_NAME,
+        'getAllBranches',
+        `Found ${localBranchSummary.all.length} local + ${remoteBranchNames.length} remote branches`,
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(CLASS_NAME, 'getAllBranches', `Could not list remote branches: ${message}`);
+      // Continue with local branches only if remote listing fails
+    }
+
     const branches: BranchInfo[] = [];
 
     // IQS-936: Debug logging for branch discovery
     if (debugLogging) {
-      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Found ${branchSummary.all.length} local branches`);
+      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Found ${localBranchSummary.all.length} local branches`);
+      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Found ${remoteBranchNames.length} remote branches`);
     }
 
-    for (const branchName of branchSummary.all) {
+    // Process local branches
+    for (const branchName of localBranchSummary.all) {
       try {
-        const log = await git.log({ maxCount: 1, from: branchName });
-        const latest = log.latest;
-        const timestamp = latest ? new Date(latest.date).getTime() / 1000 : 0;
-        branches.push({ name: branchName, lastCommitTimestamp: timestamp });
-        this.logger.trace(CLASS_NAME, 'getAllBranches', `Branch ${branchName}: last commit ${latest?.date ?? 'unknown'}`);
+        // GITX-1 FIX: Use branch ref as positional arg, not 'from' option.
+        // simple-git's 'from' option generates "from.." which means "commits
+        // reachable from HEAD but not from the branch" - giving 0 results
+        // when HEAD IS on that branch. Using raw log with the ref directly
+        // gives us the actual latest commit on the branch.
+        const branchRef = `refs/heads/${branchName}`;
+        const log = await git.raw(['log', '-1', '--format=%H|%ai', branchRef]);
+        const [, dateStr] = log.trim().split('|');
+        const timestamp = dateStr ? new Date(dateStr).getTime() / 1000 : 0;
+        // GITX-2: Mark as local branch (isRemote: false)
+        branches.push({ name: branchName, lastCommitTimestamp: timestamp, isRemote: false });
+        this.logger.trace(CLASS_NAME, 'getAllBranches', `Branch ${branchName}: last commit ${dateStr ?? 'unknown'}`);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(CLASS_NAME, 'getAllBranches', `Skipping branch ${branchName}: ${message}`);
+        this.logger.warn(CLASS_NAME, 'getAllBranches', `Skipping local branch ${branchName}: ${message}`);
       }
     }
 
-    this.logger.debug(CLASS_NAME, 'getAllBranches', `Found ${branches.length} branches`);
+    // GITX-2: Process remote branches (skip if local branch with same name exists)
+    for (const remoteBranchName of remoteBranchNames) {
+      // Remote branches come as "origin/branchName" - extract the local name part
+      // to check for duplicates with local branches
+      const parts = remoteBranchName.split('/');
+      const localEquivalent = parts.length > 1 ? parts.slice(1).join('/') : remoteBranchName;
+
+      // Skip if we already have a local branch with the same name
+      if (localBranchNames.has(localEquivalent)) {
+        this.logger.trace(CLASS_NAME, 'getAllBranches', `Skipping remote ${remoteBranchName} (local branch exists)`);
+        continue;
+      }
+
+      try {
+        // GITX-2: Remote branches use refs/remotes/ prefix
+        const branchRef = `refs/remotes/${remoteBranchName}`;
+        const log = await git.raw(['log', '-1', '--format=%H|%ai', branchRef]);
+        const [, dateStr] = log.trim().split('|');
+        const timestamp = dateStr ? new Date(dateStr).getTime() / 1000 : 0;
+        // GITX-2: Store with full remote name and mark as remote (isRemote: true)
+        branches.push({ name: remoteBranchName, lastCommitTimestamp: timestamp, isRemote: true });
+        this.logger.trace(CLASS_NAME, 'getAllBranches', `Remote branch ${remoteBranchName}: last commit ${dateStr ?? 'unknown'}`);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(CLASS_NAME, 'getAllBranches', `Skipping remote branch ${remoteBranchName}: ${message}`);
+      }
+    }
+
+    this.logger.debug(CLASS_NAME, 'getAllBranches', `Found ${branches.length} total branches (local + remote)`);
     return branches;
   }
 
@@ -370,11 +458,13 @@ export class GitAnalysisService {
     knownRelationships: Map<string, string[]>,
     tagMap: TagMap,
     pipelineRunId: number,
+    isRemote = false,
   ): Promise<{ newCommits: number; newRelationships: number }> {
     const debugLogging = options.debugLogging ?? false;
-    this.logger.debug(CLASS_NAME, 'processBranch', `Processing branch: ${branchName}`);
+    this.logger.debug(CLASS_NAME, 'processBranch', `Processing branch: ${branchName}${isRemote ? ' (remote)' : ''}`);
 
-    const logResult = await this.getBranchLog(git, branchName, options);
+    // GITX-2: Pass isRemote flag to getBranchLog for correct ref resolution
+    const logResult = await this.getBranchLog(git, branchName, options, isRemote);
     if (!logResult) {
       return { newCommits: 0, newRelationships: 0 };
     }
@@ -549,15 +639,20 @@ export class GitAnalysisService {
    * Get the commit log for a branch with optional date filtering.
    * Returns null on error (branch not found, etc).
    *
-   * IQS-950: Uses refs/heads/ prefix to explicitly reference branches and avoid
+   * IQS-950: Uses refs/heads/ prefix to explicitly reference local branches and avoid
    * ambiguity when a tag has the same name as a branch. Without this prefix,
    * Git may interpret the name as a tag reference instead of a branch, which
    * can result in missing commits during extraction.
+   *
+   * GITX-2: Added support for remote branches (refs/remotes/ prefix).
+   * The isRemote flag explicitly indicates whether the branch is remote or local,
+   * since local branch names can also contain "/" (e.g., "feature/new-feature").
    */
   private async getBranchLog(
     git: SimpleGit,
     branchName: string,
     options: GitAnalysisOptions,
+    isRemote = false,
   ): Promise<LogResult<DefaultLogFields> | null> {
     const logOptions: Record<string, string> = {};
     if (options.sinceDate) {
@@ -575,11 +670,17 @@ export class GitAnalysisService {
       // Using '--numstat' only (not --stat) since they are mutually exclusive.
       // Ticket: IQS-873 (discovered via E2E test)
       //
-      // IQS-950: Use refs/heads/ prefix to explicitly reference branches.
+      // IQS-950: Use refs/heads/ prefix to explicitly reference local branches.
       // Without this prefix, Git may interpret branch names as tag references
       // when a tag with the same name exists, causing commits to be filtered
       // incorrectly (only tagged commits would be returned).
-      const branchRef = `refs/heads/${branchName}`;
+      //
+      // GITX-2: Support both local and remote branch refs using isRemote flag.
+      // We cannot rely on "/" in the name since local branches can have "/" too
+      // (e.g., "feature/new-feature" is a local branch name).
+      const branchRef = isRemote
+        ? `refs/remotes/${branchName}`
+        : `refs/heads/${branchName}`;
       const rawArgs: string[] = [branchRef, '--numstat'];
       if (options.sinceDate) {
         rawArgs.push(`--after=${options.sinceDate}`);

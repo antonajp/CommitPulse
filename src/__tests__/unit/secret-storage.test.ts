@@ -73,6 +73,14 @@ describe('SecretStorageService', () => {
     it('should define GITHUB_TOKEN key', () => {
       expect(SecretKeys.GITHUB_TOKEN).toBe('gitrx.github.token');
     });
+
+    it('should define LINEAR_TOKEN key', () => {
+      expect(SecretKeys.LINEAR_TOKEN).toBe('gitrx.linear.token');
+    });
+
+    it('should define BITBUCKET_TOKEN key (GITX-2)', () => {
+      expect(SecretKeys.BITBUCKET_TOKEN).toBe('gitrx.bitbucket.token');
+    });
   });
 
   describe('storeSecret', () => {
@@ -212,6 +220,31 @@ describe('SecretStorageService', () => {
       const result = await service.getGitHubToken();
       expect(result).toBe('gh-entered');
       expect(mockStorage._storage.get('gitrx.github.token')).toBe('gh-entered');
+    });
+  });
+
+  describe('getBitbucketToken (GITX-2)', () => {
+    it('should return stored token when present', async () => {
+      mockStorage._storage.set('gitrx.bitbucket.token', 'my-bb-token');
+
+      const result = await service.getBitbucketToken();
+      expect(result).toBe('my-bb-token');
+    });
+
+    it('should prompt user when token is not set', async () => {
+      vi.spyOn(vscodeWindow, 'showWarningMessage').mockResolvedValueOnce('Set Now' as never);
+      vi.spyOn(vscodeWindow, 'showInputBox').mockResolvedValueOnce('bb-entered');
+
+      const result = await service.getBitbucketToken();
+      expect(result).toBe('bb-entered');
+      expect(mockStorage._storage.get('gitrx.bitbucket.token')).toBe('bb-entered');
+    });
+
+    it('should return undefined when user cancels prompt', async () => {
+      vi.spyOn(vscodeWindow, 'showWarningMessage').mockResolvedValueOnce('Cancel' as never);
+
+      const result = await service.getBitbucketToken();
+      expect(result).toBeUndefined();
     });
   });
 

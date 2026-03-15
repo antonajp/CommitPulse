@@ -535,6 +535,66 @@ describe('CommitRepository', () => {
     });
   });
 
+  // --------------------------------------------------------------------------
+  // Per-repo watermark query (GITX-1)
+  // --------------------------------------------------------------------------
+
+  describe('getLastCommitDateForRepo', () => {
+    it('should return the most recent commit date for a repository', async () => {
+      const lastDate = new Date('2024-06-15T14:30:00Z');
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ last_date: lastDate }],
+        rowCount: 1,
+      });
+
+      const result = await repo.getLastCommitDateForRepo('test-repo', 'https://github.com/org/test-repo.git');
+
+      expect(result).toEqual(lastDate);
+    });
+
+    it('should return null when no commits exist for repository', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ last_date: null }],
+        rowCount: 1,
+      });
+
+      const result = await repo.getLastCommitDateForRepo('empty-repo', 'https://github.com/org/empty-repo.git');
+
+      expect(result).toBeNull();
+    });
+
+    it('should pass repo and repoUrl as parameterized values', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ last_date: null }], rowCount: 1 });
+
+      await repo.getLastCommitDateForRepo('my-repo', 'https://github.com/org/my-repo.git');
+
+      const selectCall = mockQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('MAX(commit_date)'),
+      );
+      expect(selectCall).toBeDefined();
+      expect(selectCall![1]).toEqual(['my-repo', 'https://github.com/org/my-repo.git']);
+    });
+
+    it('should use parameterized query to prevent SQL injection', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ last_date: null }], rowCount: 1 });
+
+      await repo.getLastCommitDateForRepo(
+        "'; DROP TABLE commit_history; --",
+        "https://evil.com/'; DROP TABLE users; --",
+      );
+
+      const selectCall = mockQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('MAX(commit_date)'),
+      );
+      expect(selectCall).toBeDefined();
+      const sql = selectCall![0] as string;
+      // SQL should NOT contain the injection string
+      expect(sql).not.toContain('DROP TABLE');
+      // But the params should contain the malicious input (safely)
+      expect(selectCall![1]).toContain("'; DROP TABLE commit_history; --");
+    });
+  });
+
   describe('getCommitFileBaseMetrics', () => {
     it('should return metrics for a specific file', async () => {
       const date = new Date('2024-03-01T10:00:00Z');
