@@ -9,9 +9,10 @@ import { VelocityDataService } from '../../services/velocity-data-service.js';
 import type { DatabaseService } from '../../database/database-service.js';
 
 /**
- * Unit tests for VelocityDataService (IQS-888, IQS-944).
+ * Unit tests for VelocityDataService (IQS-888, IQS-944, GITX-121).
  * Tests the data service layer for the Sprint Velocity vs LOC chart.
  * IQS-944: Added tests for humanStoryPoints and aiStoryPoints fields.
+ * GITX-121: Added tests for team member filter and filter options.
  */
 describe('VelocityDataService', () => {
   let mockDb: DatabaseService;
@@ -519,6 +520,171 @@ describe('VelocityDataService', () => {
         expect.stringContaining('team = $1'),
         ['Platform Team'],
       );
+    });
+
+    // GITX-121: Team member filter tests
+    it('should use team member query when teamMember provided', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+
+      const service = new VelocityDataService(mockDb);
+      await service.getSprintVelocityVsLoc({ teamMember: 'johndoe' });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('cc.login = $1'),
+        ['johndoe'],
+      );
+    });
+
+    it('should use combined query when team and teamMember provided', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+
+      const service = new VelocityDataService(mockDb);
+      await service.getSprintVelocityVsLoc({
+        team: 'Engineering',
+        teamMember: 'johndoe',
+      });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('v.team = $1'),
+        ['Engineering', 'johndoe'],
+      );
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('cc.login = $2'),
+        ['Engineering', 'johndoe'],
+      );
+    });
+
+    it('should use combined query when teamMember and repository provided', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+
+      const service = new VelocityDataService(mockDb);
+      await service.getSprintVelocityVsLoc({
+        teamMember: 'johndoe',
+        repository: 'gitr',
+      });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('cc.login = $1'),
+        ['johndoe', 'gitr'],
+      );
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('v.repository = $2'),
+        ['johndoe', 'gitr'],
+      );
+    });
+
+    it('should use all filters query when team, teamMember, and repository provided', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+
+      const service = new VelocityDataService(mockDb);
+      await service.getSprintVelocityVsLoc({
+        team: 'Engineering',
+        teamMember: 'johndoe',
+        repository: 'gitr',
+      });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('v.team = $1'),
+        ['Engineering', 'johndoe', 'gitr'],
+      );
+    });
+
+    it('should throw on invalid team member name with special characters', async () => {
+      const service = new VelocityDataService(mockDb);
+      await expect(
+        service.getSprintVelocityVsLoc({ teamMember: '<script>alert(1)</script>' }),
+      ).rejects.toThrow('Invalid team member');
+    });
+
+    it('should throw on team member name exceeding max length', async () => {
+      const service = new VelocityDataService(mockDb);
+      const longMemberName = 'a'.repeat(201);
+      await expect(
+        service.getSprintVelocityVsLoc({ teamMember: longMemberName }),
+      ).rejects.toThrow('Invalid team member');
+    });
+
+    it('should accept valid team member name with dots and hyphens', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+
+      const service = new VelocityDataService(mockDb);
+      await service.getSprintVelocityVsLoc({ teamMember: 'john.doe-123' });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('cc.login = $1'),
+        ['john.doe-123'],
+      );
+    });
+  });
+
+  // GITX-121: Filter options tests
+  describe('getFilterOptions', () => {
+    it('should return teams, teamMembers, and repositories arrays', async () => {
+      // Mock parallel queries
+      (mockDb.query as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({
+          rows: [{ team: 'Engineering' }, { team: 'Platform' }],
+          rowCount: 2,
+        })
+        .mockResolvedValueOnce({
+          rows: [{ login: 'johndoe' }, { login: 'janedoe' }],
+          rowCount: 2,
+        })
+        .mockResolvedValueOnce({
+          rows: [{ repo: 'gitr' }, { repo: 'other-repo' }],
+          rowCount: 2,
+        });
+
+      const service = new VelocityDataService(mockDb);
+      const result = await service.getFilterOptions();
+
+      expect(result.teams).toEqual(['Engineering', 'Platform']);
+      expect(result.teamMembers).toEqual(['johndoe', 'janedoe']);
+      expect(result.repositories).toEqual(['gitr', 'other-repo']);
+    });
+
+    it('should return empty arrays when no data exists', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const service = new VelocityDataService(mockDb);
+      const result = await service.getFilterOptions();
+
+      expect(result.teams).toEqual([]);
+      expect(result.teamMembers).toEqual([]);
+      expect(result.repositories).toEqual([]);
+    });
+
+    it('should execute all three queries in parallel', async () => {
+      (mockDb.query as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const service = new VelocityDataService(mockDb);
+      await service.getFilterOptions();
+
+      expect(mockDb.query).toHaveBeenCalledTimes(3);
+      expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining('DISTINCT team'));
+      expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining('DISTINCT login'));
+      expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining('DISTINCT repo'));
     });
   });
 

@@ -1,13 +1,13 @@
 /**
  * Event handlers and state management for the Sprint Velocity chart.
  * Generates JavaScript source for:
- * - Message handling (velocityData, velocityError)
+ * - Message handling (velocityData, velocityError, filterOptions)
  * - Filter state management and persistence
- * - Repository filter population
+ * - Team, team member, and repository filter population
  * - UI state transitions (loading, error, empty, chart)
  * - CSV export handler
  *
- * Ticket: IQS-888, IQS-920, IQS-944, IQS-946
+ * Ticket: IQS-888, IQS-920, IQS-944, IQS-946, GITX-121
  */
 
 /**
@@ -45,11 +45,16 @@ export function generateDataHandlerScript(): string {
         }
 
         if (!message.rows || message.rows.length === 0) {
-          // Different empty state message when repository filter is active (IQS-920)
-          if (currentRepository) {
+          // Different empty state message based on active filters (IQS-920, GITX-121)
+          var activeFilters = [];
+          if (currentTeam) { activeFilters.push('Team: ' + escapeHtml(currentTeam)); }
+          if (currentTeamMember) { activeFilters.push('Member: ' + escapeHtml(currentTeamMember)); }
+          if (currentRepository) { activeFilters.push('Repository: ' + escapeHtml(currentRepository)); }
+
+          if (activeFilters.length > 0) {
             showEmpty(
-              'No Data for Selected Repository',
-              'No sprint velocity data found for repository "' + escapeHtml(currentRepository) + '". Try selecting a different repository or "All Repositories".'
+              'No Data for Selected Filters',
+              'No sprint velocity data found for the selected filters (' + activeFilters.join(', ') + '). Try adjusting or clearing filters.'
             );
           } else {
             showEmpty(
@@ -58,12 +63,6 @@ export function generateDataHandlerScript(): string {
             );
           }
           return;
-        }
-
-        // Populate repository filter dropdown on first load (IQS-920)
-        // Only populate from unfiltered data to get all available repos
-        if (!currentRepository) {
-          populateRepositoryFilter(message.rows);
         }
 
         // Aggregate rows by period (sum across teams/projects/repos)
@@ -200,8 +199,16 @@ export function generateUIStateScript(): string {
 export function generateFilterStateScript(): string {
   return `
       // ======================================================================
-      // Filter State Management (IQS-920, IQS-944)
+      // Filter State Management (IQS-920, IQS-944, GITX-121)
       // ======================================================================
+
+      /**
+       * Request filter options from the extension host.
+       * GITX-121: Fetches distinct teams, team members, and repositories.
+       */
+      function requestFilterOptions() {
+        vscode.postMessage({ type: 'requestFilterOptions' });
+      }
 
       /**
        * Request velocity data from the extension host.
@@ -209,6 +216,12 @@ export function generateFilterStateScript(): string {
       function requestData() {
         showLoading();
         var message = { type: 'requestVelocityData' };
+        if (currentTeam) {
+          message.team = currentTeam;
+        }
+        if (currentTeamMember) {
+          message.teamMember = currentTeamMember;
+        }
         if (currentRepository) {
           message.repository = currentRepository;
         }
@@ -219,21 +232,94 @@ export function generateFilterStateScript(): string {
       }
 
       /**
-       * Populate the repository filter dropdown from raw data.
-       * @param {Array} rawData - Raw velocity data rows
+       * Handle filter options response from the extension host.
+       * GITX-121: Populates team, member, and repository dropdowns.
+       * @param {Object} message - filterOptions message with teams, teamMembers, repositories
        */
-      function populateRepositoryFilter(rawData) {
-        var repoSet = {};
-        rawData.forEach(function(r) {
-          if (r.repository) {
-            repoSet[r.repository] = true;
-          }
+      function handleFilterOptions(message) {
+        availableTeams = message.teams || [];
+        availableTeamMembers = message.teamMembers || [];
+        availableRepositories = message.repositories || [];
+        filterOptionsLoaded = true;
+
+        populateTeamFilter();
+        populateMemberFilter();
+        populateRepositoryFilter();
+      }
+
+      /**
+       * Populate the team filter dropdown.
+       * GITX-121
+       */
+      function populateTeamFilter() {
+        // Clear existing options except "All Teams"
+        while (teamFilter.options.length > 1) {
+          teamFilter.remove(1);
+        }
+
+        // Add team options with HTML escaping
+        availableTeams.forEach(function(team) {
+          var option = document.createElement('option');
+          option.value = team;
+          option.textContent = team; // textContent auto-escapes
+          teamFilter.appendChild(option);
         });
 
-        availableRepositories = Object.keys(repoSet).sort(function(a, b) {
-          return a.toLowerCase().localeCompare(b.toLowerCase());
+        // Restore selected value from state
+        if (currentTeam && availableTeams.indexOf(currentTeam) >= 0) {
+          teamFilter.value = currentTeam;
+        } else {
+          currentTeam = '';
+          teamFilter.value = '';
+        }
+
+        // Hide filter group if only 1 team (progressive disclosure)
+        if (availableTeams.length <= 1) {
+          teamFilterGroup.style.display = 'none';
+        } else {
+          teamFilterGroup.style.display = 'flex';
+        }
+      }
+
+      /**
+       * Populate the team member filter dropdown.
+       * GITX-121
+       */
+      function populateMemberFilter() {
+        // Clear existing options except "All Members"
+        while (memberFilter.options.length > 1) {
+          memberFilter.remove(1);
+        }
+
+        // Add member options with HTML escaping
+        availableTeamMembers.forEach(function(member) {
+          var option = document.createElement('option');
+          option.value = member;
+          option.textContent = member; // textContent auto-escapes
+          memberFilter.appendChild(option);
         });
 
+        // Restore selected value from state
+        if (currentTeamMember && availableTeamMembers.indexOf(currentTeamMember) >= 0) {
+          memberFilter.value = currentTeamMember;
+        } else {
+          currentTeamMember = '';
+          memberFilter.value = '';
+        }
+
+        // Hide filter group if only 1 member (progressive disclosure)
+        if (availableTeamMembers.length <= 1) {
+          memberFilterGroup.style.display = 'none';
+        } else {
+          memberFilterGroup.style.display = 'flex';
+        }
+      }
+
+      /**
+       * Populate the repository filter dropdown.
+       * GITX-121: Refactored to use filter options instead of raw data.
+       */
+      function populateRepositoryFilter() {
         // Clear existing options except "All Repositories"
         while (repoFilter.options.length > 1) {
           repoFilter.remove(1);
@@ -264,29 +350,58 @@ export function generateFilterStateScript(): string {
       }
 
       /**
-       * Update the chart title to reflect current filter.
+       * Update the chart title to reflect active filters.
+       * GITX-121: Extended to show team and member filters.
        */
       function updateChartTitle() {
-        if (currentRepository) {
-          chartTitle.innerHTML = 'Sprint Velocity vs LOC <span class="filter-badge">[' + escapeHtml(currentRepository) + ']</span>';
+        var filterParts = [];
+        if (currentTeam) { filterParts.push('Team: ' + escapeHtml(currentTeam)); }
+        if (currentTeamMember) { filterParts.push('Member: ' + escapeHtml(currentTeamMember)); }
+        if (currentRepository) { filterParts.push('Repo: ' + escapeHtml(currentRepository)); }
+
+        if (filterParts.length > 0) {
+          chartTitle.innerHTML = 'Sprint Velocity vs LOC <span class="filter-badge">[' + filterParts.join(' | ') + ']</span>';
         } else {
           chartTitle.textContent = 'Sprint Velocity vs LOC';
         }
       }
 
       /**
+       * Update Clear Filters button visibility.
+       * GITX-121: Show button when any filter is active.
+       */
+      function updateClearFiltersButton() {
+        var hasActiveFilter = currentTeam || currentTeamMember || currentRepository;
+        clearFiltersBtn.style.display = hasActiveFilter ? 'inline-block' : 'none';
+      }
+
+      /**
        * Save filter state to VS Code webview state.
+       * GITX-121: Extended to save team and member filters.
        */
       function saveFilterState() {
-        vscode.setState({ repository: currentRepository, aggregation: currentAggregation });
+        var currentState = vscode.getState() || {};
+        vscode.setState(Object.assign({}, currentState, {
+          team: currentTeam,
+          teamMember: currentTeamMember,
+          repository: currentRepository,
+          aggregation: currentAggregation
+        }));
       }
 
       /**
        * Restore filter state from VS Code webview state.
+       * GITX-121: Extended to restore team and member filters.
        */
       function restoreFilterState() {
         var state = vscode.getState();
         if (state) {
+          if (state.team) {
+            currentTeam = state.team;
+          }
+          if (state.teamMember) {
+            currentTeamMember = state.teamMember;
+          }
           if (state.repository) {
             currentRepository = state.repository;
           }
@@ -308,33 +423,52 @@ export function generateFilterStateScript(): string {
 export function generateCsvExportHandlerScript(): string {
   return `
       // ======================================================================
-      // CSV Export Handler (IQS-944)
+      // CSV Export Handler (IQS-944, GITX-121)
       // ======================================================================
 
       /**
        * Handle CSV export button click.
        * Exports aggregated chart data with current filters.
+       * GITX-121: Extended to include team and team member filters in export.
        */
       function handleCsvExport() {
         if (!chartData || !chartData.aggregated || chartData.aggregated.length === 0) { return; }
-        // IQS-944: Include both human and AI story points in export
+        // IQS-944, GITX-121: Include both human and AI story points in export, plus filter context
         var headers = ['Period', 'Human Estimate', 'AI Calculated', 'Issue Count', 'LOC Changed', 'Lines Added', 'Lines Deleted', 'Commit Count'];
+        if (currentTeam) {
+          headers.push('Team');
+        }
+        if (currentTeamMember) {
+          headers.push('Team Member');
+        }
         if (currentRepository) {
           headers.push('Repository');
         }
         headers.push('Aggregation');
         var rows = chartData.aggregated.map(function(d) {
           var row = [d.weekStart, d.humanStoryPoints, d.aiStoryPoints, d.issueCount, d.totalLocChanged, d.totalLinesAdded, d.totalLinesDeleted, d.commitCount];
+          if (currentTeam) {
+            row.push(currentTeam);
+          }
+          if (currentTeamMember) {
+            row.push(currentTeamMember);
+          }
           if (currentRepository) {
             row.push(currentRepository);
           }
           row.push(currentAggregation);
           return row;
         });
-        // Include repository and aggregation context in filename (IQS-920, IQS-944)
+        // Include filter context in filename (IQS-920, IQS-944, GITX-121)
         var filenameParts = ['sprint-velocity-vs-loc'];
         if (currentAggregation !== 'week') {
           filenameParts.push(currentAggregation);
+        }
+        if (currentTeam) {
+          filenameParts.push(currentTeam.replace(/[^a-zA-Z0-9._-]/g, '_'));
+        }
+        if (currentTeamMember) {
+          filenameParts.push(currentTeamMember.replace(/[^a-zA-Z0-9._-]/g, '_'));
         }
         if (currentRepository) {
           filenameParts.push(currentRepository.replace(/[^a-zA-Z0-9._-]/g, '_'));

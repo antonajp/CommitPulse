@@ -2,16 +2,17 @@
  * Data service for the Sprint Velocity vs LOC chart.
  * Provides methods to fetch velocity and LOC data from the
  * vw_sprint_velocity_vs_loc database view, with optional filtering
- * by date range and team.
+ * by date range, team, team member, and repository.
  *
  * All queries use parameterized SQL ($1, $2 placeholders).
  *
- * Ticket: IQS-888, IQS-944
+ * Ticket: IQS-888, IQS-944, GITX-121
  */
 
 import { DatabaseService } from '../database/database-service.js';
 import { LoggerService } from '../logging/logger.js';
 import { isValidDateString } from '../utils/date-validation.js';
+import { isValidContributorName } from '../utils/contributor-validation.js';
 import { isValidRepositoryName } from '../utils/repository-validation.js';
 import { isValidTeamName } from '../utils/team-validation.js';
 import {
@@ -24,11 +25,23 @@ import {
   QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_REPOSITORY,
   QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_REPOSITORY,
   QUERY_VELOCITY_VIEW_EXISTS,
+  QUERY_VELOCITY_UNIQUE_TEAMS,
+  QUERY_VELOCITY_UNIQUE_CONTRIBUTORS,
+  QUERY_VELOCITY_UNIQUE_REPOSITORIES,
+  QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER,
+  QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_COMBINED,
+  QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_REPOSITORY,
+  QUERY_SPRINT_VELOCITY_VS_LOC_ALL_FILTERS,
+  QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER,
+  QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_COMBINED,
+  QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_REPOSITORY,
+  QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_ALL_FILTERS,
 } from '../database/queries/velocity-queries.js';
 import type {
   SprintVelocityVsLocPoint,
   VelocityChartData,
   VelocityFilters,
+  VelocityFilterOptions,
 } from './velocity-data-types.js';
 
 /**
@@ -75,10 +88,41 @@ export class VelocityDataService {
   }
 
   /**
+   * Get filter options for team, team member, and repository dropdowns.
+   * Queries distinct values from commit_contributors and commit_history.
+   *
+   * Ticket: GITX-121
+   *
+   * @returns VelocityFilterOptions with teams, teamMembers, and repositories arrays
+   */
+  async getFilterOptions(): Promise<VelocityFilterOptions> {
+    this.logger.debug(CLASS_NAME, 'getFilterOptions', 'Fetching filter options');
+
+    // Query all filter options in parallel
+    const [teamsResult, membersResult, reposResult] = await Promise.all([
+      this.db.query<{ team: string }>(QUERY_VELOCITY_UNIQUE_TEAMS),
+      this.db.query<{ login: string }>(QUERY_VELOCITY_UNIQUE_CONTRIBUTORS),
+      this.db.query<{ repo: string }>(QUERY_VELOCITY_UNIQUE_REPOSITORIES),
+    ]);
+
+    const teams = teamsResult.rows.map(row => row.team);
+    const teamMembers = membersResult.rows.map(row => row.login);
+    const repositories = reposResult.rows.map(row => row.repo);
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getFilterOptions',
+      `Filter options: ${teams.length} teams, ${teamMembers.length} members, ${repositories.length} repos`,
+    );
+
+    return { teams, teamMembers, repositories };
+  }
+
+  /**
    * Fetch sprint velocity vs LOC data with optional filters.
    * Validates date inputs before query execution.
    *
-   * @param filters - Optional date range and team filters
+   * @param filters - Optional date range, team, team member, and repository filters
    * @returns Array of SprintVelocityVsLocPoint sorted by week ascending
    */
   async getSprintVelocityVsLoc(filters: VelocityFilters = {}): Promise<readonly SprintVelocityVsLocPoint[]> {
@@ -86,6 +130,7 @@ export class VelocityDataService {
 
     const hasDateRange = filters.startDate && filters.endDate;
     const hasTeam = Boolean(filters.team);
+    const hasTeamMember = Boolean(filters.teamMember);
     const hasRepository = Boolean(filters.repository);
 
     // Validate date inputs
@@ -110,12 +155,59 @@ export class VelocityDataService {
       throw new Error(`Invalid team name: ${filters.team}. Must be 1-100 alphanumeric characters, spaces, hyphens, underscores, or periods.`);
     }
 
-    // Select the appropriate query based on filters (8 combinations with repository)
+    // Validate team member input (GITX-121)
+    if (filters.teamMember && !isValidContributorName(filters.teamMember)) {
+      this.logger.warn(CLASS_NAME, 'getSprintVelocityVsLoc', `Invalid team member rejected: ${filters.teamMember}`);
+      throw new Error(`Invalid team member: ${filters.teamMember}. Must be 1-200 alphanumeric characters, dots, hyphens, underscores, spaces, or @.`);
+    }
+
+    // Select the appropriate query based on filters (16 combinations with team member)
     let sql: string;
     let params: unknown[];
 
-    if (hasDateRange && hasTeam && hasRepository) {
-      // Date range + team + repository
+    // Priority order: DateRange > Team > TeamMember > Repository
+    if (hasDateRange && hasTeam && hasTeamMember && hasRepository) {
+      // All filters
+      sql = QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_ALL_FILTERS;
+      params = [filters.startDate, filters.endDate, filters.team, filters.teamMember, filters.repository];
+      this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using date range + team + member + repository filter query');
+    } else if (hasDateRange && hasTeamMember && hasRepository) {
+      // Date range + team member + repository (no team)
+      sql = QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_REPOSITORY;
+      params = [filters.startDate, filters.endDate, filters.teamMember, filters.repository];
+      this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using date range + member + repository filter query');
+    } else if (hasDateRange && hasTeam && hasTeamMember) {
+      // Date range + team + team member (no repository)
+      sql = QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_COMBINED;
+      params = [filters.startDate, filters.endDate, filters.team, filters.teamMember];
+      this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using date range + team + member filter query');
+    } else if (hasDateRange && hasTeamMember) {
+      // Date range + team member only
+      sql = QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER;
+      params = [filters.startDate, filters.endDate, filters.teamMember];
+      this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using date range + member filter query');
+    } else if (hasTeam && hasTeamMember && hasRepository) {
+      // Team + team member + repository (no date range)
+      sql = QUERY_SPRINT_VELOCITY_VS_LOC_ALL_FILTERS;
+      params = [filters.team, filters.teamMember, filters.repository];
+      this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using team + member + repository filter query');
+    } else if (hasTeamMember && hasRepository) {
+      // Team member + repository (no team, no date range)
+      sql = QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_REPOSITORY;
+      params = [filters.teamMember, filters.repository];
+      this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using member + repository filter query');
+    } else if (hasTeam && hasTeamMember) {
+      // Team + team member (no repository, no date range)
+      sql = QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_COMBINED;
+      params = [filters.team, filters.teamMember];
+      this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using team + member filter query');
+    } else if (hasTeamMember) {
+      // Team member only
+      sql = QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER;
+      params = [filters.teamMember];
+      this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using member filter query');
+    } else if (hasDateRange && hasTeam && hasRepository) {
+      // Date range + team + repository (no team member)
       sql = QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_REPOSITORY;
       params = [filters.startDate, filters.endDate, filters.team, filters.repository];
       this.logger.debug(CLASS_NAME, 'getSprintVelocityVsLoc', 'Using date range + team + repository filter query');

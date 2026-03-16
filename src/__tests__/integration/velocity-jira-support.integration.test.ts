@@ -62,15 +62,30 @@ async function createSchema(dbService: DatabaseService): Promise<void> {
 
 /**
  * Helper: Insert Jira test data (issues + commits linked via commit_jira).
+ *
+ * IMPORTANT: Uses fixed dates to ensure deterministic week boundaries.
+ * Using NOW() - INTERVAL caused flaky tests because week boundaries depend
+ * on what day the test runs (DATE_TRUNC('week') starts on Monday in PostgreSQL).
+ *
+ * Test data distribution:
+ * - Week 1 (2024-01-08): JIRA-101 (5 SP), jira-sha-001 in test-repo
+ * - Week 2 (2024-01-15): JIRA-102 (3 SP) + JIRA-103 (2 SP), jira-sha-002 in test-repo, jira-sha-003 in other-repo
  */
 async function insertJiraTestData(dbService: DatabaseService): Promise<void> {
+  // Fixed dates for deterministic week boundaries (PostgreSQL weeks start Monday)
+  // Week 1: 2024-01-08 (Monday)
+  // Week 2: 2024-01-15 (Monday)
+  const WEEK1_DATE = '2024-01-10'; // Wednesday of week 1
+  const WEEK2_DATE_EARLY = '2024-01-17'; // Wednesday of week 2
+  const WEEK2_DATE_LATE = '2024-01-19'; // Friday of week 2
+
   // Insert commit_history first (required for foreign key)
   await dbService.query(`
     INSERT INTO commit_history (sha, url, branch, repository, repository_url, author, commit_date, commit_message, file_count, lines_added, lines_removed, is_merge, is_jira_ref, organization)
     VALUES
-      ('jira-sha-001', 'https://github.com/test/commit/jira-sha-001', 'main', 'test-repo', 'https://github.com/test', 'developer1', NOW() - INTERVAL '7 days', 'JIRA-101: Add feature', 3, 100, 20, FALSE, TRUE, 'test-org'),
-      ('jira-sha-002', 'https://github.com/test/commit/jira-sha-002', 'main', 'test-repo', 'https://github.com/test', 'developer1', NOW() - INTERVAL '5 days', 'JIRA-102: Bug fix', 2, 50, 10, FALSE, TRUE, 'test-org'),
-      ('jira-sha-003', 'https://github.com/test/commit/jira-sha-003', 'main', 'other-repo', 'https://github.com/test', 'developer2', NOW() - INTERVAL '3 days', 'JIRA-103: Update', 1, 30, 5, FALSE, TRUE, 'test-org')
+      ('jira-sha-001', 'https://github.com/test/commit/jira-sha-001', 'main', 'test-repo', 'https://github.com/test', 'developer1', '${WEEK1_DATE}'::DATE, 'JIRA-101: Add feature', 3, 100, 20, FALSE, TRUE, 'test-org'),
+      ('jira-sha-002', 'https://github.com/test/commit/jira-sha-002', 'main', 'test-repo', 'https://github.com/test', 'developer1', '${WEEK2_DATE_EARLY}'::DATE, 'JIRA-102: Bug fix', 2, 50, 10, FALSE, TRUE, 'test-org'),
+      ('jira-sha-003', 'https://github.com/test/commit/jira-sha-003', 'main', 'other-repo', 'https://github.com/test', 'developer2', '${WEEK2_DATE_LATE}'::DATE, 'JIRA-103: Update', 1, 30, 5, FALSE, TRUE, 'test-org')
     ON CONFLICT (sha) DO NOTHING
   `);
 
@@ -85,13 +100,16 @@ async function insertJiraTestData(dbService: DatabaseService): Promise<void> {
   `);
 
   // Insert jira_detail records (done issues with story points)
+  // Week 1: JIRA-101 (5 SP) - Done
+  // Week 2: JIRA-102 (3 SP) - Closed, JIRA-103 (2 SP) - Resolved
+  // JIRA-104 is In Progress, should not be counted
   await dbService.query(`
     INSERT INTO jira_detail (jira_id, jira_key, priority, created_date, url, summary, description, reporter, issuetype, project, resolution, assignee, status, fixversion, component, status_change_date, points, calculated_story_points)
     VALUES
-      ('jira-1001', 'JIRA-101', 'High', NOW() - INTERVAL '30 days', 'https://jira/JIRA-101', 'Feature A', 'Description A', 'reporter1', 'Story', 'PROJ', 'Done', 'user1', 'Done', '1.0', 'Backend', NOW() - INTERVAL '7 days', 5, 5),
-      ('jira-1002', 'JIRA-102', 'Medium', NOW() - INTERVAL '28 days', 'https://jira/JIRA-102', 'Bug Fix B', 'Description B', 'reporter1', 'Bug', 'PROJ', 'Done', 'user2', 'Closed', '1.0', 'Frontend', NOW() - INTERVAL '5 days', 3, 3),
-      ('jira-1003', 'JIRA-103', 'Low', NOW() - INTERVAL '25 days', 'https://jira/JIRA-103', 'Task C', 'Description C', 'reporter2', 'Task', 'PROJ', 'Done', 'user1', 'Resolved', '1.0', 'Backend', NOW() - INTERVAL '3 days', 2, 2),
-      ('jira-1004', 'JIRA-104', 'High', NOW() - INTERVAL '20 days', 'https://jira/JIRA-104', 'In Progress D', 'Description D', 'reporter1', 'Story', 'PROJ', NULL, 'user3', 'In Progress', '1.0', 'Backend', NOW() - INTERVAL '1 day', 8, 8)
+      ('jira-1001', 'JIRA-101', 'High', '2024-01-01'::DATE, 'https://jira/JIRA-101', 'Feature A', 'Description A', 'reporter1', 'Story', 'PROJ', 'Done', 'user1', 'Done', '1.0', 'Backend', '${WEEK1_DATE}'::DATE, 5, 5),
+      ('jira-1002', 'JIRA-102', 'Medium', '2024-01-02'::DATE, 'https://jira/JIRA-102', 'Bug Fix B', 'Description B', 'reporter1', 'Bug', 'PROJ', 'Done', 'user2', 'Closed', '1.0', 'Frontend', '${WEEK2_DATE_EARLY}'::DATE, 3, 3),
+      ('jira-1003', 'JIRA-103', 'Low', '2024-01-03'::DATE, 'https://jira/JIRA-103', 'Task C', 'Description C', 'reporter2', 'Task', 'PROJ', 'Done', 'user1', 'Resolved', '1.0', 'Backend', '${WEEK2_DATE_LATE}'::DATE, 2, 2),
+      ('jira-1004', 'JIRA-104', 'High', '2024-01-04'::DATE, 'https://jira/JIRA-104', 'In Progress D', 'Description D', 'reporter1', 'Story', 'PROJ', NULL, 'user3', 'In Progress', '1.0', 'Backend', '2024-01-20'::DATE, 8, 8)
     ON CONFLICT (jira_key) DO NOTHING
   `);
 
@@ -108,14 +126,28 @@ async function insertJiraTestData(dbService: DatabaseService): Promise<void> {
 
 /**
  * Helper: Insert Linear test data (issues + commits linked via commit_linear).
+ *
+ * IMPORTANT: Uses fixed dates to ensure deterministic week boundaries.
+ * Using NOW() - INTERVAL caused flaky tests because week boundaries depend
+ * on what day the test runs (DATE_TRUNC('week') starts on Monday in PostgreSQL).
+ *
+ * Test data distribution:
+ * - Week 1 (2024-01-08): LIN-101 (5 SP), linear-sha-001 in test-repo
+ * - Week 2 (2024-01-15): LIN-102 (3 SP), linear-sha-002 in test-repo
  */
 async function insertLinearTestData(dbService: DatabaseService): Promise<void> {
+  // Fixed dates for deterministic week boundaries (PostgreSQL weeks start Monday)
+  // Week 1: 2024-01-08 (Monday) - same as Jira week 1
+  // Week 2: 2024-01-15 (Monday) - same as Jira week 2
+  const WEEK1_DATE = '2024-01-11'; // Thursday of week 1
+  const WEEK2_DATE = '2024-01-18'; // Thursday of week 2
+
   // Insert commit_history first (required for foreign key)
   await dbService.query(`
     INSERT INTO commit_history (sha, url, branch, repository, repository_url, author, commit_date, commit_message, file_count, lines_added, lines_removed, is_merge, is_jira_ref, is_linear_ref, organization)
     VALUES
-      ('linear-sha-001', 'https://github.com/test/commit/linear-sha-001', 'main', 'test-repo', 'https://github.com/test', 'developer3', NOW() - INTERVAL '6 days', 'LIN-101: Add Linear feature', 2, 80, 15, FALSE, FALSE, TRUE, 'test-org'),
-      ('linear-sha-002', 'https://github.com/test/commit/linear-sha-002', 'main', 'test-repo', 'https://github.com/test', 'developer4', NOW() - INTERVAL '4 days', 'LIN-102: Linear bug fix', 1, 40, 8, FALSE, FALSE, TRUE, 'test-org')
+      ('linear-sha-001', 'https://github.com/test/commit/linear-sha-001', 'main', 'test-repo', 'https://github.com/test', 'developer3', '${WEEK1_DATE}'::DATE, 'LIN-101: Add Linear feature', 2, 80, 15, FALSE, FALSE, TRUE, 'test-org'),
+      ('linear-sha-002', 'https://github.com/test/commit/linear-sha-002', 'main', 'test-repo', 'https://github.com/test', 'developer4', '${WEEK2_DATE}'::DATE, 'LIN-102: Linear bug fix', 1, 40, 8, FALSE, FALSE, TRUE, 'test-org')
     ON CONFLICT (sha) DO NOTHING
   `);
 
@@ -129,12 +161,15 @@ async function insertLinearTestData(dbService: DatabaseService): Promise<void> {
   `);
 
   // Insert linear_detail records (done issues with story points)
+  // Week 1: LIN-101 (5 SP) - Done
+  // Week 2: LIN-102 (3 SP) - Completed
+  // LIN-103 is In Progress, should not be counted
   await dbService.query(`
     INSERT INTO linear_detail (linear_id, linear_key, priority, created_date, url, title, description, creator, state, assignee, project, team, estimate, status_change_date, completed_date, calculated_story_points)
     VALUES
-      ('lin-1001', 'LIN-101', 'Urgent', NOW() - INTERVAL '15 days', 'https://linear/LIN-101', 'Linear Feature A', 'Description', 'creator1', 'Done', 'user4', 'ProjectX', 'TeamA', 5, NOW() - INTERVAL '6 days', NOW() - INTERVAL '6 days', 5),
-      ('lin-1002', 'LIN-102', 'High', NOW() - INTERVAL '12 days', 'https://linear/LIN-102', 'Linear Task B', 'Description', 'creator1', 'Completed', 'user5', 'ProjectX', 'TeamA', 3, NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', 3),
-      ('lin-1003', 'LIN-103', 'Normal', NOW() - INTERVAL '10 days', 'https://linear/LIN-103', 'In Progress C', 'Description', 'creator2', 'In Progress', 'user6', 'ProjectX', 'TeamA', 2, NOW() - INTERVAL '2 days', NULL, 2)
+      ('lin-1001', 'LIN-101', 'Urgent', '2024-01-01'::DATE, 'https://linear/LIN-101', 'Linear Feature A', 'Description', 'creator1', 'Done', 'user4', 'ProjectX', 'TeamA', 5, '${WEEK1_DATE}'::DATE, '${WEEK1_DATE}'::DATE, 5),
+      ('lin-1002', 'LIN-102', 'High', '2024-01-05'::DATE, 'https://linear/LIN-102', 'Linear Task B', 'Description', 'creator1', 'Completed', 'user5', 'ProjectX', 'TeamA', 3, '${WEEK2_DATE}'::DATE, '${WEEK2_DATE}'::DATE, 3),
+      ('lin-1003', 'LIN-103', 'Normal', '2024-01-10'::DATE, 'https://linear/LIN-103', 'In Progress C', 'Description', 'creator2', 'In Progress', 'user6', 'ProjectX', 'TeamA', 2, '2024-01-20'::DATE, NULL, 2)
     ON CONFLICT (linear_key) DO NOTHING
   `);
 
@@ -269,9 +304,11 @@ describe('Migration 022: vw_sprint_velocity_vs_loc Jira Support', () => {
 
       // The view FULL OUTER JOINs story points (by week/team/project) with LOC (by week/repository).
       // Story points are repeated for each repository in the same week:
-      // Week 1: JIRA-101 (5 SP) × 1 repo = 5 SP, 1 issue
-      // Week 2: (JIRA-102 + JIRA-103 = 5 SP) × 2 repos = 10 SP, 4 issues
+      //
+      // Week 1 (2024-01-08): JIRA-101 (5 SP, 1 issue) × 1 repo (test-repo) = 5 SP, 1 issue
+      // Week 2 (2024-01-15): JIRA-102 + JIRA-103 (5 SP, 2 issues) × 2 repos = 10 SP, 4 issues
       // Total: 15 SP, 5 issues
+      //
       // JIRA-104 is In Progress, so should not be counted
       expect(Number(result.rows[0]?.total_sp)).toBe(15);
       expect(Number(result.rows[0]?.total_issues)).toBe(5);
@@ -510,40 +547,40 @@ describe('Migration 022: vw_sprint_velocity_vs_loc Jira Support', () => {
     });
 
     it('should include Jira issues with Closed status', async () => {
-      // JIRA-102 has Closed status and 3 story points
+      // JIRA-102 has Closed status and 3 story points (included in aggregation)
       const result = await service.query(`
         SELECT SUM(total_story_points) as total_sp
         FROM vw_sprint_velocity_vs_loc
       `);
       // Total includes all done states: Done (5) + Closed (3) + Resolved (2) = 10 base SP
       // But the view duplicates SP for each repository in the same week:
-      // Week 1: 5 SP × 1 repo = 5 SP
-      // Week 2: 5 SP × 2 repos = 10 SP
+      // Week 1 (2024-01-08): 5 SP × 1 repo (test-repo) = 5 SP
+      // Week 2 (2024-01-15): 5 SP × 2 repos (test-repo + other-repo) = 10 SP
       // Total: 15 SP
       expect(Number(result.rows[0]?.total_sp)).toBe(15);
     });
 
     it('should include Jira issues with Resolved status', async () => {
-      // JIRA-103 has Resolved status and 2 story points
+      // JIRA-103 has Resolved status and 2 story points (included in aggregation)
       // View duplicates issue counts for each repository in the same week
       const result = await service.query(`
         SELECT SUM(issue_count) as count
         FROM vw_sprint_velocity_vs_loc
       `);
-      // Week 1: 1 issue × 1 repo = 1
-      // Week 2: 2 issues × 2 repos = 4
+      // Week 1 (2024-01-08): 1 issue × 1 repo = 1
+      // Week 2 (2024-01-15): 2 issues × 2 repos = 4
       // Total: 5
       expect(Number(result.rows[0]?.count)).toBe(5);
     });
 
     it('should exclude Jira issues with In Progress status', async () => {
       // JIRA-104 has In Progress status and 8 story points
-      // Should not be counted in the view
+      // Should NOT be counted in the view (only Done, Closed, Resolved are included)
       const result = await service.query(`
         SELECT SUM(total_story_points) as total_sp
         FROM vw_sprint_velocity_vs_loc
       `);
-      // If In Progress was included (with duplication), total would be 23
+      // If In Progress was included (with duplication), total would be higher
       // Without In Progress: 15 SP (see test above for breakdown)
       expect(Number(result.rows[0]?.total_sp)).toBe(15);
     });

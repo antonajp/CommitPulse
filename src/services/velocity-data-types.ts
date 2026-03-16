@@ -3,7 +3,7 @@
  * Defines the data model for the dual-axis line chart comparing
  * weekly story points completed against weekly lines of code committed.
  *
- * Ticket: IQS-888, IQS-944
+ * Ticket: IQS-888, IQS-944, GITX-121
  */
 
 // ============================================================================
@@ -94,6 +94,11 @@ export interface VelocityFilters {
   readonly endDate?: string;
   /** Filter by team name */
   readonly team?: string;
+  /**
+   * Filter by team member (contributor login).
+   * Ticket: GITX-121
+   */
+  readonly teamMember?: string;
   /** Filter by repository name (IQS-920) */
   readonly repository?: string;
   /**
@@ -103,4 +108,18 @@ export interface VelocityFilters {
    * Ticket: IQS-944
    */
   readonly aggregation?: VelocityAggregation;
+}
+
+/**
+ * Filter options for the velocity chart dropdowns.
+ * Contains distinct values for team, team member, and repository filters.
+ * Ticket: GITX-121
+ */
+export interface VelocityFilterOptions {
+  /** Distinct team names from commit_contributors */
+  readonly teams: readonly string[];
+  /** Distinct contributor logins from commit_contributors */
+  readonly teamMembers: readonly string[];
+  /** Distinct repository names from commit_history */
+  readonly repositories: readonly string[];
 }

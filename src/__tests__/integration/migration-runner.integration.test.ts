@@ -195,13 +195,13 @@ describe('MigrationRunner Integration Tests', () => {
     await pool.query('DROP INDEX IF EXISTS idx_commit_files_arc_component');
 
     // Run migrations again - should only apply 004, 005, 006, 007, and 021
-    // 001-003, 008-020, 022, 023, 024, 025, 026, and 027 were not deleted so they're skipped (22 total)
+    // 001-003, 008-020, 022, 023, 024, 025, 026, 027, and 028 were not deleted so they're skipped (23 total)
     const secondRunner = new MigrationRunner(pool, migrationsDir);
     const secondResult = await secondRunner.migrate();
 
     expect(secondResult.success).toBe(true);
     expect(secondResult.applied).toBe(5);
-    expect(secondResult.skipped).toBe(22);
+    expect(secondResult.skipped).toBe(23);
     expect(secondResult.appliedMigrations).toContain('004_add_linear_support.sql');
     expect(secondResult.appliedMigrations).toContain('005_add_calculated_story_points.sql');
     expect(secondResult.appliedMigrations).toContain('006_add_arc_component.sql');

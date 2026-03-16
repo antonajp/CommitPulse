@@ -8,7 +8,7 @@
  * - Rate limiting on message handlers (IQS-947)
  * - Proper disposal and resource cleanup
  *
- * Ticket: IQS-888, IQS-947
+ * Ticket: IQS-888, IQS-947, GITX-121
  */
 
 import * as vscode from 'vscode';
@@ -246,11 +246,12 @@ export class VelocityChartPanel implements vscode.Disposable {
             break;
           }
 
-          // Pass all filters including repository (IQS-920)
+          // Pass all filters including repository (IQS-920) and teamMember (GITX-121)
           const data = await this.dataService.getChartData({
             startDate: message.startDate,
             endDate: message.endDate,
             team: message.team,
+            teamMember: message.teamMember,
             repository: message.repository,
           });
           this.postMessage({
@@ -258,6 +259,18 @@ export class VelocityChartPanel implements vscode.Disposable {
             rows: data.rows,
             hasData: data.hasData,
             viewExists: true,
+          });
+          break;
+        }
+
+        case 'requestFilterOptions': {
+          // GITX-121: Fetch filter options for team, team member, and repository dropdowns
+          const filterOptions = await this.dataService.getFilterOptions();
+          this.postMessage({
+            type: 'filterOptions',
+            teams: filterOptions.teams,
+            teamMembers: filterOptions.teamMembers,
+            repositories: filterOptions.repositories,
           });
           break;
         }

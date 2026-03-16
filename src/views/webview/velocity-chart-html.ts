@@ -9,7 +9,7 @@
  * - ARIA accessibility and colorblind-accessible markers
  * - All data values HTML-escaped before SVG/DOM insertion
  *
- * Ticket: IQS-888, IQS-944, IQS-946
+ * Ticket: IQS-888, IQS-944, IQS-946, GITX-121
  */
 
 import type * as vscode from 'vscode';
@@ -81,12 +81,16 @@ function generateHtmlStructure(
     <div class="chart-header">
       <h1 id="chartTitle">Sprint Velocity vs LOC</h1>
       <div class="controls">
-        <div class="filter-group" id="aggregationFilterGroup">
-          <label for="aggregationFilter">Group By</label>
-          <select id="aggregationFilter" aria-label="Aggregation period" tabindex="0">
-            <option value="day">Daily</option>
-            <option value="week" selected>Weekly</option>
-            <option value="biweekly">Bi-weekly</option>
+        <div class="filter-group" id="teamFilterGroup">
+          <label for="teamFilter">Team</label>
+          <select id="teamFilter" aria-label="Team filter" tabindex="0">
+            <option value="">All Teams</option>
+          </select>
+        </div>
+        <div class="filter-group" id="memberFilterGroup">
+          <label for="memberFilter">Team Member</label>
+          <select id="memberFilter" aria-label="Team member filter" tabindex="0">
+            <option value="">All Members</option>
           </select>
         </div>
         <div class="filter-group" id="repoFilterGroup">
@@ -95,7 +99,16 @@ function generateHtmlStructure(
             <option value="">All Repositories</option>
           </select>
         </div>
+        <div class="filter-group" id="aggregationFilterGroup">
+          <label for="aggregationFilter">Group By</label>
+          <select id="aggregationFilter" aria-label="Aggregation period" tabindex="0">
+            <option value="day">Daily</option>
+            <option value="week" selected>Weekly</option>
+            <option value="biweekly">Bi-weekly</option>
+          </select>
+        </div>
         <button class="apply-btn" id="applyFiltersBtn" aria-label="Apply selected filters" tabindex="0">Apply</button>
+        <button class="clear-btn" id="clearFiltersBtn" aria-label="Clear all filters" tabindex="0" style="display:none;">Clear Filters</button>
         <button class="export-btn" id="exportCsvBtn" aria-label="Export chart data as CSV" tabindex="0">Export CSV</button>
       </div>
     </div>
@@ -185,6 +198,11 @@ function generateDomRefsScript(): string {
       // ======================================================================
       var exportCsvBtn = document.getElementById('exportCsvBtn');
       var applyFiltersBtn = document.getElementById('applyFiltersBtn');
+      var clearFiltersBtn = document.getElementById('clearFiltersBtn');
+      var teamFilter = document.getElementById('teamFilter');
+      var teamFilterGroup = document.getElementById('teamFilterGroup');
+      var memberFilter = document.getElementById('memberFilter');
+      var memberFilterGroup = document.getElementById('memberFilterGroup');
       var repoFilter = document.getElementById('repoFilter');
       var repoFilterGroup = document.getElementById('repoFilterGroup');
       var aggregationFilter = document.getElementById('aggregationFilter');
@@ -201,14 +219,19 @@ function generateDomRefsScript(): string {
       var tooltip = document.getElementById('tooltip');
 
       // ======================================================================
-      // State
+      // State (GITX-121: Added team, teamMember filters)
       // ======================================================================
       var chartData = null;
 
-      // Filter state (IQS-920, IQS-944)
+      // Filter state (IQS-920, IQS-944, GITX-121)
+      var currentTeam = '';
+      var currentTeamMember = '';
       var currentRepository = '';
       var currentAggregation = 'week';  // IQS-944: default to weekly
+      var availableTeams = [];
+      var availableTeamMembers = [];
       var availableRepositories = [];
+      var filterOptionsLoaded = false;
   `;
 }
 
@@ -219,20 +242,47 @@ function generateDomRefsScript(): string {
 function generateEventListenersScript(): string {
   return `
       // ======================================================================
-      // Event Handlers
+      // Event Handlers (GITX-121: Added team/member filters)
       // ======================================================================
       exportCsvBtn.addEventListener('click', handleCsvExport);
 
-      // Apply filters button handler (IQS-920, IQS-944)
+      // Apply filters button handler (IQS-920, IQS-944, GITX-121)
       applyFiltersBtn.addEventListener('click', function() {
+        currentTeam = teamFilter.value;
+        currentTeamMember = memberFilter.value;
         currentRepository = repoFilter.value;
         currentAggregation = aggregationFilter.value;
         saveFilterState();
         updateChartTitle();
+        updateClearFiltersButton();
         requestData();
       });
 
-      // Allow Enter key on filter dropdowns (IQS-920, IQS-944)
+      // Clear filters button handler (GITX-121)
+      clearFiltersBtn.addEventListener('click', function() {
+        currentTeam = '';
+        currentTeamMember = '';
+        currentRepository = '';
+        teamFilter.value = '';
+        memberFilter.value = '';
+        repoFilter.value = '';
+        saveFilterState();
+        updateChartTitle();
+        updateClearFiltersButton();
+        requestData();
+      });
+
+      // Allow Enter key on filter dropdowns (IQS-920, IQS-944, GITX-121)
+      teamFilter.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+          applyFiltersBtn.click();
+        }
+      });
+      memberFilter.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+          applyFiltersBtn.click();
+        }
+      });
       repoFilter.addEventListener('keydown', function(event) {
         if (event.key === 'Enter') {
           applyFiltersBtn.click();
@@ -251,7 +301,7 @@ function generateEventListenersScript(): string {
         dataTableWrapper.style.display = isExpanded ? 'none' : 'block';
       });
 
-      // Message Handling
+      // Message Handling (GITX-121: Added filterOptions handler)
       window.addEventListener('message', function(event) {
         var message = event.data;
         switch (message.type) {
@@ -260,6 +310,9 @@ function generateEventListenersScript(): string {
             break;
           case 'velocityError':
             showError(escapeHtml(message.message));
+            break;
+          case 'filterOptions':
+            handleFilterOptions(message);
             break;
         }
       });
@@ -273,13 +326,15 @@ function generateEventListenersScript(): string {
 function generateInitScript(): string {
   return `
       // ======================================================================
-      // Initialization
+      // Initialization (GITX-121: Request filter options on init)
       // ======================================================================
       initChartExplanations();
 
       // Initial Load
       restoreFilterState();
       updateChartTitle();
+      updateClearFiltersButton();
+      requestFilterOptions();
       requestData();
   `;
 }
