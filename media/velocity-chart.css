@@ -3,7 +3,7 @@
  * Uses VS Code CSS variables for theme integration.
  * Reuses base styles from architecture-chart.css patterns.
  *
- * Ticket: IQS-888
+ * Ticket: IQS-888, GITX-121
  */
 
 /* ============================================================================
@@ -221,6 +221,26 @@ body {
 }
 
 .export-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+}
+
+/* Clear Filters Button (GITX-121) */
+.clear-btn {
+  background: var(--vscode-inputValidation-warningBackground, #5c5c00);
+  color: var(--vscode-inputValidation-warningForeground, #ffffff);
+  border: 1px solid var(--vscode-inputValidation-warningBorder, #8c8c00);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.clear-btn:hover {
+  background: var(--vscode-inputValidation-warningBorder, #8c8c00);
+}
+
+.clear-btn:focus {
   outline: 1px solid var(--vscode-focusBorder, #007acc);
 }
 

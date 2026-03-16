@@ -707,6 +707,7 @@ describe('E2E Pipeline Integration Tests', () => {
   // ========================================================================
   // Test: Incremental detection of NEW commits added after initial extraction
   // Ticket: IQS-941
+  // Verified: GITX-120 - Test passes after GITX-1 fix (per-repo incremental watermarks)
   // ========================================================================
 
   it('should detect and extract NEW commits added after initial extraction', async () => {
@@ -791,6 +792,7 @@ describe('E2E Pipeline Integration Tests', () => {
   // ========================================================================
   // Test: Detect new commits on newly created branches
   // Ticket: IQS-941
+  // Verified: GITX-120 - Test passes after GITX-1 fix (per-repo incremental watermarks)
   // ========================================================================
 
   it('should detect new commits on newly created branches', async () => {
@@ -874,6 +876,7 @@ describe('E2E Pipeline Integration Tests', () => {
   // ========================================================================
   // Test: Unchanged repository reports 0 new commits on re-run
   // Ticket: IQS-941 (AC-2.3)
+  // Verified: GITX-120 - Test passes after GITX-1 fix (per-repo incremental watermarks)
   // ========================================================================
 
   it('should report 0 new commits when repository is unchanged', async () => {
