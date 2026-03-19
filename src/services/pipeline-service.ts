@@ -272,6 +272,7 @@ export class PipelineService {
     jiraKeyAliases?: Readonly<Record<string, string>>,
     linearTeamKeys?: readonly string[],
     sinceDate?: string,
+    forceFullExtraction?: boolean,
   ): PipelineConfig {
     const effectiveSteps = (steps && steps.length > 0) ? steps : ALL_PIPELINE_STEPS;
     return {
@@ -282,6 +283,7 @@ export class PipelineService {
       jiraKeyAliases: jiraKeyAliases ?? {},
       linearTeamKeys: linearTeamKeys ?? [],
       sinceDate,
+      forceFullExtraction,
     };
   }
 
@@ -392,9 +394,11 @@ export class PipelineService {
    * Step 1: Git commit extraction. Maps from Python _run_gitr().
    * IQS-931: Pass global sinceDate to GitAnalysisService. Per-repo startDate
    * is handled inside GitAnalysisService.analyzeRepository().
+   * GITX-123: Pass forceFullExtraction to ignore database watermarks.
    */
   private async runGitCommitExtraction(): Promise<string> {
-    this.logger.info(CLASS_NAME, 'runGitCommitExtraction', `Extracting commits from ${this.repositories.length} repositories`);
+    const modeLabel = this.config.forceFullExtraction ? 'Full' : 'Incremental';
+    this.logger.info(CLASS_NAME, 'runGitCommitExtraction', `Extracting commits from ${this.repositories.length} repositories (mode: ${modeLabel})`);
 
     if (this.repositories.length === 0) {
       this.logger.warn(CLASS_NAME, 'runGitCommitExtraction', 'No repositories configured in gitrx.repositories setting');
@@ -402,8 +406,16 @@ export class PipelineService {
     }
 
     // IQS-931: Pass global sinceDate from pipeline config
-    const options = this.config.sinceDate ? { sinceDate: this.config.sinceDate } : {};
-    this.logger.debug(CLASS_NAME, 'runGitCommitExtraction', `Global sinceDate: ${this.config.sinceDate ?? '(none)'}`);
+    // GITX-123: Pass forceFullExtraction to ignore database watermarks
+    const options: { sinceDate?: string; forceFullExtraction?: boolean } = {};
+    if (this.config.sinceDate) {
+      options.sinceDate = this.config.sinceDate;
+    }
+    if (this.config.forceFullExtraction) {
+      options.forceFullExtraction = true;
+      this.logger.info(CLASS_NAME, 'runGitCommitExtraction', 'Full extraction mode: ignoring database watermarks');
+    }
+    this.logger.debug(CLASS_NAME, 'runGitCommitExtraction', `Global sinceDate: ${this.config.sinceDate ?? '(none)'}, forceFullExtraction: ${this.config.forceFullExtraction ?? false}`);
 
     const result: AnalysisRunResult = await this.gitAnalysisService.analyzeRepositories(this.repositories, options);
     this.lastGitAnalysisResult = result;
@@ -411,9 +423,9 @@ export class PipelineService {
     const totalCommits = result.repoResults.reduce((sum, r) => sum + r.commitsInserted, 0);
     const totalBranches = result.repoResults.reduce((sum, r) => sum + r.branchesProcessed, 0);
 
-    this.logger.info(CLASS_NAME, 'runGitCommitExtraction', `Extracted ${totalCommits} new commits from ${totalBranches} branches across ${result.repoResults.length} repos`);
+    this.logger.info(CLASS_NAME, 'runGitCommitExtraction', `Extracted ${totalCommits} new commits from ${totalBranches} branches across ${result.repoResults.length} repos (mode: ${modeLabel})`);
 
-    return `${totalCommits} commits from ${totalBranches} branches across ${result.repoResults.length} repos (${result.status})`;
+    return `${totalCommits} commits from ${totalBranches} branches across ${result.repoResults.length} repos (${result.status}, ${modeLabel})`;
   }
 
   /** Step 2: GitHub contributor sync. */

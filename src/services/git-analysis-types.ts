@@ -30,6 +30,36 @@ export interface GitAnalysisOptions {
    * Ticket: IQS-936
    */
   readonly debugLogging?: boolean;
+  /**
+   * Force full extraction mode, ignoring database watermarks.
+   * When true, extracts entire repository history regardless of existing data.
+   * When false/undefined, uses auto-incremental mode (GITX-1 watermarks).
+   * Ticket: GITX-123
+   */
+  readonly forceFullExtraction?: boolean;
+}
+
+/**
+ * Extraction mode for git analysis operations.
+ * Used by Quick Pick UI to let users choose between incremental and full extraction.
+ * Ticket: GITX-123
+ */
+export type ExtractionMode = 'incremental' | 'full';
+
+/**
+ * Quick Pick item for extraction mode selection.
+ * Includes label, description, detail, and the mode value.
+ * Ticket: GITX-123
+ */
+export interface ExtractionModeQuickPickItem {
+  /** Display label with icon (e.g., "$(sync) Incremental Extraction") */
+  readonly label: string;
+  /** Short description shown next to label */
+  readonly description: string;
+  /** Detailed explanation shown below */
+  readonly detail: string;
+  /** The extraction mode value */
+  readonly mode: ExtractionMode;
 }
 
 // ============================================================================

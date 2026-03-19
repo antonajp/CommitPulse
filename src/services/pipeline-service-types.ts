@@ -114,6 +114,14 @@ export interface PipelineConfig {
    * Ticket: IQS-931
    */
   readonly sinceDate?: string;
+
+  /**
+   * Force full extraction mode, ignoring database watermarks.
+   * When true, extracts entire repository history regardless of existing data.
+   * When false/undefined, uses auto-incremental mode (GITX-1 watermarks).
+   * Ticket: GITX-123
+   */
+  readonly forceFullExtraction?: boolean;
 }
 
 // ============================================================================
