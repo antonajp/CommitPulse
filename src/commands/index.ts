@@ -23,11 +23,124 @@ import { LinearIncrementalLoader } from '../services/linear-incremental-loader.j
 import { DataEnhancerService } from '../services/data-enhancer-service.js';
 import { TeamAssignmentService } from '../services/team-assignment-service.js';
 import { PipelineService } from '../services/pipeline-service.js';
+import type { ExtractionMode, ExtractionModeQuickPickItem } from '../services/git-analysis-types.js';
 
 /**
  * Class name constant for structured logging context.
  */
 const CLASS_NAME = 'Commands';
+
+/**
+ * Build Quick Pick items for extraction mode selection.
+ * Uses static descriptions to avoid database queries for faster display.
+ *
+ * @returns Array of Quick Pick items for extraction mode selection
+ *
+ * Ticket: GITX-123, GITX-124 (optimized to avoid database query), GITX-125 (exported for testing)
+ */
+export function buildExtractionModeQuickPickItems(): ExtractionModeQuickPickItem[] {
+  // GITX-124: Use static descriptions to avoid double database initialization.
+  // The incremental mode will automatically detect the watermark during execution.
+  return [
+    {
+      label: '$(sync) Incremental Extraction',
+      description: 'Extract new commits since last run',
+      detail: 'Processes only commits after the last extracted date',
+      mode: 'incremental' as ExtractionMode,
+    },
+    {
+      label: '$(database) Full Re-extraction',
+      description: 'Extract entire commit history',
+      detail: 'Ignores previous data. Use if incremental sync has issues.',
+      mode: 'full' as ExtractionMode,
+    },
+  ];
+}
+
+/**
+ * Show Quick Pick dialog for extraction mode selection.
+ * Returns the selected mode or undefined if cancelled.
+ *
+ * GITX-124: Removed database query for last commit date to avoid double initialization.
+ * The Quick Pick now shows immediately without database latency.
+ *
+ * @param logger - Logger instance for diagnostic messages
+ * @returns The selected extraction mode, or undefined if cancelled
+ *
+ * Ticket: GITX-123, GITX-124, GITX-125 (exported for testing)
+ */
+export async function showExtractionModeQuickPick(
+  logger: LoggerService,
+): Promise<ExtractionMode | undefined> {
+  const items = buildExtractionModeQuickPickItems();
+
+  const selected = await vscode.window.showQuickPick(items, {
+    title: 'Git Extraction Mode',
+    placeHolder: 'Choose extraction mode',
+  });
+
+  if (!selected) {
+    logger.info(CLASS_NAME, 'showExtractionModeQuickPick', 'Extraction mode selection cancelled by user');
+    return undefined;
+  }
+
+  logger.info(CLASS_NAME, 'showExtractionModeQuickPick', `User selected extraction mode: ${selected.mode}`);
+  return selected.mode;
+}
+
+/**
+ * Result from determining extraction mode based on first-run detection.
+ *
+ * Ticket: GITX-126
+ */
+export interface ExtractionModeResult {
+  /** The extraction mode to use */
+  mode: ExtractionMode;
+  /** Whether this is a first run (no existing data) */
+  isFirstRun: boolean;
+}
+
+/**
+ * Determine extraction mode based on first-run detection.
+ *
+ * On first run (no commits in database): Returns 'full' mode without showing Quick Pick.
+ * On subsequent runs: Shows Quick Pick for user to choose mode.
+ *
+ * @param commitRepo - CommitRepository for checking existing data
+ * @param logger - Logger instance for diagnostic messages
+ * @returns ExtractionModeResult with mode and first-run flag, or undefined if user cancelled
+ *
+ * Ticket: GITX-126 - Improve first-run UX for extraction mode selection
+ */
+export async function determineExtractionMode(
+  commitRepo: CommitRepository,
+  logger: LoggerService,
+): Promise<ExtractionModeResult | undefined> {
+  logger.debug(CLASS_NAME, 'determineExtractionMode', 'Checking for existing data to determine extraction mode');
+
+  // GITX-126: Check if any commits exist to determine first-run state
+  const hasData = await commitRepo.hasAnyCommits();
+
+  if (!hasData) {
+    // First run: Skip Quick Pick, default to full extraction
+    logger.info(
+      CLASS_NAME,
+      'determineExtractionMode',
+      'No existing data found - first run detected, defaulting to full extraction',
+    );
+    return { mode: 'full', isFirstRun: true };
+  }
+
+  // Subsequent run: Show Quick Pick for user to choose
+  logger.debug(CLASS_NAME, 'determineExtractionMode', 'Existing data found - showing extraction mode Quick Pick');
+  const selectedMode = await showExtractionModeQuickPick(logger);
+
+  if (!selectedMode) {
+    return undefined; // User cancelled
+  }
+
+  return { mode: selectedMode, isFirstRun: false };
+}
 
 /**
  * Tracks whether any pipeline run (manual or scheduled) is in progress.
@@ -122,6 +235,8 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
   logger.debug(CLASS_NAME, 'registerCommands', 'SecretStorageService initialized for command registration');
 
   // gitr.runPipeline - Execute the analytics pipeline
+  // GITX-123: Added extraction mode Quick Pick (incremental vs full)
+  // GITX-126: First-run detection - skip Quick Pick when no data exists
   const runPipelineDisposable = vscode.commands.registerCommand('gitr.runPipeline', async () => {
     logger.info(CLASS_NAME, 'runPipeline', 'Command executed: gitr.runPipeline');
     logger.debug(CLASS_NAME, 'runPipeline', 'Pipeline execution starting...');
@@ -136,10 +251,43 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
     logger.debug(CLASS_NAME, 'runPipeline', 'Pipeline running flag set to true');
 
     try {
+      // GITX-126: Build lightweight database connection first to check for existing data
+      const checkResult = await buildDatabaseConnection(secretService, logger);
+      if (!checkResult) {
+        return; // buildDatabaseConnection already showed error messages
+      }
+
+      let extractionMode: ExtractionMode;
+      let isFirstRun = false;
+
+      try {
+        // GITX-126: Determine extraction mode based on first-run detection
+        const modeResult = await determineExtractionMode(checkResult.commitRepo, logger);
+        if (!modeResult) {
+          logger.info(CLASS_NAME, 'runPipeline', 'Pipeline cancelled by user (Quick Pick dismissed)');
+          return;
+        }
+        extractionMode = modeResult.mode;
+        isFirstRun = modeResult.isFirstRun;
+
+        // GITX-126: Show informational message for first-run
+        if (isFirstRun) {
+          void vscode.window.showInformationMessage(
+            'Gitr: No existing data found. Performing initial full extraction.',
+          );
+        }
+      } finally {
+        // Always shut down the check connection - we'll create a fresh one for the pipeline
+        await checkResult.dbService.shutdown();
+        logger.debug(CLASS_NAME, 'runPipeline', 'First-run check database connection closed');
+      }
+
+      const modeLabel = extractionMode === 'full' ? 'Full' : 'Incremental';
+
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: 'Gitr: Running Pipeline',
+          title: `Gitr: Running Pipeline (${modeLabel})`,
           cancellable: true,
         },
         async (progress, token) => {
@@ -149,7 +297,8 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
           }
 
           // Build the pipeline service from current settings and secrets
-          const buildResult = await buildPipelineService(secretService, logger);
+          // GITX-123: Pass extraction mode to buildPipelineService
+          const buildResult = await buildPipelineService(secretService, logger, extractionMode);
           if (!buildResult) {
             return; // buildPipelineService already showed error messages
           }
@@ -157,7 +306,7 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
           const { pipelineService, dbService } = buildResult;
 
           try {
-            logger.info(CLASS_NAME, 'runPipeline', 'PipelineService built, starting execution');
+            logger.info(CLASS_NAME, 'runPipeline', `PipelineService built, starting execution (mode: ${modeLabel}, isFirstRun: ${isFirstRun})`);
 
             const result = await pipelineService.runPipeline(progress, token);
 
@@ -205,6 +354,8 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
   disposables.push(runPipelineDisposable);
 
   // gitr.runGitExtraction - Run Git commit extraction only (IQS-949)
+  // GITX-123: Added extraction mode Quick Pick (incremental vs full)
+  // GITX-126: First-run detection - skip Quick Pick when no data exists
   const runGitExtractionDisposable = vscode.commands.registerCommand('gitr.runGitExtraction', async () => {
     logger.info(CLASS_NAME, 'runGitExtraction', 'Command executed: gitr.runGitExtraction');
     logger.debug(CLASS_NAME, 'runGitExtraction', 'Git extraction starting...');
@@ -250,26 +401,49 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
           const { dbService, commitRepo } = buildResult;
 
           try {
+            // GITX-126: Determine extraction mode based on first-run detection
+            const modeResult = await determineExtractionMode(commitRepo, logger);
+            if (!modeResult) {
+              logger.info(CLASS_NAME, 'runGitExtraction', 'Extraction cancelled by user (Quick Pick dismissed)');
+              return;
+            }
+
+            const extractionMode = modeResult.mode;
+            const isFirstRun = modeResult.isFirstRun;
+            const modeLabel = extractionMode === 'full' ? 'Full' : 'Incremental';
+
+            // GITX-126: Show informational message for first-run
+            if (isFirstRun) {
+              void vscode.window.showInformationMessage(
+                'Gitr: No existing data found. Performing initial full extraction.',
+              );
+            }
+
             // Create PipelineRepository for run tracking and GitAnalysisService
             const pipelineRepo = new PipelineRepository(dbService);
             const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo);
 
-            // Build options from settings
-            const options: { sinceDate?: string; debugLogging?: boolean } = {};
+            // GITX-123: Build options from settings and extraction mode
+            const options: { sinceDate?: string; debugLogging?: boolean; forceFullExtraction?: boolean } = {};
             if (settings.pipeline.sinceDate) {
               options.sinceDate = settings.pipeline.sinceDate;
             }
             if (settings.git.debugLogging) {
               options.debugLogging = settings.git.debugLogging;
             }
+            // GITX-123: Set forceFullExtraction based on user's mode selection
+            if (extractionMode === 'full') {
+              options.forceFullExtraction = true;
+              logger.info(CLASS_NAME, 'runGitExtraction', 'Full extraction mode: ignoring database watermarks');
+            }
 
-            logger.info(CLASS_NAME, 'runGitExtraction', `Extracting commits from ${settings.repositories.length} repositories`);
+            logger.info(CLASS_NAME, 'runGitExtraction', `Extracting commits from ${settings.repositories.length} repositories (mode: ${modeLabel}, isFirstRun: ${isFirstRun})`);
             if (options.sinceDate) {
               logger.info(CLASS_NAME, 'runGitExtraction', `Using sinceDate filter: ${options.sinceDate}`);
             }
 
             // Run Git extraction
-            progress.report({ message: 'Extracting commits...' });
+            progress.report({ message: `Extracting commits (${modeLabel})...` });
             const result = await gitAnalysisService.analyzeRepositories(settings.repositories, options);
 
             // Calculate totals
@@ -717,11 +891,13 @@ interface BuildPipelineResult {
  *
  * @param secretService - SecretStorageService for credential retrieval
  * @param logger - Logger instance for diagnostic messages
+ * @param extractionMode - Optional extraction mode (GITX-123). Default: 'incremental'
  * @returns A BuildPipelineResult, or null if configuration is insufficient
  */
 async function buildPipelineService(
   secretService: SecretStorageService,
   logger: LoggerService,
+  extractionMode: ExtractionMode = 'incremental',
 ): Promise<BuildPipelineResult | null> {
   logger.debug(CLASS_NAME, 'buildPipelineService', 'Building PipelineService from settings and secrets');
 
@@ -855,9 +1031,10 @@ async function buildPipelineService(
   );
   const teamAssignmentService = new TeamAssignmentService(contributorRepo, commitJiraRepo, pipelineRepo);
 
-  // Step 8: Build pipeline config (IQS-931: added sinceDate)
+  // Step 8: Build pipeline config (IQS-931: added sinceDate, GITX-123: added forceFullExtraction)
   const configuredSteps = settings.pipeline.steps;
   const validatedSteps = PipelineService.validateSteps(configuredSteps);
+  const forceFullExtraction = extractionMode === 'full';
   const pipelineConfig = PipelineService.buildConfig(
     validatedSteps,
     settings.jira.increment,
@@ -866,9 +1043,11 @@ async function buildPipelineService(
     settings.jira.keyAliases,
     settings.linear.teamKeys,
     settings.pipeline.sinceDate,
+    forceFullExtraction,
   );
 
-  logger.info(CLASS_NAME, 'buildPipelineService', `Pipeline config: ${pipelineConfig.steps.length} steps, jiraIncrement=${pipelineConfig.jiraIncrement}, jiraDaysAgo=${pipelineConfig.jiraDaysAgo}, linearTeamKeys=${pipelineConfig.linearTeamKeys.length}, sinceDate=${pipelineConfig.sinceDate ?? '(none)'}`);
+  const modeLabel = forceFullExtraction ? 'Full' : 'Incremental';
+  logger.info(CLASS_NAME, 'buildPipelineService', `Pipeline config: ${pipelineConfig.steps.length} steps, jiraIncrement=${pipelineConfig.jiraIncrement}, jiraDaysAgo=${pipelineConfig.jiraDaysAgo}, linearTeamKeys=${pipelineConfig.linearTeamKeys.length}, sinceDate=${pipelineConfig.sinceDate ?? '(none)'}, extractionMode=${modeLabel}`);
 
   // Step 9: Create and return PipelineService with dbService for cleanup
   const pipelineService = new PipelineService(

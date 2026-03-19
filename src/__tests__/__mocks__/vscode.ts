@@ -59,6 +59,7 @@ export const window = {
   showErrorMessage: async (_message: string, ..._items: any[]) => undefined,
   showWarningMessage: async (_message: string, ..._items: any[]) => undefined,
   showInputBox: async (_options?: any) => undefined,
+  showQuickPick: async <T>(_items: T[] | Promise<T[]>, _options?: any): Promise<T | undefined> => undefined,
   createOutputChannel: (_name: string) => ({
     appendLine: (_value: string) => { /* noop */ },
     append: (_value: string) => { /* noop */ },

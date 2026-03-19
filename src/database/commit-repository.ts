@@ -146,6 +146,15 @@ const SQL_GET_LAST_COMMIT_DATE_FOR_REPO = `
   WHERE repository = $1 AND repository_url = $2
 `;
 
+/**
+ * Query to check if any commits exist in the database.
+ * Used for first-run detection in GITX-126.
+ * Uses EXISTS for optimal performance (stops after finding first row).
+ */
+const SQL_HAS_ANY_COMMITS = `
+  SELECT EXISTS (SELECT 1 FROM commit_history LIMIT 1) AS has_commits
+`;
+
 const SQL_GET_COMMIT_FILE_BASE_METRICS = `
   SELECT cf.sha, ch.commit_date, cf.filename, cf.complexity,
          cf.total_comment_lines, cf.total_code_lines
@@ -659,6 +668,34 @@ export class CommitRepository {
     }
 
     return lastDate;
+  }
+
+  /**
+   * Check if any commits exist in the database.
+   * Used for first-run UX detection - determines whether to show
+   * extraction mode Quick Pick or default to full extraction.
+   *
+   * Uses EXISTS query for optimal performance (stops after first row).
+   *
+   * @returns true if at least one commit exists, false if database is empty
+   *
+   * Ticket: GITX-126 - Improve first-run UX for extraction mode selection
+   */
+  async hasAnyCommits(): Promise<boolean> {
+    this.logger.debug(CLASS_NAME, 'hasAnyCommits', 'Checking if any commits exist in database');
+
+    const result: DatabaseQueryResult<{ has_commits: boolean }> =
+      await this.db.query(SQL_HAS_ANY_COMMITS);
+
+    const hasCommits = result.rows[0]?.has_commits ?? false;
+
+    this.logger.debug(
+      CLASS_NAME,
+      'hasAnyCommits',
+      `Database has commits: ${hasCommits}`,
+    );
+
+    return hasCommits;
   }
 
   /**

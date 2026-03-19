@@ -228,9 +228,10 @@ export class GitAnalysisService {
     this.logger.debug(CLASS_NAME, 'analyzeRepository', `Repo URL: ${sanitizedRepoUrl}`);
 
     // GITX-1: Auto-incremental extraction using per-repo watermark
-    // When no explicit sinceDate is configured, use the last commit date from the database
-    // This enables automatic incremental updates without user configuration
-    if (!effectiveSinceDate) {
+    // GITX-123: Unless user explicitly requests full extraction via forceFullExtraction flag
+    // When no explicit sinceDate is configured and forceFullExtraction is false/undefined,
+    // use the last commit date from the database for automatic incremental updates
+    if (!effectiveSinceDate && !options.forceFullExtraction) {
       const lastCommitDate = await this.commitRepo.getLastCommitDateForRepo(repoName, sanitizedRepoUrl);
       if (lastCommitDate) {
         // Use the day of the last commit as the watermark
@@ -248,6 +249,13 @@ export class GitAnalysisService {
           `No existing commits found for ${repoName}, will extract full history`,
         );
       }
+    } else if (options.forceFullExtraction) {
+      // GITX-123: User explicitly requested full extraction mode
+      this.logger.info(
+        CLASS_NAME,
+        'analyzeRepository',
+        `Full extraction mode: ignoring watermarks and extracting entire history for ${repoName}`,
+      );
     }
 
     const effectiveOptions: GitAnalysisOptions = {

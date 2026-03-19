@@ -595,6 +595,59 @@ describe('CommitRepository', () => {
     });
   });
 
+  // --------------------------------------------------------------------------
+  // First-run detection (GITX-126)
+  // --------------------------------------------------------------------------
+
+  describe('hasAnyCommits', () => {
+    it('should return true when commits exist in database', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ has_commits: true }],
+        rowCount: 1,
+      });
+
+      const result = await repo.hasAnyCommits();
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when no commits exist in database', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ has_commits: false }],
+        rowCount: 1,
+      });
+
+      const result = await repo.hasAnyCommits();
+
+      expect(result).toBe(false);
+    });
+
+    it('should return false when query returns empty rows', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+
+      const result = await repo.hasAnyCommits();
+
+      expect(result).toBe(false);
+    });
+
+    it('should use EXISTS query for optimal performance', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ has_commits: true }], rowCount: 1 });
+
+      await repo.hasAnyCommits();
+
+      const existsCall = mockQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('EXISTS'),
+      );
+      expect(existsCall).toBeDefined();
+      const sql = existsCall![0] as string;
+      expect(sql).toContain('EXISTS');
+      expect(sql).toContain('LIMIT 1');
+    });
+  });
+
   describe('getCommitFileBaseMetrics', () => {
     it('should return metrics for a specific file', async () => {
       const date = new Date('2024-03-01T10:00:00Z');
