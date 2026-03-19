@@ -60,6 +60,7 @@ export const window = {
   showWarningMessage: async (_message: string, ..._items: any[]) => undefined,
   showInputBox: async (_options?: any) => undefined,
   showQuickPick: async <T>(_items: T[] | Promise<T[]>, _options?: any): Promise<T | undefined> => undefined,
+  showSaveDialog: async (_options?: any): Promise<any | undefined> => undefined,
   createOutputChannel: (_name: string) => ({
     appendLine: (_value: string) => { /* noop */ },
     append: (_value: string) => { /* noop */ },
@@ -135,6 +136,16 @@ export const workspace = {
   }),
   onDidChangeConfiguration: (_listener: any) => ({ dispose: () => { /* noop */ } }),
   workspaceFolders: [],
+  fs: {
+    writeFile: async (_uri: any, _content: Uint8Array): Promise<void> => { /* noop */ },
+    readFile: async (_uri: any): Promise<Uint8Array> => new Uint8Array(),
+    delete: async (_uri: any, _options?: any): Promise<void> => { /* noop */ },
+    rename: async (_source: any, _target: any, _options?: any): Promise<void> => { /* noop */ },
+    copy: async (_source: any, _target: any, _options?: any): Promise<void> => { /* noop */ },
+    createDirectory: async (_uri: any): Promise<void> => { /* noop */ },
+    stat: async (_uri: any): Promise<any> => ({ type: 1, ctime: 0, mtime: 0, size: 0 }),
+    readDirectory: async (_uri: any): Promise<[string, number][]> => [],
+  },
 };
 
 export class Uri {

@@ -13,6 +13,7 @@
  */
 
 import type { StoryPointsTrendPoint } from '../../services/story-points-trend-data-types.js';
+import type { SharedWebviewToHost, SharedHostToWebview } from './shared-protocol.js';
 
 // ============================================================================
 // Webview -> Extension (Requests)
@@ -42,7 +43,8 @@ export interface RequestStoryPointsTrendTeams {
  */
 export type StoryPointsTrendWebviewToHost =
   | RequestStoryPointsTrendData
-  | RequestStoryPointsTrendTeams;
+  | RequestStoryPointsTrendTeams
+  | SharedWebviewToHost;
 
 // ============================================================================
 // Extension -> Webview (Responses)
@@ -81,4 +83,5 @@ export interface StoryPointsTrendResponseError {
 export type StoryPointsTrendHostToWebview =
   | ResponseStoryPointsTrendData
   | ResponseStoryPointsTrendTeams
-  | StoryPointsTrendResponseError;
+  | StoryPointsTrendResponseError
+  | SharedHostToWebview;

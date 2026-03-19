@@ -21,6 +21,7 @@ import { DatabaseService, buildConfigFromSettings } from '../../database/databas
 import { KnowledgeConcentrationDataService } from '../../services/knowledge-concentration-service.js';
 import { generateKnowledgeHtml } from './knowledge-html.js';
 import { getSettings } from '../../config/settings.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { KnowledgeWebviewToHost, KnowledgeHostToWebview } from './knowledge-protocol.js';
 import type { ConcentrationRisk } from '../../services/knowledge-concentration-types.js';
@@ -212,6 +213,17 @@ export class KnowledgePanel implements vscode.Disposable {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
 
     try {
+      // Handle shared message types (exportCsv) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       switch (message.type) {
         case 'requestFileOwnershipData': {
           await this.handleRequestFileOwnershipData(message);

@@ -20,6 +20,7 @@ import type {
   StatusCategory,
   LifecycleFilters,
 } from '../../services/ticket-lifecycle-types.js';
+import type { SharedWebviewToHost } from './shared-protocol.js';
 
 // ============================================================================
 // Webview -> Extension (Requests)
@@ -96,7 +97,8 @@ export type LifecycleWebviewToHost =
   | RequestMatrixData
   | RequestLifecycleRefresh
   | RequestFilterUpdate
-  | RequestDrillDown;
+  | RequestDrillDown
+  | SharedWebviewToHost;
 
 // ============================================================================
 // Extension -> Webview (Responses)

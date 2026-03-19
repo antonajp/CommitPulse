@@ -20,6 +20,7 @@ import { StoryPointsTrendDataService } from '../../services/story-points-trend-d
 import { generateStoryPointsTrendHtml } from './story-points-trend-html.js';
 import { getSettings } from '../../config/settings.js';
 import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { StoryPointsTrendWebviewToHost, StoryPointsTrendHostToWebview } from './story-points-trend-protocol.js';
 
@@ -225,6 +226,17 @@ export class StoryPointsTrendPanel implements vscode.Disposable {
     }
 
     try {
+      // Handle shared message types (exportCsv, openExternal) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       await this.ensureDbConnection();
 
       if (!this.dataService) {

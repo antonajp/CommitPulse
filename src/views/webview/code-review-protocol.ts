@@ -21,6 +21,7 @@ import type {
   PRSizeCategory,
   PRState,
 } from '../../services/code-review-velocity-types.js';
+import type { SharedWebviewToHost } from './shared-protocol.js';
 
 // ============================================================================
 // Webview -> Extension (Requests)
@@ -103,7 +104,8 @@ export type CodeReviewWebviewToHost =
   | RequestAvgByAuthor
   | RequestAvgBySize
   | RequestPRStats
-  | RequestPRSync;
+  | RequestPRSync
+  | SharedWebviewToHost;
 
 // ============================================================================
 // Extension -> Webview (Responses)

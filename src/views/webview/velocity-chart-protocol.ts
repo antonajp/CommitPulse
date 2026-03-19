@@ -13,6 +13,7 @@
  */
 
 import type { SprintVelocityVsLocPoint } from '../../services/velocity-data-types.js';
+import type { SharedWebviewToHost, SharedHostToWebview } from './shared-protocol.js';
 
 // ============================================================================
 // Webview -> Extension (Requests)
@@ -62,7 +63,7 @@ export interface RequestFilterOptions {
 /**
  * Union type of all messages sent from the webview to the extension host.
  */
-export type VelocityWebviewToHost = RequestVelocityData | RequestFilterOptions;
+export type VelocityWebviewToHost = RequestVelocityData | RequestFilterOptions | SharedWebviewToHost;
 
 // ============================================================================
 // Extension -> Webview (Responses)
@@ -107,4 +108,5 @@ export interface ResponseFilterOptions {
 export type VelocityHostToWebview =
   | ResponseVelocityData
   | VelocityResponseError
-  | ResponseFilterOptions;
+  | ResponseFilterOptions
+  | SharedHostToWebview;

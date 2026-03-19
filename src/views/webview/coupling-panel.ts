@@ -24,6 +24,7 @@ import { DatabaseService, buildConfigFromSettings } from '../../database/databas
 import { TeamCouplingDataService } from '../../services/team-coupling-service.js';
 import { generateCouplingHtml } from './coupling-html.js';
 import { getSettings } from '../../config/settings.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { CouplingWebviewToHost, CouplingHostToWebview } from './coupling-protocol.js';
 import type { CouplingFilters } from '../../services/team-coupling-types.js';
@@ -215,6 +216,17 @@ export class CouplingPanel implements vscode.Disposable {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
 
     try {
+      // Handle shared message types (exportCsv) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       switch (message.type) {
         case 'requestCouplingData': {
           await this.handleRequestCouplingData(message.filters);

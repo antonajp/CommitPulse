@@ -26,6 +26,7 @@ import { CommitHygieneDataService } from '../../services/commit-hygiene-service.
 import { generateHygieneHtml } from './hygiene-html.js';
 import { getSettings } from '../../config/settings.js';
 import { validateExternalUrl } from '../../utils/url-validator.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type {
   CommitHygieneFilters,
@@ -295,6 +296,17 @@ export class HygienePanel implements vscode.Disposable {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
 
     try {
+      // Handle shared message types (exportCsv) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       switch (message.type) {
         case 'requestHygieneData': {
           await this.handleRequestHygieneData(message.filters);

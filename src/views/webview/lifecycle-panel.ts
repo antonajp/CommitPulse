@@ -23,6 +23,7 @@ import { generateLifecycleHtml } from './lifecycle-html.js';
 import { getSettings } from '../../config/settings.js';
 import { validateExternalUrl } from '../../utils/url-validator.js';
 import { buildIssueUrl } from '../../utils/url-builder.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { LifecycleWebviewToHost, LifecycleHostToWebview } from './lifecycle-protocol.js';
 import type { LifecycleFilters, TicketTransition } from '../../services/ticket-lifecycle-types.js';
@@ -197,6 +198,16 @@ export class LifecyclePanel implements vscode.Disposable {
     this.panel.webview.onDidReceiveMessage(
       (message: LifecycleWebviewToHost | LifecycleClickMessage) => {
         this.logger.trace(CLASS_NAME, 'onDidReceiveMessage', `Received message: type=${message.type}`);
+        // Handle shared message types (exportCsv) - GITX-127
+        if (message.type === 'exportCsv') {
+          void handleSharedMessage(
+            message as { type: string },
+            this.panel.webview,
+            this.logger,
+            CLASS_NAME,
+          );
+          return;
+        }
         // Handle click actions (non-data messages)
         if (message.type === 'openTicket') {
           void this.handleOpenTicket(message);
@@ -288,6 +299,11 @@ export class LifecyclePanel implements vscode.Disposable {
           await this.handleRequestDrillDown(message);
           break;
         }
+
+        // Shared message types handled by handleSharedMessage before switch
+        case 'exportCsv':
+        case 'openExternal':
+          break;
 
         default: {
           // Exhaustiveness guard

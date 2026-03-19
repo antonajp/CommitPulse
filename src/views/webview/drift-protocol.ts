@@ -21,6 +21,7 @@ import type {
   HeatMapData,
   DriftSeverity,
 } from '../../services/architecture-drift-types.js';
+import type { SharedWebviewToHost } from './shared-protocol.js';
 
 // ============================================================================
 // Webview -> Extension (Requests)
@@ -133,7 +134,8 @@ export type DriftWebviewToHost =
   | RequestDriftRefresh
   | RequestComponentDrilldown
   | RequestSeverityDrilldown
-  | RequestComponentPairCommits;
+  | RequestComponentPairCommits
+  | SharedWebviewToHost;
 
 // ============================================================================
 // Extension -> Webview (Responses)

@@ -18,6 +18,7 @@ import { DatabaseService, buildConfigFromSettings } from '../../database/databas
 import { ReleaseManagementDataService } from '../../services/release-mgmt-data-service.js';
 import { generateReleaseMgmtHtml } from './release-mgmt-html.js';
 import { getSettings } from '../../config/settings.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { ReleaseMgmtWebviewToHost, ReleaseMgmtHostToWebview } from './release-mgmt-protocol.js';
 
@@ -206,6 +207,17 @@ export class ReleaseMgmtPanel implements vscode.Disposable {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
 
     try {
+      // Handle shared message types (exportCsv) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       await this.ensureDbConnection();
 
       if (!this.dataService) {

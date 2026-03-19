@@ -49,15 +49,26 @@ describe('webview-utils', () => {
       expect(script).toContain('replace');
     });
 
-    it('should create Blob with correct MIME type', () => {
+    it('should use postMessage for CSV export (GITX-127)', () => {
       const script = generateCsvExportScript();
-      expect(script).toContain('text/csv;charset=utf-8;');
+      // GITX-127: Changed from Blob URLs to postMessage for CSP compatibility
+      expect(script).toContain("vscode.postMessage");
+      expect(script).toContain("type: 'exportCsv'");
     });
 
-    it('should use createObjectURL for download', () => {
+    it('should include formula injection prevention (CWE-1236)', () => {
       const script = generateCsvExportScript();
-      expect(script).toContain('URL.createObjectURL');
-      expect(script).toContain('URL.revokeObjectURL');
+      // GITX-127: Formula prefix sanitization (now includes \t\r and trims whitespace)
+      expect(script).toContain("'=+-@|%\\t\\r'");
+      expect(script).toContain("CWE-1236");
+      expect(script).toContain("str.trim()"); // Whitespace bypass prevention
+    });
+
+    it('should include toast notification functions (GITX-127)', () => {
+      const script = generateCsvExportScript();
+      expect(script).toContain('function showToast(');
+      expect(script).toContain('function showExportSuccess(');
+      expect(script).toContain('function showExportError(');
     });
   });
 
