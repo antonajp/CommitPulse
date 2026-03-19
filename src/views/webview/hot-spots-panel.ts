@@ -23,6 +23,7 @@ import { HotSpotsDataService } from '../../services/hot-spots-data-service.js';
 import { generateHotSpotsHtml } from './hot-spots-html.js';
 import { getSettings } from '../../config/settings.js';
 import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { HotSpotsWebviewToHost, HotSpotsHostToWebview } from './hot-spots-protocol.js';
 import type { RiskTier } from '../../services/hot-spots-data-types.js';
@@ -231,6 +232,17 @@ export class HotSpotsPanel implements vscode.Disposable {
     }
 
     try {
+      // Handle shared message types (exportCsv, openExternal) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       switch (message.type) {
         case 'requestHotSpotsData': {
           await this.handleRequestHotSpotsData(message);

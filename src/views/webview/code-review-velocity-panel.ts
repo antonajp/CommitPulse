@@ -24,6 +24,7 @@ import { getSettings } from '../../config/settings.js';
 import { validateExternalUrl } from '../../utils/url-validator.js';
 import { buildIssueUrl } from '../../utils/url-builder.js';
 import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { CodeReviewWebviewToHost, CodeReviewHostToWebview } from './code-review-protocol.js';
 
@@ -207,6 +208,16 @@ export class CodeReviewVelocityPanel implements vscode.Disposable {
     this.panel.webview.onDidReceiveMessage(
       (message: CodeReviewWebviewToHost | CodeReviewClickMessage) => {
         this.logger.trace(CLASS_NAME, 'onDidReceiveMessage', `Received message: type=${message.type}`);
+        // Handle shared message types (exportCsv) - GITX-127
+        if (message.type === 'exportCsv') {
+          void handleSharedMessage(
+            message as { type: string },
+            this.panel.webview,
+            this.logger,
+            CLASS_NAME,
+          );
+          return;
+        }
         // Handle click actions (non-data messages)
         if (message.type === 'openTicket') {
           void this.handleOpenTicket(message);
@@ -397,6 +408,11 @@ export class CodeReviewVelocityPanel implements vscode.Disposable {
           this.postError('PR sync not available from dashboard. Use "Gitr: Sync PRs from GitHub" command.', message.type);
           break;
         }
+
+        // Shared message types handled by handleSharedMessage before switch
+        case 'exportCsv':
+        case 'openExternal':
+          break;
 
         default: {
           // Exhaustiveness guard

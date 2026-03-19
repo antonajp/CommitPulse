@@ -1154,3 +1154,66 @@ body {
   border: none;
   border-top: 1px solid var(--vscode-panel-border, #444);
 }
+
+/* ============================================================================
+   Toast Notifications (GITX-127)
+   Used for CSV export success/error feedback.
+   ============================================================================ */
+
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 0.9em;
+  max-width: 350px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateX(100%);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: auto;
+}
+
+.toast-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast-success {
+  background-color: var(--vscode-testing-iconPassed, #388a34);
+  color: #ffffff;
+  border: 1px solid var(--vscode-testing-iconPassed, #388a34);
+}
+
+.toast-success::before {
+  content: '✓ ';
+  font-weight: bold;
+}
+
+.toast-error {
+  background-color: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  color: var(--vscode-errorForeground, #f48771);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+.toast-error::before {
+  content: '✗ ';
+  font-weight: bold;
+}
+
+/* Support for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: opacity 0.15s ease;
+    transform: none;
+  }
+}

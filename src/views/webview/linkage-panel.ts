@@ -20,6 +20,7 @@ import { generateLinkageHtml } from './linkage-html.js';
 import { getSettings } from '../../config/settings.js';
 import { validateExternalUrl } from '../../utils/url-validator.js';
 import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { LinkageWebviewToHost, LinkageHostToWebview } from './linkage-protocol.js';
 
@@ -199,6 +200,17 @@ export class LinkagePanel implements vscode.Disposable {
     }
 
     try {
+      // Handle shared message types (exportCsv, openExternal) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       // Ensure database connection is established
       await this.ensureDbConnection();
 

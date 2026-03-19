@@ -24,6 +24,7 @@ import { DatabaseService, buildConfigFromSettings } from '../../database/databas
 import { ReleaseRiskService } from '../../services/release-risk-service.js';
 import { generateReleaseRiskHtml } from './release-risk-html.js';
 import { getSettings } from '../../config/settings.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { ReleaseRiskFilters, CommitRisk, ReleaseRiskSummary } from '../../services/release-risk-types.js';
 
@@ -249,6 +250,17 @@ export class ReleaseRiskPanel implements vscode.Disposable {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
 
     try {
+      // Handle shared message types (exportCsv) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       switch (message.type) {
         case 'requestRiskData': {
           await this.handleRequestRiskData(message.filters);

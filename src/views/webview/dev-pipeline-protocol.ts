@@ -17,6 +17,7 @@ import type {
   DevPipelineDeltaByTicket,
   DevPipelineDeltaByAuthor,
 } from '../../services/dev-pipeline-data-types.js';
+import type { SharedWebviewToHost } from './shared-protocol.js';
 
 // ============================================================================
 // Webview -> Extension (Requests)
@@ -89,7 +90,8 @@ export type DevPipelineWebviewToHost =
   | RequestDevPipelineByAuthor
   | RequestBaselineStats
   | RequestDevPipelineTeamList
-  | RequestDevPipelineWeeklyMetrics;
+  | RequestDevPipelineWeeklyMetrics
+  | SharedWebviewToHost;
 
 // ============================================================================
 // Extension -> Webview (Responses)

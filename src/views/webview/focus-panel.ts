@@ -25,6 +25,7 @@ import { DatabaseService, buildConfigFromSettings } from '../../database/databas
 import { DeveloperFocusDataService } from '../../services/developer-focus-service.js';
 import { generateFocusHtml } from './focus-html.js';
 import { getSettings } from '../../config/settings.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { FocusWebviewToHost, FocusHostToWebview } from './focus-protocol.js';
 import type { FocusFilters } from '../../services/developer-focus-types.js';
@@ -216,6 +217,17 @@ export class FocusPanel implements vscode.Disposable {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
 
     try {
+      // Handle shared message types (exportCsv) - GITX-127
+      const handled = await handleSharedMessage(
+        message as { type: string },
+        this.panel.webview,
+        this.logger,
+        CLASS_NAME,
+      );
+      if (handled) {
+        return;
+      }
+
       switch (message.type) {
         case 'requestFocusData': {
           await this.handleRequestFocusData(message.filters);

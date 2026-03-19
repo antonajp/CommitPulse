@@ -23,6 +23,11 @@ import { DevPipelineDataService } from '../../services/dev-pipeline-data-service
 import { generateDashboardHtml } from './dashboard-html.js';
 import { getSettings } from '../../config/settings.js';
 import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
+import {
+  handleCsvExport,
+  createSuccessResponse,
+  createErrorResponse,
+} from './csv-export-handler.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { WebviewToHost, HostToWebview } from './protocol.js';
 
@@ -191,6 +196,39 @@ export class DashboardPanel implements vscode.Disposable {
     }
 
     try {
+      // Handle messages that don't require database connection (GITX-127)
+      if (message.type === 'exportCsv') {
+        this.logger.debug(CLASS_NAME, 'handleMessage', `CSV export request: ${message.filename}`);
+        const result = await handleCsvExport(
+          message.csvContent,
+          message.filename,
+          message.source,
+          this.logger,
+        );
+        if (result.success) {
+          this.postMessage(createSuccessResponse(result));
+        } else {
+          this.postMessage(createErrorResponse(result));
+        }
+        return;
+      }
+
+      if (message.type === 'openExternal') {
+        this.logger.debug(CLASS_NAME, 'handleMessage', `Open external URL: ${message.url}`);
+        try {
+          const url = new URL(message.url);
+          if (url.protocol !== 'https:') {
+            this.logger.warn(CLASS_NAME, 'handleMessage', `Blocked non-HTTPS URL: ${message.url}`);
+            return;
+          }
+          await vscode.env.openExternal(vscode.Uri.parse(message.url));
+        } catch (error: unknown) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          this.logger.error(CLASS_NAME, 'handleMessage', `Failed to open external URL: ${errorMsg}`);
+        }
+        return;
+      }
+
       // Ensure database connection is established
       await this.ensureDbConnection();
 

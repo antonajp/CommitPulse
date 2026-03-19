@@ -26,7 +26,7 @@ import { DatabaseService, buildConfigFromSettings } from '../../database/databas
 import { ArchitectureDriftDataService } from '../../services/architecture-drift-service.js';
 import { generateDriftHtml } from './drift-html.js';
 import { getSettings } from '../../config/settings.js';
-import { validateExternalUrl } from '../../utils/url-validator.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type {
   ArchitectureDriftFilters,
@@ -54,14 +54,6 @@ const VIEW_TYPE = 'gitrx.driftPanel';
 const D3_EXPECTED_SHA256 = 'f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539';
 
 /**
- * Rate limiting configuration for external URL opens.
- * Prevents rapid-fire URL opens which could indicate malicious behavior.
- * Ticket: IQS-925
- */
-const RATE_LIMIT_WINDOW_MS = 60000; // 60 seconds
-const RATE_LIMIT_MAX_URLS = 5; // Max 5 URLs per window
-
-/**
  * Messages from webview to host (extension).
  */
 export type DriftWebviewToHost =
@@ -71,7 +63,8 @@ export type DriftWebviewToHost =
   | { type: 'requestCellDrillDown'; component: string; week: string; filters?: ArchitectureDriftFilters }
   | { type: 'requestComponentDrillDown'; component: string; filters?: ArchitectureDriftFilters }
   | { type: 'requestOpenFile'; filePath: string; repository: string }
-  | { type: 'openExternal'; url: string };
+  | { type: 'openExternal'; url: string }
+  | { type: 'exportCsv'; csvContent: string; filename: string; source?: string };
 
 /**
  * Messages from host (extension) to webview.
@@ -105,7 +98,9 @@ export type DriftHostToWebview =
       component: string;
       drift: ArchitectureDrift | null;
       hasData: boolean;
-    };
+    }
+  | { type: 'exportCsvSuccess'; filename: string; filePath: string }
+  | { type: 'exportCsvError'; message: string; cancelled: boolean };
 
 /**
  * Manages the Architecture Drift Heat Map WebviewPanel lifecycle.
@@ -127,13 +122,6 @@ export class DriftPanel implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private db: DatabaseService | undefined;
   private dataService: ArchitectureDriftDataService | undefined;
-
-  /**
-   * Timestamps of recent URL opens for rate limiting.
-   * Filtered to retain only timestamps within the rate limit window.
-   * Ticket: IQS-925
-   */
-  private urlOpenTimestamps: number[] = [];
 
   /**
    * Create or reveal the Architecture Drift Heat Map panel.
@@ -285,6 +273,19 @@ export class DriftPanel implements vscode.Disposable {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
 
     try {
+      // Handle shared message types (exportCsv, openExternal) - GITX-127
+      if (message.type === 'exportCsv' || message.type === 'openExternal') {
+        const handled = await handleSharedMessage(
+          message as { type: string },
+          this.panel.webview,
+          this.logger,
+          CLASS_NAME,
+        );
+        if (handled) {
+          return;
+        }
+      }
+
       switch (message.type) {
         case 'requestDriftData': {
           await this.handleRequestDriftData(message.filters);
@@ -318,10 +319,10 @@ export class DriftPanel implements vscode.Disposable {
           break;
         }
 
-        case 'openExternal': {
-          await this.handleOpenExternal(message.url);
+        // Shared message types handled by handleSharedMessage before switch
+        case 'exportCsv':
+        case 'openExternal':
           break;
-        }
 
         default: {
           // Exhaustiveness guard
@@ -480,57 +481,6 @@ export class DriftPanel implements vscode.Disposable {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error(CLASS_NAME, 'handleRequestOpenFile', `Failed to open file: ${msg}`);
       void vscode.window.showErrorMessage(`Could not open file: ${message.filePath}`);
-    }
-  }
-
-  /**
-   * Handle opening an external URL in the default browser.
-   *
-   * Security hardening (IQS-925):
-   * - Rate limiting: max 5 URLs per 60 seconds
-   * - Domain allowlist validation
-   * - Rejects non-http/https schemes
-   *
-   * @param url - The URL to open
-   */
-  private async handleOpenExternal(url: string): Promise<void> {
-    this.logger.debug(CLASS_NAME, 'handleOpenExternal', `Attempting to open external URL: ${url}`);
-
-    // Rate limiting check (IQS-925)
-    const now = Date.now();
-    this.urlOpenTimestamps = this.urlOpenTimestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW_MS);
-
-    if (this.urlOpenTimestamps.length >= RATE_LIMIT_MAX_URLS) {
-      this.logger.warn(CLASS_NAME, 'handleOpenExternal', `Rate limit exceeded: ${this.urlOpenTimestamps.length} URLs in window`);
-      void vscode.window.showWarningMessage(
-        'Gitr: Too many URLs opened recently. Please wait a moment before trying again.',
-      );
-      return;
-    }
-
-    // URL validation with domain allowlist
-    const settings = getSettings();
-    const jiraServer = settings.jira?.server ?? '';
-    const validation = validateExternalUrl(url, jiraServer);
-
-    if (!validation.isValid) {
-      this.logger.warn(CLASS_NAME, 'handleOpenExternal', `URL rejected: ${validation.reason} - URL: ${url}`);
-      void vscode.window.showWarningMessage(
-        `Gitr: Cannot open URL - ${validation.reason}`,
-      );
-      return;
-    }
-
-    // Record timestamp for rate limiting
-    this.urlOpenTimestamps.push(now);
-
-    // Open the validated URL
-    try {
-      this.logger.info(CLASS_NAME, 'handleOpenExternal', `Opening validated URL: ${url}`);
-      await vscode.env.openExternal(validation.validatedUri!);
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(CLASS_NAME, 'handleOpenExternal', `Failed to open URL: ${msg}`);
     }
   }
 

@@ -25,6 +25,7 @@ import { getSettings } from '../../config/settings.js';
 import { validateExternalUrl } from '../../utils/url-validator.js';
 import { buildIssueUrl } from '../../utils/url-builder.js';
 import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
+import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
 import type { DevPipelineWebviewToHost, DevPipelineHostToWebview } from './dev-pipeline-protocol.js';
 
@@ -215,6 +216,16 @@ export class DevPipelinePanel implements vscode.Disposable {
       (message: DevPipelineWebviewToHost | DevPipelineClickMessage) => {
         this.logger.info(CLASS_NAME, 'onDidReceiveMessage', `Received message from webview: type=${message.type}`);
         // Handle click actions (non-data messages)
+        // Handle shared message types (exportCsv) - GITX-127
+        if (message.type === 'exportCsv') {
+          void handleSharedMessage(
+            message as { type: string },
+            this.panel.webview,
+            this.logger,
+            CLASS_NAME,
+          );
+          return;
+        }
         if (message.type === 'openCommitDiff') {
           void this.handleOpenCommitDiff(message.sha);
           return;

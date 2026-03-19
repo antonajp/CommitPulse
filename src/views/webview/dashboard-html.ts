@@ -827,6 +827,17 @@ ${generateFileChurnHelperFunctions()}
           case 'fileChurnDrillDownData':
             handleFileChurnDrillDownData(msg.data, msg.filename, msg.contributor);
             break;
+          case 'exportCsvSuccess':
+            // CSV export succeeded (GITX-127)
+            showExportSuccess(msg.filename);
+            break;
+          case 'exportCsvError':
+            // CSV export failed or was cancelled (GITX-127)
+            if (!msg.cancelled) {
+              showExportError(msg.message);
+            }
+            // If cancelled, no notification needed
+            break;
           case 'error':
             console.error('[Dashboard] Error from extension:', msg.source, msg.message);
             // Show error in the relevant card (IQS-871)

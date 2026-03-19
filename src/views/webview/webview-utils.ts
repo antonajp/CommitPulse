@@ -36,13 +36,27 @@ export function generateCsvExportScript(): string {
       // ======================================================================
 
       /**
-       * Escape a CSV cell value per RFC 4180.
+       * Escape a CSV cell value per RFC 4180 + formula injection prevention.
        * Values containing commas, double-quotes, or newlines are wrapped in
        * double-quotes, with internal double-quotes doubled.
+       *
+       * Security (GITX-127, CWE-1236): Cells starting with formula characters
+       * (=, +, -, @, |, %) are prefixed with a single quote to prevent
+       * Excel/Sheets macro injection attacks.
        */
       function escapeCsvCell(value) {
         if (value === null || value === undefined) { return ''; }
         var str = String(value);
+
+        // Formula injection prevention (CWE-1236)
+        // Prefix formula-triggering characters with single quote
+        // Check trimmed string to prevent bypass via leading whitespace
+        // Include tab (\t) and carriage return (\r) which can trigger formulas
+        var trimmed = str.trim();
+        if (trimmed.length > 0 && '=+-@|%\\t\\r'.indexOf(trimmed.charAt(0)) !== -1) {
+          str = "'" + str;
+        }
+
         if (str.indexOf(',') !== -1 || str.indexOf('"') !== -1 || str.indexOf('\\n') !== -1) {
           return '"' + str.replace(/"/g, '""') + '"';
         }
@@ -100,22 +114,85 @@ export function generateCsvExportScript(): string {
       }
 
       /**
-       * Trigger a CSV file download from string content.
+       * Trigger a CSV file download by sending content to extension host.
+       * Uses postMessage to work around VS Code webview CSP restrictions
+       * that prevent Blob URLs from working in production.
+       *
+       * Security (GITX-127):
+       * - Data size validated (max 100K rows)
+       * - Extension host sanitizes filename (path traversal prevention)
+       * - Extension host shows native save dialog
        *
        * @param {string} csvContent - The CSV string
-       * @param {string} filename - The filename for download
+       * @param {string} filename - The suggested filename for download
+       * @param {string} [source] - Optional source identifier for logging
        */
-      function downloadCsvBlob(csvContent, filename) {
-        var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        var url = URL.createObjectURL(blob);
-        var link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+      function downloadCsvBlob(csvContent, filename, source) {
+        // Data size validation - count rows (rough check)
+        var rowCount = csvContent.split('\\n').length;
+        if (rowCount > 100000) {
+          console.error('[Webview] CSV export rejected: too many rows (' + rowCount + ')');
+          showExportError('Export failed: data has too many rows (' + rowCount.toLocaleString() + ')');
+          return;
+        }
+
+        // Send to extension host via postMessage
+        vscode.postMessage({
+          type: 'exportCsv',
+          csvContent: csvContent,
+          filename: filename,
+          source: source || 'unknown'
+        });
+      }
+
+      /**
+       * Show a toast notification for export success.
+       * @param {string} filename - The filename that was saved
+       */
+      function showExportSuccess(filename) {
+        showToast('Exported to ' + filename, 'success');
+      }
+
+      /**
+       * Show a toast notification for export error.
+       * @param {string} message - The error message to display
+       */
+      function showExportError(message) {
+        showToast(message, 'error');
+      }
+
+      /**
+       * Show a toast notification with specified type.
+       * Creates toast container if it doesn't exist.
+       * @param {string} message - The message to display
+       * @param {string} type - 'success' or 'error'
+       */
+      function showToast(message, type) {
+        var container = document.getElementById('toastContainer');
+        if (!container) {
+          container = document.createElement('div');
+          container.id = 'toastContainer';
+          container.className = 'toast-container';
+          container.setAttribute('aria-live', 'polite');
+          container.setAttribute('aria-atomic', 'true');
+          document.body.appendChild(container);
+        }
+
+        var toast = document.createElement('div');
+        toast.className = 'toast toast-' + type;
+        toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        toast.textContent = message;
+
+        container.appendChild(toast);
+
+        // Trigger animation
+        setTimeout(function() { toast.classList.add('toast-visible'); }, 10);
+
+        // Auto-remove after 4 seconds
+        setTimeout(function() {
+          toast.classList.remove('toast-visible');
+          setTimeout(function() { toast.remove(); }, 300);
+        }, 4000);
       }
   `;
 }
