@@ -164,12 +164,14 @@ export class DashboardPanel implements vscode.Disposable {
     this.logger.trace(CLASS_NAME, 'updateWebviewContent', `D3.js URI: ${d3Uri.toString()}`);
     this.logger.trace(CLASS_NAME, 'updateWebviewContent', `Style URI: ${styleUri.toString()}`);
 
-    webview.html = generateDashboardHtml({
+    const html = generateDashboardHtml({
       nonce,
       d3Uri,
       styleUri,
       cspSource: webview.cspSource,
     });
+
+    webview.html = html;
 
     this.logger.debug(CLASS_NAME, 'updateWebviewContent', 'Webview HTML set');
   }

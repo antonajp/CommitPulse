@@ -58,8 +58,10 @@ describe('webview-utils', () => {
 
     it('should include formula injection prevention (CWE-1236)', () => {
       const script = generateCsvExportScript();
-      // GITX-127: Formula prefix sanitization (now includes \t\r and trims whitespace)
-      expect(script).toContain("'=+-@|%\\t\\r'");
+      // GITX-127, GITX-128: Formula prefix sanitization uses String.fromCharCode
+      // to avoid template literal escaping issues with nested templates
+      expect(script).toContain("String.fromCharCode(9, 13)");
+      expect(script).toContain("formulaChars.indexOf");
       expect(script).toContain("CWE-1236");
       expect(script).toContain("str.trim()"); // Whitespace bypass prevention
     });
@@ -95,7 +97,8 @@ describe('webview-utils', () => {
 
     it('should use tab-separated values', () => {
       const script = generateClipboardScript();
-      expect(script).toContain('\\t');
+      // GITX-128: Uses String.fromCharCode(9) for tab to avoid escape sequence issues
+      expect(script).toContain('String.fromCharCode(9)');
     });
   });
 

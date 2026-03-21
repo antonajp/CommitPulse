@@ -51,13 +51,16 @@ export function generateCsvExportScript(): string {
         // Formula injection prevention (CWE-1236)
         // Prefix formula-triggering characters with single quote
         // Check trimmed string to prevent bypass via leading whitespace
-        // Include tab (\t) and carriage return (\r) which can trigger formulas
+        // Include tab and carriage return which can trigger formulas
+        // Using String.fromCharCode to avoid template literal escaping issues (GITX-128)
+        var formulaChars = '=+-@|%' + String.fromCharCode(9, 13);
         var trimmed = str.trim();
-        if (trimmed.length > 0 && '=+-@|%\\t\\r'.indexOf(trimmed.charAt(0)) !== -1) {
+        if (trimmed.length > 0 && formulaChars.indexOf(trimmed.charAt(0)) !== -1) {
           str = "'" + str;
         }
 
-        if (str.indexOf(',') !== -1 || str.indexOf('"') !== -1 || str.indexOf('\\n') !== -1) {
+        // Check for comma, quote, or newline (char code 10)
+        if (str.indexOf(',') !== -1 || str.indexOf('"') !== -1 || str.indexOf(String.fromCharCode(10)) !== -1) {
           return '"' + str.replace(/"/g, '""') + '"';
         }
         return str;
@@ -77,7 +80,7 @@ export function generateCsvExportScript(): string {
         for (var i = 0; i < rows.length; i++) {
           csvLines.push(rows[i].map(escapeCsvCell).join(','));
         }
-        var csvContent = csvLines.join('\\n');
+        var csvContent = csvLines.join(String.fromCharCode(10));
         downloadCsvBlob(csvContent, filename);
       }
 
@@ -109,7 +112,7 @@ export function generateCsvExportScript(): string {
           }
           csvLines.push(cells.join(','));
         }
-        var csvContent = csvLines.join('\\n');
+        var csvContent = csvLines.join(String.fromCharCode(10));
         downloadCsvBlob(csvContent, filename);
       }
 
@@ -129,7 +132,7 @@ export function generateCsvExportScript(): string {
        */
       function downloadCsvBlob(csvContent, filename, source) {
         // Data size validation - count rows (rough check)
-        var rowCount = csvContent.split('\\n').length;
+        var rowCount = csvContent.split(String.fromCharCode(10)).length;
         if (rowCount > 100000) {
           console.error('[Webview] CSV export rejected: too many rows (' + rowCount + ')');
           showExportError('Export failed: data has too many rows (' + rowCount.toLocaleString() + ')');
@@ -233,7 +236,7 @@ export function generateClipboardScript(): string {
           for (var h = 0; h < ths.length; h++) {
             headers.push(ths[h].textContent || '');
           }
-          lines.push(headers.join('\\t'));
+          lines.push(headers.join(String.fromCharCode(9)));
         }
         var bodyRows = table.querySelectorAll('tbody tr');
         for (var r = 0; r < bodyRows.length; r++) {
@@ -242,9 +245,9 @@ export function generateClipboardScript(): string {
           for (var c = 0; c < tds.length; c++) {
             cells.push(tds[c].textContent || '');
           }
-          lines.push(cells.join('\\t'));
+          lines.push(cells.join(String.fromCharCode(9)));
         }
-        var text = lines.join('\\n');
+        var text = lines.join(String.fromCharCode(10));
         navigator.clipboard.writeText(text).then(function() {
           if (buttonEl) {
             var original = buttonEl.textContent;
