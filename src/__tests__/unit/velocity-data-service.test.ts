@@ -645,8 +645,9 @@ describe('VelocityDataService', () => {
           rows: [{ login: 'johndoe' }, { login: 'janedoe' }],
           rowCount: 2,
         })
+        // GITX-129: Use 'repository' column name (not 'repo')
         .mockResolvedValueOnce({
-          rows: [{ repo: 'gitr' }, { repo: 'other-repo' }],
+          rows: [{ repository: 'gitr' }, { repository: 'other-repo' }],
           rowCount: 2,
         });
 

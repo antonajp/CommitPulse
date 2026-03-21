@@ -3,7 +3,7 @@
  * Uses VS Code CSS variables for theme integration.
  * Reuses base styles from architecture-chart.css patterns.
  *
- * Ticket: IQS-888, GITX-121
+ * Ticket: IQS-888, GITX-121, GITX-129
  */
 
 /* ============================================================================
@@ -183,6 +183,33 @@ body {
 .filter-group select:focus {
   outline: 1px solid var(--vscode-focusBorder, #007acc);
   border-color: var(--vscode-focusBorder, #007acc);
+}
+
+/* Date Input Styles (GITX-129) */
+.filter-group input[type="date"] {
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, #444);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.85em;
+  min-width: 130px;
+  cursor: pointer;
+}
+
+.filter-group input[type="date"]:hover {
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.filter-group input[type="date"]:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+/* Style the date picker calendar icon */
+.filter-group input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
 }
 
 /* Apply Button (IQS-920) */
@@ -516,6 +543,11 @@ body {
   .filter-group select {
     width: 100%;
     max-width: none;
+  }
+
+  /* GITX-129: Responsive date inputs */
+  .filter-group input[type="date"] {
+    width: 100%;
   }
 
   .summary-stats {

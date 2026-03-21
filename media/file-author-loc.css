@@ -1,0 +1,669 @@
+/**
+ * CSS styles for the File Author LOC Contribution Report webview.
+ * Uses VS Code theme variables for consistent look and feel.
+ *
+ * Ticket: GITX-128
+ */
+
+/* ============================================================================
+   Base Styles
+   ============================================================================ */
+
+:root {
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --border-radius: 4px;
+  --transition-speed: 0.2s;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: var(--spacing-md);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-editor-background);
+  line-height: 1.5;
+}
+
+/* ============================================================================
+   Chart Container
+   ============================================================================ */
+
+.chart-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.chart-header {
+  margin-bottom: var(--spacing-lg);
+}
+
+.chart-header h1 {
+  margin: 0 0 var(--spacing-xs) 0;
+  font-size: 1.5em;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.chart-subtitle {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+/* ============================================================================
+   Input Section
+   ============================================================================ */
+
+.input-section {
+  margin-bottom: var(--spacing-lg);
+}
+
+.input-form {
+  background: var(--vscode-sideBar-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+}
+
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+  color: var(--vscode-foreground);
+}
+
+.form-group textarea,
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: var(--spacing-sm);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: var(--border-radius);
+  color: var(--vscode-input-foreground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.form-group textarea:focus,
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.input-help {
+  margin-top: var(--spacing-xs);
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.form-row .form-group {
+  flex: 1;
+  min-width: 150px;
+}
+
+.form-row .date-range {
+  max-width: 200px;
+}
+
+.form-actions {
+  margin-top: var(--spacing-lg);
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+/* ============================================================================
+   Buttons
+   ============================================================================ */
+
+.action-btn,
+.export-btn,
+.cancel-btn,
+.close-btn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  transition: background var(--transition-speed), opacity var(--transition-speed);
+}
+
+.action-btn:hover,
+.export-btn:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.action-btn:focus,
+.export-btn:focus,
+.cancel-btn:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.action-btn.primary {
+  background: var(--vscode-button-background);
+}
+
+.cancel-btn {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  margin-top: var(--spacing-md);
+}
+
+.close-btn {
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 1.5em;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  line-height: 1;
+}
+
+.close-btn:hover {
+  opacity: 0.7;
+}
+
+/* ============================================================================
+   Results Section
+   ============================================================================ */
+
+.results-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.results-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.results-summary .separator {
+  color: var(--vscode-panel-border);
+}
+
+.results-summary a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.results-summary a:hover {
+  text-decoration: underline;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.controls .filter-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.controls .filter-group label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.controls .filter-group select {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: var(--border-radius);
+  color: var(--vscode-dropdown-foreground);
+  font-size: 0.85em;
+}
+
+/* ============================================================================
+   Chart Explanation
+   ============================================================================ */
+
+.chart-explanation {
+  background: var(--vscode-textBlockQuote-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  margin-bottom: var(--spacing-md);
+  overflow: hidden;
+}
+
+.explanation-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9em;
+  color: var(--vscode-foreground);
+}
+
+.explanation-toggle:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.explanation-toggle .chevron {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--transition-speed);
+}
+
+.chart-explanation[open] .chevron {
+  transform: rotate(90deg);
+}
+
+.explanation-content {
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.explanation-content p {
+  margin: 0;
+}
+
+/* ============================================================================
+   Legend
+   ============================================================================ */
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm);
+  background: var(--vscode-sideBar-background);
+  border-radius: var(--border-radius);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.85em;
+}
+
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Chart Area
+   ============================================================================ */
+
+.chart-svg-container {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  overflow-x: auto;
+  padding: var(--spacing-sm);
+}
+
+.chart-svg-container svg {
+  display: block;
+}
+
+.chart-instructions {
+  margin-top: var(--spacing-sm);
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+}
+
+.chart-instructions p {
+  margin: 0;
+}
+
+/* ============================================================================
+   Data Table
+   ============================================================================ */
+
+.data-table-container {
+  margin-top: var(--spacing-xl);
+}
+
+.data-table-container h2 {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.data-table th,
+.data-table td {
+  padding: var(--spacing-sm);
+  text-align: left;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.data-table th {
+  background: var(--vscode-sideBar-background);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+}
+
+.data-table th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.data-table th[data-sort]:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.sort-indicator {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.data-table tbody tr:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.data-table td a {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.data-table td a:hover {
+  text-decoration: underline;
+}
+
+.text-positive {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #4ec9b0);
+}
+
+.text-negative {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #f44747);
+}
+
+/* ============================================================================
+   Tooltip
+   ============================================================================ */
+
+.chart-tooltip {
+  position: fixed;
+  z-index: 1000;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-speed);
+  max-width: 320px;
+  font-size: 0.9em;
+}
+
+.chart-tooltip.visible {
+  opacity: 1;
+}
+
+.tt-component {
+  margin-bottom: var(--spacing-xs);
+}
+
+.tt-team {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: var(--spacing-xs);
+}
+
+.tt-divider {
+  border: none;
+  border-top: 1px solid var(--vscode-panel-border);
+  margin: var(--spacing-xs) 0;
+}
+
+.tt-value {
+  margin: 2px 0;
+}
+
+.tt-action {
+  margin-top: var(--spacing-xs);
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+/* ============================================================================
+   Modal
+   ============================================================================ */
+
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal-content {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--border-radius);
+  max-width: 800px;
+  max-height: 80vh;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: var(--spacing-md);
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ============================================================================
+   Loading & Error States
+   ============================================================================ */
+
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  gap: var(--spacing-md);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--vscode-progressBar-background);
+  border-top-color: var(--vscode-foreground);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  color: var(--vscode-descriptionForeground);
+}
+
+.error-banner {
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-md);
+  color: var(--vscode-errorForeground);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--spacing-xl);
+  color: var(--vscode-descriptionForeground);
+}
+
+.empty-state h2 {
+  margin: 0 0 var(--spacing-sm) 0;
+  color: var(--vscode-foreground);
+  font-size: 1.2em;
+}
+
+.empty-state p {
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+/* ============================================================================
+   Toast Notifications
+   ============================================================================ */
+
+.toast-container {
+  position: fixed;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.toast {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--border-radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateX(100%);
+  transition: opacity var(--transition-speed), transform var(--transition-speed);
+}
+
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast-success {
+  background: var(--vscode-notificationsSuccessIcon-foreground);
+  color: white;
+}
+
+.toast-error {
+  background: var(--vscode-notificationsErrorIcon-foreground);
+  color: white;
+}
+
+/* ============================================================================
+   Axis Styles
+   ============================================================================ */
+
+.axis text {
+  font-size: 11px;
+  fill: var(--vscode-foreground);
+}
+
+.axis path,
+.axis line {
+  stroke: var(--vscode-panel-border);
+}
+
+.grid line {
+  stroke: var(--vscode-panel-border);
+}
+
+/* ============================================================================
+   Responsive
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  body {
+    padding: var(--spacing-sm);
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+
+  .form-row .form-group {
+    max-width: none;
+  }
+
+  .results-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .controls {
+    justify-content: flex-start;
+  }
+
+  .modal-content {
+    width: 95%;
+    max-height: 90vh;
+  }
+}

@@ -4,10 +4,11 @@
  * - Message handling (velocityData, velocityError, filterOptions)
  * - Filter state management and persistence
  * - Team, team member, and repository filter population
+ * - Date range filtering (GITX-129)
  * - UI state transitions (loading, error, empty, chart)
  * - CSV export handler
  *
- * Ticket: IQS-888, IQS-920, IQS-944, IQS-946, GITX-121
+ * Ticket: IQS-888, IQS-920, IQS-944, IQS-946, GITX-121, GITX-129
  */
 
 /**
@@ -45,11 +46,19 @@ export function generateDataHandlerScript(): string {
         }
 
         if (!message.rows || message.rows.length === 0) {
-          // Different empty state message based on active filters (IQS-920, GITX-121)
+          // Different empty state message based on active filters (IQS-920, GITX-121, GITX-129)
           var activeFilters = [];
           if (currentTeam) { activeFilters.push('Team: ' + escapeHtml(currentTeam)); }
           if (currentTeamMember) { activeFilters.push('Member: ' + escapeHtml(currentTeamMember)); }
           if (currentRepository) { activeFilters.push('Repository: ' + escapeHtml(currentRepository)); }
+          // GITX-129: Include date range in empty state message
+          if (currentStartDate && currentEndDate) {
+            activeFilters.push('Date Range: ' + escapeHtml(currentStartDate) + ' to ' + escapeHtml(currentEndDate));
+          } else if (currentStartDate) {
+            activeFilters.push('From: ' + escapeHtml(currentStartDate));
+          } else if (currentEndDate) {
+            activeFilters.push('To: ' + escapeHtml(currentEndDate));
+          }
 
           if (activeFilters.length > 0) {
             showEmpty(
@@ -212,6 +221,7 @@ export function generateFilterStateScript(): string {
 
       /**
        * Request velocity data from the extension host.
+       * GITX-129: Added startDate/endDate parameters for date range filtering.
        */
       function requestData() {
         showLoading();
@@ -227,6 +237,13 @@ export function generateFilterStateScript(): string {
         }
         if (currentAggregation) {
           message.aggregation = currentAggregation;
+        }
+        // GITX-129: Include date range in request
+        if (currentStartDate) {
+          message.startDate = currentStartDate;
+        }
+        if (currentEndDate) {
+          message.endDate = currentEndDate;
         }
         vscode.postMessage(message);
       }
@@ -352,12 +369,21 @@ export function generateFilterStateScript(): string {
       /**
        * Update the chart title to reflect active filters.
        * GITX-121: Extended to show team and member filters.
+       * GITX-129: Extended to show date range.
        */
       function updateChartTitle() {
         var filterParts = [];
         if (currentTeam) { filterParts.push('Team: ' + escapeHtml(currentTeam)); }
         if (currentTeamMember) { filterParts.push('Member: ' + escapeHtml(currentTeamMember)); }
         if (currentRepository) { filterParts.push('Repo: ' + escapeHtml(currentRepository)); }
+        // GITX-129: Show date range in title
+        if (currentStartDate && currentEndDate) {
+          filterParts.push(escapeHtml(currentStartDate) + ' to ' + escapeHtml(currentEndDate));
+        } else if (currentStartDate) {
+          filterParts.push('From: ' + escapeHtml(currentStartDate));
+        } else if (currentEndDate) {
+          filterParts.push('To: ' + escapeHtml(currentEndDate));
+        }
 
         if (filterParts.length > 0) {
           chartTitle.innerHTML = 'Sprint Velocity vs LOC <span class="filter-badge">[' + filterParts.join(' | ') + ']</span>';
@@ -369,15 +395,17 @@ export function generateFilterStateScript(): string {
       /**
        * Update Clear Filters button visibility.
        * GITX-121: Show button when any filter is active.
+       * GITX-129: Include date range in check.
        */
       function updateClearFiltersButton() {
-        var hasActiveFilter = currentTeam || currentTeamMember || currentRepository;
+        var hasActiveFilter = currentTeam || currentTeamMember || currentRepository || currentStartDate || currentEndDate;
         clearFiltersBtn.style.display = hasActiveFilter ? 'inline-block' : 'none';
       }
 
       /**
        * Save filter state to VS Code webview state.
        * GITX-121: Extended to save team and member filters.
+       * GITX-129: Extended to save date range.
        */
       function saveFilterState() {
         var currentState = vscode.getState() || {};
@@ -385,13 +413,16 @@ export function generateFilterStateScript(): string {
           team: currentTeam,
           teamMember: currentTeamMember,
           repository: currentRepository,
-          aggregation: currentAggregation
+          aggregation: currentAggregation,
+          startDate: currentStartDate,
+          endDate: currentEndDate
         }));
       }
 
       /**
        * Restore filter state from VS Code webview state.
        * GITX-121: Extended to restore team and member filters.
+       * GITX-129: Extended to restore date range.
        */
       function restoreFilterState() {
         var state = vscode.getState();
@@ -409,6 +440,15 @@ export function generateFilterStateScript(): string {
             currentAggregation = state.aggregation;
             aggregationFilter.value = currentAggregation;
           }
+          // GITX-129: Restore date range
+          if (state.startDate) {
+            currentStartDate = state.startDate;
+            startDateFilter.value = currentStartDate;
+          }
+          if (state.endDate) {
+            currentEndDate = state.endDate;
+            endDateFilter.value = currentEndDate;
+          }
         }
       }
   `;
@@ -423,17 +463,18 @@ export function generateFilterStateScript(): string {
 export function generateCsvExportHandlerScript(): string {
   return `
       // ======================================================================
-      // CSV Export Handler (IQS-944, GITX-121)
+      // CSV Export Handler (IQS-944, GITX-121, GITX-129)
       // ======================================================================
 
       /**
        * Handle CSV export button click.
        * Exports aggregated chart data with current filters.
        * GITX-121: Extended to include team and team member filters in export.
+       * GITX-129: Extended to include date range in export.
        */
       function handleCsvExport() {
         if (!chartData || !chartData.aggregated || chartData.aggregated.length === 0) { return; }
-        // IQS-944, GITX-121: Include both human and AI story points in export, plus filter context
+        // IQS-944, GITX-121, GITX-129: Include both human and AI story points in export, plus filter context
         var headers = ['Period', 'Human Estimate', 'AI Calculated', 'Issue Count', 'LOC Changed', 'Lines Added', 'Lines Deleted', 'Commit Count'];
         if (currentTeam) {
           headers.push('Team');
@@ -443,6 +484,13 @@ export function generateCsvExportHandlerScript(): string {
         }
         if (currentRepository) {
           headers.push('Repository');
+        }
+        // GITX-129: Add date range columns
+        if (currentStartDate) {
+          headers.push('Start Date');
+        }
+        if (currentEndDate) {
+          headers.push('End Date');
         }
         headers.push('Aggregation');
         var rows = chartData.aggregated.map(function(d) {
@@ -456,10 +504,17 @@ export function generateCsvExportHandlerScript(): string {
           if (currentRepository) {
             row.push(currentRepository);
           }
+          // GITX-129: Add date range values
+          if (currentStartDate) {
+            row.push(currentStartDate);
+          }
+          if (currentEndDate) {
+            row.push(currentEndDate);
+          }
           row.push(currentAggregation);
           return row;
         });
-        // Include filter context in filename (IQS-920, IQS-944, GITX-121)
+        // Include filter context in filename (IQS-920, IQS-944, GITX-121, GITX-129)
         var filenameParts = ['sprint-velocity-vs-loc'];
         if (currentAggregation !== 'week') {
           filenameParts.push(currentAggregation);
@@ -472,6 +527,13 @@ export function generateCsvExportHandlerScript(): string {
         }
         if (currentRepository) {
           filenameParts.push(currentRepository.replace(/[^a-zA-Z0-9._-]/g, '_'));
+        }
+        // GITX-129: Add date range to filename
+        if (currentStartDate) {
+          filenameParts.push(currentStartDate);
+        }
+        if (currentEndDate) {
+          filenameParts.push(currentEndDate);
         }
         var filename = filenameParts.join('-') + '.csv';
         exportCsvFromData(headers, rows, filename);

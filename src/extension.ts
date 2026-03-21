@@ -26,6 +26,7 @@ import { TestDebtPanel } from './views/webview/test-debt-panel.js';
 import { HygienePanel } from './views/webview/hygiene-panel.js';
 import { DriftPanel } from './views/webview/drift-panel.js';
 import { StoryPointsTrendPanel } from './views/webview/story-points-trend-panel.js';
+import { FileAuthorLocPanel } from './views/webview/file-author-loc-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 
 /**
@@ -235,12 +236,13 @@ function initializeRepoTreeView(_context: vscode.ExtensionContext): void {
   });
   disposables.push(refreshDisposable);
 
-  // gitrx.runPipelineForRepo - Run pipeline for a specific repository (context menu)
+  // gitrx.runPipelineForRepo - Run Git extraction for a specific repository (context menu)
+  // GITX-130: Now properly filters to the selected repository
   const runForRepoDisposable = vscode.commands.registerCommand(
     'gitrx.runPipelineForRepo',
     async (item: { nodeData?: { repository?: string } }) => {
       const repoName = item?.nodeData?.repository;
-      logger?.info(CLASS_NAME, 'runPipelineForRepo', `Command executed: gitrx.runPipelineForRepo for ${repoName ?? 'unknown'}`);
+      logger?.info(CLASS_NAME, 'runPipelineForRepo', `Command executed for repo: ${repoName ?? 'unknown'}`);
 
       if (!repoName) {
         logger?.warn(CLASS_NAME, 'runPipelineForRepo', 'No repository context available');
@@ -248,11 +250,25 @@ function initializeRepoTreeView(_context: vscode.ExtensionContext): void {
         return;
       }
 
-      // Delegate to the main pipeline command
-      // Future enhancement: pass repo filter parameter
-      logger?.info(CLASS_NAME, 'runPipelineForRepo', `Running pipeline for repository: ${repoName}`);
-      void vscode.window.showInformationMessage(`Gitr: Running pipeline for ${repoName}...`);
-      await vscode.commands.executeCommand('gitr.runPipeline');
+      // Validate repository exists in settings
+      const settings = getSettings();
+      const targetRepo = settings.repositories.find((r) => r.name === repoName);
+      if (!targetRepo) {
+        logger?.warn(CLASS_NAME, 'runPipelineForRepo', `Repository not found in settings: ${repoName}`);
+        void vscode.window.showWarningMessage(`Gitr: Repository "${repoName}" not found in settings.`);
+        return;
+      }
+
+      // Check if pipeline is already running
+      if (isPipelineRunning()) {
+        logger?.warn(CLASS_NAME, 'runPipelineForRepo', 'Pipeline already running');
+        void vscode.window.showWarningMessage('Gitr: A pipeline run is already in progress. Please wait for it to complete.');
+        return;
+      }
+
+      // Execute the per-repository extraction command with the repo name
+      // This delegates to a new command that handles the extraction mode QuickPick
+      await vscode.commands.executeCommand('gitr.runGitExtractionForRepo', repoName);
     },
   );
   disposables.push(runForRepoDisposable);
@@ -260,7 +276,7 @@ function initializeRepoTreeView(_context: vscode.ExtensionContext): void {
   // gitrx.openRepoInTerminal - Open a terminal at the repo path (context menu)
   const openTerminalDisposable = vscode.commands.registerCommand(
     'gitrx.openRepoInTerminal',
-    (item: { nodeData?: { repository?: string } }) => {
+    async (item: { nodeData?: { repository?: string } }) => {
       const repoName = item?.nodeData?.repository;
       logger?.info(CLASS_NAME, 'openRepoInTerminal', `Command executed: gitrx.openRepoInTerminal for ${repoName ?? 'unknown'}`);
 
@@ -279,10 +295,19 @@ function initializeRepoTreeView(_context: vscode.ExtensionContext): void {
         return;
       }
 
-      logger?.debug(CLASS_NAME, 'openRepoInTerminal', `Opening terminal at: ${repoEntry.path}`);
+      // GITX-130: Validate repository path for security before opening terminal
+      const { validateRepositoryPath } = await import('./utils/repository-path-validator.js');
+      const validation = validateRepositoryPath(repoEntry.path, settings.repositories);
+      if (!validation.isValid) {
+        logger?.error(CLASS_NAME, 'openRepoInTerminal', `Security: Invalid repository path for ${repoName}: ${validation.reason}`);
+        void vscode.window.showErrorMessage(`Gitr: Security error - repository path is invalid: ${validation.reason}`);
+        return;
+      }
+
+      logger?.debug(CLASS_NAME, 'openRepoInTerminal', `Opening terminal at: ${validation.canonicalPath}`);
       const terminal = vscode.window.createTerminal({
         name: `Gitr: ${repoName}`,
-        cwd: repoEntry.path,
+        cwd: validation.canonicalPath,
       });
       terminal.show();
     },
@@ -724,6 +749,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     StoryPointsTrendPanel.createOrShow(context.extensionUri, secretService);
   });
   disposables.push(openStoryPointsTrendDisposable);
+
+  // gitrx.openFileContributionReport - Open the File Author LOC Contribution Report (GITX-128)
+  const openFileContributionReportDisposable = vscode.commands.registerCommand('gitrx.openFileContributionReport', () => {
+    logger?.info(CLASS_NAME, 'openFileContributionReport', 'Command executed: gitrx.openFileContributionReport');
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'openFileContributionReport', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    FileAuthorLocPanel.createOrShow(context.extensionUri, secretService);
+  });
+  disposables.push(openFileContributionReportDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }

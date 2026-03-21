@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -39,6 +39,10 @@
       {
         "command": "gitr.runGitExtraction",
         "title": "Gitr: Run Git Extraction"
+      },
+      {
+        "command": "gitr.runGitExtractionForRepo",
+        "title": "Run Git Extraction for Repo"
       },
       {
         "command": "gitr.startDatabase",
@@ -216,6 +220,11 @@
         "command": "gitrx.openStoryPointsTrend",
         "title": "Gitr: Open Story Points Trend",
         "icon": "$(graph-line)"
+      },
+      {
+        "command": "gitrx.openFileContributionReport",
+        "title": "Gitr: File Contribution Report",
+        "icon": "$(file-code)"
       }
     ],
     "configuration": {
@@ -670,6 +679,22 @@
           "maximum": 365,
           "description": "Default time range in days for the Release Management chart",
           "markdownDescription": "Default time range in days for the Release Management Contributions chart.\n\nDefault: `30`"
+        },
+        "gitrx.fileContribution.defaultTimeRangeDays": {
+          "type": "number",
+          "default": 90,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Default time range in days for the File Contribution Report",
+          "markdownDescription": "Default time range in days for the File Contribution Report.\n\nDefault: `90`"
+        },
+        "gitrx.fileContribution.maxFiles": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Maximum number of files to analyze in a single File Contribution Report query",
+          "markdownDescription": "Maximum number of files to analyze in a single File Contribution Report query. Higher values may impact performance.\n\nDefault: `100`"
         }
       }
     },
@@ -746,9 +771,14 @@
           "group": "1_actions@1"
         },
         {
-          "command": "gitrx.openRepoInTerminal",
+          "command": "gitr.runGitExtractionForRepo",
           "when": "view == gitrx-repos && viewItem == repository",
           "group": "1_actions@2"
+        },
+        {
+          "command": "gitrx.openRepoInTerminal",
+          "when": "view == gitrx-repos && viewItem == repository",
+          "group": "1_actions@3"
         }
       ]
     }

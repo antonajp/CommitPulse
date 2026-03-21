@@ -99,15 +99,16 @@ export class VelocityDataService {
     this.logger.debug(CLASS_NAME, 'getFilterOptions', 'Fetching filter options');
 
     // Query all filter options in parallel
+    // GITX-129: Use 'repository' column name (not 'repo')
     const [teamsResult, membersResult, reposResult] = await Promise.all([
       this.db.query<{ team: string }>(QUERY_VELOCITY_UNIQUE_TEAMS),
       this.db.query<{ login: string }>(QUERY_VELOCITY_UNIQUE_CONTRIBUTORS),
-      this.db.query<{ repo: string }>(QUERY_VELOCITY_UNIQUE_REPOSITORIES),
+      this.db.query<{ repository: string }>(QUERY_VELOCITY_UNIQUE_REPOSITORIES),
     ]);
 
     const teams = teamsResult.rows.map(row => row.team);
     const teamMembers = membersResult.rows.map(row => row.login);
-    const repositories = reposResult.rows.map(row => row.repo);
+    const repositories = reposResult.rows.map(row => row.repository);
 
     this.logger.debug(
       CLASS_NAME,

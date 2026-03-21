@@ -70,6 +70,12 @@ vi.mock('simple-git', () => ({
   })),
 }));
 
+// GITX-130: Mock repository path validator to always return valid
+vi.mock('../../utils/repository-path-validator.js', () => ({
+  validateRepositoryPath: vi.fn().mockReturnValue({ isValid: true, canonicalPath: '/test/path' }),
+  findValidRepository: vi.fn().mockImplementation((name, repos) => repos.find((r: { name: string }) => r.name === name) || null),
+}));
+
 /**
  * Helper: create a test config for DatabaseService.
  */

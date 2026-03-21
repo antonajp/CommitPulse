@@ -23,13 +23,15 @@ describe('Command Registration', () => {
     const context = createMockContext();
     const disposables = registerCommands(context);
 
-    // 5 pipeline/database commands + 1 SecretStorageService disposable + 6 secret commands = 12
+    // 6 pipeline/database commands + 1 SecretStorageService disposable + 6 secret commands = 13
     // GITX-2: Added setBitbucketToken command
-    expect(disposables.length).toBe(12);
+    // GITX-130: Added runGitExtractionForRepo command
+    expect(disposables.length).toBe(13);
 
     const registeredCommands = commands.getRegisteredCommands();
     expect(registeredCommands.has('gitr.runPipeline')).toBe(true);
     expect(registeredCommands.has('gitr.runGitExtraction')).toBe(true);
+    expect(registeredCommands.has('gitr.runGitExtractionForRepo')).toBe(true);
     expect(registeredCommands.has('gitr.startDatabase')).toBe(true);
     expect(registeredCommands.has('gitr.stopDatabase')).toBe(true);
     expect(registeredCommands.has('gitr.resetDatabase')).toBe(true);

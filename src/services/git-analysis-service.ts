@@ -140,6 +140,25 @@ export class GitAnalysisService {
 
     for (const repoEntry of repositories) {
       this.logger.info(CLASS_NAME, 'analyzeRepositories', `Processing repository: ${repoEntry.name} at ${repoEntry.path}`);
+
+      // GITX-130: Validate repository path before processing (defense-in-depth)
+      const { validateRepositoryPath } = await import('../utils/repository-path-validator.js');
+      const validation = validateRepositoryPath(repoEntry.path, repositories);
+      if (!validation.isValid) {
+        const errorMsg = `Security: Invalid repository path for ${repoEntry.name}: ${validation.reason}`;
+        this.logger.error(CLASS_NAME, 'analyzeRepositories', errorMsg);
+        hasFailure = true;
+        repoResults.push({
+          repoName: repoEntry.name,
+          commitsInserted: 0,
+          branchesProcessed: 0,
+          branchRelationshipsRecorded: 0,
+          durationMs: 0,
+          error: errorMsg,
+        });
+        continue;
+      }
+
       try {
         const result = await this.analyzeRepository(repoEntry, options, pipelineRunId);
         repoResults.push(result);
