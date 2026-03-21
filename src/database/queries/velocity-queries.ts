@@ -261,37 +261,43 @@ export const QUERY_VELOCITY_VIEW_EXISTS = `
 /**
  * Query to get unique teams from commit_contributors for filter dropdown.
  * Returns distinct non-null team values sorted alphabetically.
- * Ticket: GITX-121
+ * Limited to 1000 results for safety (GITX-129).
+ * Ticket: GITX-121, GITX-129
  */
 export const QUERY_VELOCITY_UNIQUE_TEAMS = `
   SELECT DISTINCT team
   FROM commit_contributors
   WHERE team IS NOT NULL AND team <> ''
   ORDER BY team ASC
+  LIMIT 1000
 `;
 
 /**
  * Query to get unique contributors from commit_contributors for filter dropdown.
  * Returns distinct login values sorted alphabetically.
- * Ticket: GITX-121
+ * Limited to 5000 results for safety (GITX-129).
+ * Ticket: GITX-121, GITX-129
  */
 export const QUERY_VELOCITY_UNIQUE_CONTRIBUTORS = `
   SELECT DISTINCT login
   FROM commit_contributors
   WHERE login IS NOT NULL AND login <> ''
   ORDER BY login ASC
+  LIMIT 5000
 `;
 
 /**
  * Query to get unique repositories from commit_history for filter dropdown.
- * Returns distinct repo values sorted alphabetically.
- * Ticket: GITX-121
+ * Returns distinct repository values sorted alphabetically.
+ * Limited to 500 results for safety (GITX-129).
+ * Ticket: GITX-121, GITX-129
  */
 export const QUERY_VELOCITY_UNIQUE_REPOSITORIES = `
-  SELECT DISTINCT repo
+  SELECT DISTINCT repository
   FROM commit_history
-  WHERE repo IS NOT NULL AND repo <> ''
-  ORDER BY repo ASC
+  WHERE repository IS NOT NULL AND repository <> ''
+  ORDER BY repository ASC
+  LIMIT 500
 `;
 
 // ============================================================================

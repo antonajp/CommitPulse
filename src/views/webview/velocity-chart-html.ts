@@ -8,8 +8,9 @@
  * - Tooltips, legend, CSV export, data table fallback
  * - ARIA accessibility and colorblind-accessible markers
  * - All data values HTML-escaped before SVG/DOM insertion
+ * - Date range filtering (GITX-129)
  *
- * Ticket: IQS-888, IQS-944, IQS-946, GITX-121
+ * Ticket: IQS-888, IQS-944, IQS-946, GITX-121, GITX-129
  */
 
 import type * as vscode from 'vscode';
@@ -106,6 +107,14 @@ function generateHtmlStructure(
             <option value="week" selected>Weekly</option>
             <option value="biweekly">Bi-weekly</option>
           </select>
+        </div>
+        <div class="filter-group" id="startDateFilterGroup">
+          <label for="startDateFilter">From</label>
+          <input type="date" id="startDateFilter" aria-label="Start date filter" tabindex="0">
+        </div>
+        <div class="filter-group" id="endDateFilterGroup">
+          <label for="endDateFilter">To</label>
+          <input type="date" id="endDateFilter" aria-label="End date filter" tabindex="0">
         </div>
         <button class="apply-btn" id="applyFiltersBtn" aria-label="Apply selected filters" tabindex="0">Apply</button>
         <button class="clear-btn" id="clearFiltersBtn" aria-label="Clear all filters" tabindex="0" style="display:none;">Clear Filters</button>
@@ -206,6 +215,8 @@ function generateDomRefsScript(): string {
       var repoFilter = document.getElementById('repoFilter');
       var repoFilterGroup = document.getElementById('repoFilterGroup');
       var aggregationFilter = document.getElementById('aggregationFilter');
+      var startDateFilter = document.getElementById('startDateFilter');
+      var endDateFilter = document.getElementById('endDateFilter');
       var chartTitle = document.getElementById('chartTitle');
       var loadingState = document.getElementById('loadingState');
       var errorState = document.getElementById('errorState');
@@ -219,15 +230,17 @@ function generateDomRefsScript(): string {
       var tooltip = document.getElementById('tooltip');
 
       // ======================================================================
-      // State (GITX-121: Added team, teamMember filters)
+      // State (GITX-121: Added team, teamMember filters; GITX-129: Added date range)
       // ======================================================================
       var chartData = null;
 
-      // Filter state (IQS-920, IQS-944, GITX-121)
+      // Filter state (IQS-920, IQS-944, GITX-121, GITX-129)
       var currentTeam = '';
       var currentTeamMember = '';
       var currentRepository = '';
       var currentAggregation = 'week';  // IQS-944: default to weekly
+      var currentStartDate = '';        // GITX-129: start date filter
+      var currentEndDate = '';          // GITX-129: end date filter
       var availableTeams = [];
       var availableTeamMembers = [];
       var availableRepositories = [];
@@ -242,37 +255,50 @@ function generateDomRefsScript(): string {
 function generateEventListenersScript(): string {
   return `
       // ======================================================================
-      // Event Handlers (GITX-121: Added team/member filters)
+      // Event Handlers (GITX-121: Added team/member filters; GITX-129: Added date range)
       // ======================================================================
       exportCsvBtn.addEventListener('click', handleCsvExport);
 
-      // Apply filters button handler (IQS-920, IQS-944, GITX-121)
+      // Apply filters button handler (IQS-920, IQS-944, GITX-121, GITX-129)
       applyFiltersBtn.addEventListener('click', function() {
         currentTeam = teamFilter.value;
         currentTeamMember = memberFilter.value;
         currentRepository = repoFilter.value;
         currentAggregation = aggregationFilter.value;
+        currentStartDate = startDateFilter.value;
+        currentEndDate = endDateFilter.value;
+
+        // GITX-129: Validate date range (start must be <= end)
+        if (currentStartDate && currentEndDate && currentStartDate > currentEndDate) {
+          showError('Invalid date range: Start date must be before or equal to end date.');
+          return;
+        }
+
         saveFilterState();
         updateChartTitle();
         updateClearFiltersButton();
         requestData();
       });
 
-      // Clear filters button handler (GITX-121)
+      // Clear filters button handler (GITX-121, GITX-129)
       clearFiltersBtn.addEventListener('click', function() {
         currentTeam = '';
         currentTeamMember = '';
         currentRepository = '';
+        currentStartDate = '';
+        currentEndDate = '';
         teamFilter.value = '';
         memberFilter.value = '';
         repoFilter.value = '';
+        startDateFilter.value = '';
+        endDateFilter.value = '';
         saveFilterState();
         updateChartTitle();
         updateClearFiltersButton();
         requestData();
       });
 
-      // Allow Enter key on filter dropdowns (IQS-920, IQS-944, GITX-121)
+      // Allow Enter key on filter dropdowns (IQS-920, IQS-944, GITX-121, GITX-129)
       teamFilter.addEventListener('keydown', function(event) {
         if (event.key === 'Enter') {
           applyFiltersBtn.click();
@@ -289,6 +315,16 @@ function generateEventListenersScript(): string {
         }
       });
       aggregationFilter.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+          applyFiltersBtn.click();
+        }
+      });
+      startDateFilter.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+          applyFiltersBtn.click();
+        }
+      });
+      endDateFilter.addEventListener('keydown', function(event) {
         if (event.key === 'Enter') {
           applyFiltersBtn.click();
         }

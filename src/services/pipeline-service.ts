@@ -263,7 +263,7 @@ export class PipelineService {
     };
   }
 
-  /** Build a PipelineConfig from raw configuration values. */
+  /** Build a PipelineConfig from raw configuration values. GITX-130: Added selectedRepository parameter. */
   static buildConfig(
     steps?: readonly PipelineStepId[],
     jiraIncrement?: number,
@@ -273,6 +273,7 @@ export class PipelineService {
     linearTeamKeys?: readonly string[],
     sinceDate?: string,
     forceFullExtraction?: boolean,
+    selectedRepository?: string,
   ): PipelineConfig {
     const effectiveSteps = (steps && steps.length > 0) ? steps : ALL_PIPELINE_STEPS;
     return {
@@ -284,6 +285,7 @@ export class PipelineService {
       linearTeamKeys: linearTeamKeys ?? [],
       sinceDate,
       forceFullExtraction,
+      selectedRepository,
     };
   }
 
@@ -395,12 +397,26 @@ export class PipelineService {
    * IQS-931: Pass global sinceDate to GitAnalysisService. Per-repo startDate
    * is handled inside GitAnalysisService.analyzeRepository().
    * GITX-123: Pass forceFullExtraction to ignore database watermarks.
+   * GITX-130: Filter to selected repository when specified in config.
    */
   private async runGitCommitExtraction(): Promise<string> {
     const modeLabel = this.config.forceFullExtraction ? 'Full' : 'Incremental';
-    this.logger.info(CLASS_NAME, 'runGitCommitExtraction', `Extracting commits from ${this.repositories.length} repositories (mode: ${modeLabel})`);
 
-    if (this.repositories.length === 0) {
+    // GITX-130: Filter to selected repository if specified
+    let reposToProcess = this.repositories;
+    if (this.config.selectedRepository) {
+      const targetRepo = this.repositories.find(r => r.name === this.config.selectedRepository);
+      if (!targetRepo) {
+        this.logger.error(CLASS_NAME, 'runGitCommitExtraction', `Selected repository not found: ${this.config.selectedRepository}`);
+        return `Repository not found: ${this.config.selectedRepository}`;
+      }
+      reposToProcess = [targetRepo];
+      this.logger.info(CLASS_NAME, 'runGitCommitExtraction', `Filtering to single repository: ${this.config.selectedRepository}`);
+    }
+
+    this.logger.info(CLASS_NAME, 'runGitCommitExtraction', `Extracting commits from ${reposToProcess.length} repositories (mode: ${modeLabel})`);
+
+    if (reposToProcess.length === 0) {
       this.logger.warn(CLASS_NAME, 'runGitCommitExtraction', 'No repositories configured in gitrx.repositories setting');
       return 'No repositories configured (skipped)';
     }
@@ -417,7 +433,7 @@ export class PipelineService {
     }
     this.logger.debug(CLASS_NAME, 'runGitCommitExtraction', `Global sinceDate: ${this.config.sinceDate ?? '(none)'}, forceFullExtraction: ${this.config.forceFullExtraction ?? false}`);
 
-    const result: AnalysisRunResult = await this.gitAnalysisService.analyzeRepositories(this.repositories, options);
+    const result: AnalysisRunResult = await this.gitAnalysisService.analyzeRepositories(reposToProcess, options);
     this.lastGitAnalysisResult = result;
 
     const totalCommits = result.repoResults.reduce((sum, r) => sum + r.commitsInserted, 0);
@@ -425,17 +441,30 @@ export class PipelineService {
 
     this.logger.info(CLASS_NAME, 'runGitCommitExtraction', `Extracted ${totalCommits} new commits from ${totalBranches} branches across ${result.repoResults.length} repos (mode: ${modeLabel})`);
 
-    return `${totalCommits} commits from ${totalBranches} branches across ${result.repoResults.length} repos (${result.status}, ${modeLabel})`;
+    const repoLabel = this.config.selectedRepository ? ` (${this.config.selectedRepository})` : '';
+    return `${totalCommits} commits from ${totalBranches} branches across ${result.repoResults.length} repos${repoLabel} (${result.status}, ${modeLabel})`;
   }
 
-  /** Step 2: GitHub contributor sync. */
+  /** Step 2: GitHub contributor sync. GITX-130: Filter to selected repository when specified. */
   private async runGithubContributorSync(): Promise<string> {
     if (!this.githubService) {
       this.logger.warn(CLASS_NAME, 'runGithubContributorSync', 'GitHub service not available (token or org not configured)');
       return 'GitHub service not configured (skipped)';
     }
 
-    const repoNames = this.repositories.map((r) => r.name);
+    // GITX-130: Filter to selected repository if specified
+    let reposToProcess = this.repositories;
+    if (this.config.selectedRepository) {
+      const targetRepo = this.repositories.find(r => r.name === this.config.selectedRepository);
+      if (!targetRepo) {
+        this.logger.warn(CLASS_NAME, 'runGithubContributorSync', `Selected repository not found: ${this.config.selectedRepository}, skipping GitHub sync`);
+        return `Repository not found: ${this.config.selectedRepository} (skipped)`;
+      }
+      reposToProcess = [targetRepo];
+      this.logger.info(CLASS_NAME, 'runGithubContributorSync', `Filtering to single repository: ${this.config.selectedRepository}`);
+    }
+
+    const repoNames = reposToProcess.map((r) => r.name);
     if (repoNames.length === 0) {
       this.logger.warn(CLASS_NAME, 'runGithubContributorSync', 'No repositories configured for GitHub sync');
       return 'No repositories configured (skipped)';

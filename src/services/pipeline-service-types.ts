@@ -122,6 +122,15 @@ export interface PipelineConfig {
    * Ticket: GITX-123
    */
   readonly forceFullExtraction?: boolean;
+
+  /**
+   * Optional: Filter extraction to a specific repository.
+   * When set, only this repository is processed (by name).
+   * Applies to gitCommitExtraction and githubContributorSync steps.
+   * When undefined, all configured repositories are processed.
+   * Ticket: GITX-130
+   */
+  readonly selectedRepository?: string;
 }
 
 // ============================================================================

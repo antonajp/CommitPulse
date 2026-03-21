@@ -203,6 +203,14 @@ export const CHART_CATALOG: readonly ChartDefinition[] = [
     description: 'Development vs QA story points over time',
     icon: 'graph-line',
   },
+  {
+    type: 'fileContributionReport',
+    label: 'File Contribution Report',
+    category: 'Team',
+    command: 'gitrx.openFileContributionReport',
+    description: 'Analyze contributor ownership by file',
+    icon: 'file-code',
+  },
 ] as const;
 
 /**

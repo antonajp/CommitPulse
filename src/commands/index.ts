@@ -101,6 +101,16 @@ export interface ExtractionModeResult {
 }
 
 /**
+ * QuickPick item for repository selection.
+ *
+ * Ticket: GITX-130
+ */
+export interface RepositoryQuickPickItem extends vscode.QuickPickItem {
+  /** Repository name, or undefined for "All Repositories" option */
+  repository?: string;
+}
+
+/**
  * Determine extraction mode based on first-run detection.
  *
  * On first run (no commits in database): Returns 'full' mode without showing Quick Pick.
@@ -140,6 +150,76 @@ export async function determineExtractionMode(
   }
 
   return { mode: selectedMode, isFirstRun: false };
+}
+
+/**
+ * Build Quick Pick items for repository selection.
+ * Includes "All Repositories" option plus individual repository choices.
+ *
+ * @returns Array of Quick Pick items for repository selection
+ *
+ * Ticket: GITX-130
+ */
+export function buildRepositoryQuickPickItems(): RepositoryQuickPickItem[] {
+  const settings = getSettings();
+  const items: RepositoryQuickPickItem[] = [];
+
+  // First option: All Repositories
+  items.push({
+    label: '$(repo) All Repositories',
+    description: `Process all ${settings.repositories.length} configured repositories`,
+    detail: 'Runs extraction for every repository in settings',
+    repository: undefined,
+  });
+
+  // Individual repository options
+  for (const repo of settings.repositories) {
+    items.push({
+      label: `$(repo) ${repo.name}`,
+      description: repo.path,
+      detail: `Extract commits from ${repo.name} only`,
+      repository: repo.name,
+    });
+  }
+
+  return items;
+}
+
+/**
+ * Show Quick Pick dialog for repository selection.
+ * Returns the selected repository name, or undefined for "All Repositories",
+ * or null if user cancelled.
+ *
+ * @param logger - Logger instance for diagnostic messages
+ * @returns The selected repository name (or undefined for all), or null if cancelled
+ *
+ * Ticket: GITX-130
+ */
+export async function showRepositoryQuickPick(
+  logger: LoggerService,
+): Promise<string | undefined | null> {
+  const items = buildRepositoryQuickPickItems();
+
+  if (items.length === 1) {
+    // Only "All Repositories" option - no repos configured
+    logger.warn(CLASS_NAME, 'showRepositoryQuickPick', 'No repositories configured');
+    void vscode.window.showWarningMessage('Gitr: No repositories configured. Add repos in Settings.');
+    return null;
+  }
+
+  const selected = await vscode.window.showQuickPick(items, {
+    title: 'Select Repository',
+    placeHolder: 'Choose which repository to process',
+  });
+
+  if (!selected) {
+    logger.info(CLASS_NAME, 'showRepositoryQuickPick', 'Repository selection cancelled by user');
+    return null;
+  }
+
+  const repoName = selected.repository;
+  logger.info(CLASS_NAME, 'showRepositoryQuickPick', `User selected repository: ${repoName ?? 'All Repositories'}`);
+  return repoName;
 }
 
 /**
@@ -419,6 +499,26 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
               );
             }
 
+            // GITX-130: Show repository selection Quick Pick
+            const selectedRepo = await showRepositoryQuickPick(logger);
+            if (selectedRepo === null) {
+              logger.info(CLASS_NAME, 'runGitExtraction', 'Extraction cancelled by user (Repository Quick Pick dismissed)');
+              return;
+            }
+
+            // GITX-130: Filter repositories if user selected a specific one
+            let repositoriesToProcess = settings.repositories;
+            if (selectedRepo) {
+              const targetRepo = settings.repositories.find(r => r.name === selectedRepo);
+              if (!targetRepo) {
+                logger.error(CLASS_NAME, 'runGitExtraction', `Selected repository not found: ${selectedRepo}`);
+                void vscode.window.showErrorMessage(`Gitr: Repository "${selectedRepo}" not found in settings.`);
+                return;
+              }
+              repositoriesToProcess = [targetRepo];
+              logger.info(CLASS_NAME, 'runGitExtraction', `Filtering to single repository: ${selectedRepo}`);
+            }
+
             // Create PipelineRepository for run tracking and GitAnalysisService
             const pipelineRepo = new PipelineRepository(dbService);
             const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo);
@@ -437,14 +537,16 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
               logger.info(CLASS_NAME, 'runGitExtraction', 'Full extraction mode: ignoring database watermarks');
             }
 
-            logger.info(CLASS_NAME, 'runGitExtraction', `Extracting commits from ${settings.repositories.length} repositories (mode: ${modeLabel}, isFirstRun: ${isFirstRun})`);
+            const repoLabel = selectedRepo ? ` for ${selectedRepo}` : '';
+            logger.info(CLASS_NAME, 'runGitExtraction', `Extracting commits from ${repositoriesToProcess.length} repositories${repoLabel} (mode: ${modeLabel}, isFirstRun: ${isFirstRun})`);
             if (options.sinceDate) {
               logger.info(CLASS_NAME, 'runGitExtraction', `Using sinceDate filter: ${options.sinceDate}`);
             }
 
             // Run Git extraction
-            progress.report({ message: `Extracting commits (${modeLabel})...` });
-            const result = await gitAnalysisService.analyzeRepositories(settings.repositories, options);
+            const progressMsg = selectedRepo ? `${selectedRepo} (${modeLabel})` : `All Repos (${modeLabel})`;
+            progress.report({ message: `Extracting commits: ${progressMsg}...` });
+            const result = await gitAnalysisService.analyzeRepositories(repositoriesToProcess, options);
 
             // Calculate totals
             const totalCommits = result.repoResults.reduce((sum, r) => sum + r.commitsInserted, 0);
@@ -492,6 +594,180 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
     }
   });
   disposables.push(runGitExtractionDisposable);
+
+  // gitr.runGitExtractionForRepo - Run Git commit extraction for a specific repository (GITX-130)
+  // Accepts an optional repoName parameter. If not provided, shows repository selection QuickPick.
+  // Then shows extraction mode QuickPick (incremental vs full).
+  const runGitExtractionForRepoDisposable = vscode.commands.registerCommand(
+    'gitr.runGitExtractionForRepo',
+    async (repoName?: string) => {
+      logger.info(CLASS_NAME, 'runGitExtractionForRepo', `Command executed: gitr.runGitExtractionForRepo${repoName ? ` for ${repoName}` : ''}`);
+      logger.debug(CLASS_NAME, 'runGitExtractionForRepo', 'Per-repository Git extraction starting...');
+
+      if (pipelineRunning) {
+        logger.warn(CLASS_NAME, 'runGitExtractionForRepo', 'Pipeline already running, cannot start Git extraction');
+        void vscode.window.showWarningMessage('Gitr: A pipeline run is already in progress. Please wait for it to complete.');
+        return;
+      }
+
+      const settings = getSettings();
+      if (settings.repositories.length === 0) {
+        logger.warn(CLASS_NAME, 'runGitExtractionForRepo', 'No repositories configured');
+        void vscode.window.showWarningMessage('Gitr: No repositories configured. Add repos in Settings.');
+        return;
+      }
+
+      // Step 1: Determine target repository
+      let targetRepoName = repoName;
+      if (!targetRepoName) {
+        // Show repository selection QuickPick
+        const repoItems = settings.repositories.map((r) => ({
+          label: r.name,
+          description: r.path,
+          repoName: r.name,
+        }));
+
+        const selected = await vscode.window.showQuickPick(repoItems, {
+          title: 'Select Repository for Git Extraction',
+          placeHolder: 'Choose a repository to analyze',
+        });
+
+        if (!selected) {
+          logger.info(CLASS_NAME, 'runGitExtractionForRepo', 'Repository selection cancelled by user');
+          return;
+        }
+
+        targetRepoName = selected.repoName;
+        logger.info(CLASS_NAME, 'runGitExtractionForRepo', `User selected repository: ${targetRepoName}`);
+      }
+
+      // Step 2: Validate repository exists in settings
+      const targetRepo = settings.repositories.find((r) => r.name === targetRepoName);
+      if (!targetRepo) {
+        logger.warn(CLASS_NAME, 'runGitExtractionForRepo', `Repository not found in settings: ${targetRepoName}`);
+        void vscode.window.showWarningMessage(`Gitr: Repository "${targetRepoName}" not found in settings.`);
+        return;
+      }
+
+      pipelineRunning = true;
+      logger.debug(CLASS_NAME, 'runGitExtractionForRepo', 'Pipeline running flag set to true');
+
+      const startTime = Date.now();
+
+      try {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Gitr: Running Git Extraction for ${targetRepoName}`,
+            cancellable: true,
+          },
+          async (progress, token) => {
+            if (token.isCancellationRequested) {
+              logger.info(CLASS_NAME, 'runGitExtractionForRepo', 'Git extraction cancelled by user');
+              return;
+            }
+
+            // Build lightweight database connection
+            progress.report({ message: 'Connecting to database...' });
+            const buildResult = await buildDatabaseConnection(secretService, logger);
+            if (!buildResult) {
+              return; // buildDatabaseConnection already showed error messages
+            }
+
+            const { dbService, commitRepo } = buildResult;
+
+            try {
+              // Step 3: Determine extraction mode based on first-run detection
+              const modeResult = await determineExtractionMode(commitRepo, logger);
+              if (!modeResult) {
+                logger.info(CLASS_NAME, 'runGitExtractionForRepo', 'Extraction cancelled by user (Quick Pick dismissed)');
+                return;
+              }
+
+              const extractionMode = modeResult.mode;
+              const isFirstRun = modeResult.isFirstRun;
+              const modeLabel = extractionMode === 'full' ? 'Full' : 'Incremental';
+
+              // Update progress notification to include repo name and mode
+              progress.report({ message: `Extracting commits (${modeLabel})...` });
+
+              // Show informational message for first-run
+              if (isFirstRun) {
+                void vscode.window.showInformationMessage(
+                  `Gitr: No existing data found. Performing initial full extraction for ${targetRepoName}.`,
+                );
+              }
+
+              // Create PipelineRepository for run tracking and GitAnalysisService
+              const pipelineRepo = new PipelineRepository(dbService);
+              const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo);
+
+              // Build options from settings and extraction mode
+              const options: { sinceDate?: string; debugLogging?: boolean; forceFullExtraction?: boolean } = {};
+              if (settings.pipeline.sinceDate) {
+                options.sinceDate = settings.pipeline.sinceDate;
+              }
+              if (settings.git.debugLogging) {
+                options.debugLogging = settings.git.debugLogging;
+              }
+              // Set forceFullExtraction based on user's mode selection
+              if (extractionMode === 'full') {
+                options.forceFullExtraction = true;
+                logger.info(CLASS_NAME, 'runGitExtractionForRepo', 'Full extraction mode: ignoring database watermarks');
+              }
+
+              logger.info(CLASS_NAME, 'runGitExtractionForRepo', `Extracting commits from repository: ${targetRepoName} (mode: ${modeLabel}, isFirstRun: ${isFirstRun})`);
+              if (options.sinceDate) {
+                logger.info(CLASS_NAME, 'runGitExtractionForRepo', `Using sinceDate filter: ${options.sinceDate}`);
+              }
+
+              // Run Git extraction for single repository
+              const result = await gitAnalysisService.analyzeRepositories([targetRepo], options);
+
+              // Calculate totals
+              const totalCommits = result.repoResults.reduce((sum, r) => sum + r.commitsInserted, 0);
+              const totalBranches = result.repoResults.reduce((sum, r) => sum + r.branchesProcessed, 0);
+              const durationSecs = Math.round((Date.now() - startTime) / 1000);
+
+              // Build result message
+              let message: string;
+              if (result.status === 'SUCCESS') {
+                message = `Gitr: Extracted ${totalCommits.toLocaleString()} commits from ${totalBranches} branches in ${targetRepoName} (${durationSecs}s)`;
+                void vscode.window.showInformationMessage(message);
+              } else if (result.status === 'PARTIAL') {
+                message = `Gitr: Extracted ${totalCommits.toLocaleString()} commits from ${targetRepoName}, but encountered errors—check Output.`;
+                void vscode.window.showWarningMessage(message);
+              } else {
+                message = `Gitr: Git extraction failed for ${targetRepoName}. Ensure repository exists and is accessible.`;
+                void vscode.window.showErrorMessage(message);
+              }
+
+              logger.info(CLASS_NAME, 'runGitExtractionForRepo', message);
+              logger.debug(CLASS_NAME, 'runGitExtractionForRepo', `Result status: ${result.status}, pipelineRunId: ${result.pipelineRunId ?? 'N/A'}`);
+
+            } finally {
+              // Always shut down the database connection pool
+              try {
+                await dbService.shutdown();
+                logger.debug(CLASS_NAME, 'runGitExtractionForRepo', 'Database connection pool shut down');
+              } catch (shutdownError: unknown) {
+                const msg = shutdownError instanceof Error ? shutdownError.message : String(shutdownError);
+                logger.warn(CLASS_NAME, 'runGitExtractionForRepo', `Database shutdown warning: ${msg}`);
+              }
+            }
+          }
+        );
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(CLASS_NAME, 'runGitExtractionForRepo', `Git extraction failed: ${message}`, error instanceof Error ? error : undefined);
+        void vscode.window.showErrorMessage(`Gitr: Git extraction failed - ${message}`);
+      } finally {
+        pipelineRunning = false;
+        logger.debug(CLASS_NAME, 'runGitExtractionForRepo', 'Pipeline running flag set to false');
+      }
+    },
+  );
+  disposables.push(runGitExtractionForRepoDisposable);
 
   // gitr.startDatabase - Start the PostgreSQL Docker container
   const startDatabaseDisposable = vscode.commands.registerCommand('gitr.startDatabase', async () => {
@@ -892,12 +1168,14 @@ interface BuildPipelineResult {
  * @param secretService - SecretStorageService for credential retrieval
  * @param logger - Logger instance for diagnostic messages
  * @param extractionMode - Optional extraction mode (GITX-123). Default: 'incremental'
+ * @param selectedRepository - Optional repository filter (GITX-130). When set, only this repository is processed.
  * @returns A BuildPipelineResult, or null if configuration is insufficient
  */
 async function buildPipelineService(
   secretService: SecretStorageService,
   logger: LoggerService,
   extractionMode: ExtractionMode = 'incremental',
+  selectedRepository?: string,
 ): Promise<BuildPipelineResult | null> {
   logger.debug(CLASS_NAME, 'buildPipelineService', 'Building PipelineService from settings and secrets');
 
@@ -1031,7 +1309,7 @@ async function buildPipelineService(
   );
   const teamAssignmentService = new TeamAssignmentService(contributorRepo, commitJiraRepo, pipelineRepo);
 
-  // Step 8: Build pipeline config (IQS-931: added sinceDate, GITX-123: added forceFullExtraction)
+  // Step 8: Build pipeline config (IQS-931: added sinceDate, GITX-123: added forceFullExtraction, GITX-130: added selectedRepository)
   const configuredSteps = settings.pipeline.steps;
   const validatedSteps = PipelineService.validateSteps(configuredSteps);
   const forceFullExtraction = extractionMode === 'full';
@@ -1044,10 +1322,12 @@ async function buildPipelineService(
     settings.linear.teamKeys,
     settings.pipeline.sinceDate,
     forceFullExtraction,
+    selectedRepository,
   );
 
   const modeLabel = forceFullExtraction ? 'Full' : 'Incremental';
-  logger.info(CLASS_NAME, 'buildPipelineService', `Pipeline config: ${pipelineConfig.steps.length} steps, jiraIncrement=${pipelineConfig.jiraIncrement}, jiraDaysAgo=${pipelineConfig.jiraDaysAgo}, linearTeamKeys=${pipelineConfig.linearTeamKeys.length}, sinceDate=${pipelineConfig.sinceDate ?? '(none)'}, extractionMode=${modeLabel}`);
+  const repoLabel = selectedRepository ? `, selectedRepository=${selectedRepository}` : '';
+  logger.info(CLASS_NAME, 'buildPipelineService', `Pipeline config: ${pipelineConfig.steps.length} steps, jiraIncrement=${pipelineConfig.jiraIncrement}, jiraDaysAgo=${pipelineConfig.jiraDaysAgo}, linearTeamKeys=${pipelineConfig.linearTeamKeys.length}, sinceDate=${pipelineConfig.sinceDate ?? '(none)'}, extractionMode=${modeLabel}${repoLabel}`);
 
   // Step 9: Create and return PipelineService with dbService for cleanup
   const pipelineService = new PipelineService(

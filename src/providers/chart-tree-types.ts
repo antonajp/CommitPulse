@@ -37,7 +37,8 @@ export type ChartType =
   | 'testDebt'
   | 'commitHygiene'
   | 'architectureDrift'
-  | 'storyPointsTrend';
+  | 'storyPointsTrend'
+  | 'fileContributionReport';
 
 /**
  * Chart category for grouping in the TreeView.
