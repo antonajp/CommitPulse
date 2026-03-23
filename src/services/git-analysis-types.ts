@@ -37,6 +37,31 @@ export interface GitAnalysisOptions {
    * Ticket: GITX-123
    */
   readonly forceFullExtraction?: boolean;
+  /**
+   * Skip SCC metrics during extraction for faster incremental updates.
+   * When true, commit_files rows are inserted with zero metrics (for later backfill).
+   * When false/undefined, runs SCC for each new commit (standard behavior).
+   * Ticket: GITX-131 Phase 2
+   */
+  readonly skipScc?: boolean;
+  /**
+   * Use optimized git log --all extraction instead of per-branch iteration.
+   * When true, uses a single git log query with branch relationship detection.
+   * When false/undefined, uses standard branch iteration (backward compatible).
+   * Ticket: GITX-131 Phase 3
+   */
+  readonly useGitLogAll?: boolean;
+}
+
+/**
+ * Options for fast/optimized extraction mode.
+ * Ticket: GITX-131
+ */
+export interface FastExtractionOptions extends GitAnalysisOptions {
+  /** Use git log --all instead of per-branch iteration */
+  readonly useGitLogAll?: boolean;
+  /** Collect performance metrics */
+  readonly collectMetrics?: boolean;
 }
 
 /**
@@ -45,6 +70,15 @@ export interface GitAnalysisOptions {
  * Ticket: GITX-123
  */
 export type ExtractionMode = 'incremental' | 'full';
+
+/**
+ * Fast extraction mode for optimized incremental extraction.
+ * - 'fast': Skip SCC metrics, use git log --all --since, rely on backfill
+ * - 'incremental': Standard watermark-based extraction (current default)
+ * - 'full': Complete history extraction
+ * Ticket: GITX-131
+ */
+export type FastExtractionMode = 'fast' | 'incremental' | 'full';
 
 /**
  * Quick Pick item for extraction mode selection.
@@ -176,6 +210,29 @@ export type TagMap = ReadonlyMap<string, readonly string[]>;
 // ============================================================================
 // Processing results
 // ============================================================================
+
+/**
+ * Performance metrics collected during extraction for benchmarking.
+ * Ticket: GITX-131
+ */
+export interface ExtractionPerformanceMetrics {
+  /** Time spent on branch discovery (ms) */
+  readonly branchDiscoveryMs: number;
+  /** Time spent on commit processing (ms) */
+  readonly commitProcessingMs: number;
+  /** Time spent on SCC analysis (ms) */
+  readonly sccAnalysisMs: number;
+  /** Total extraction time (ms) */
+  readonly totalMs: number;
+  /** Number of git subprocess calls made */
+  readonly gitSubprocessCalls: number;
+  /** Number of SCC subprocess calls made */
+  readonly sccSubprocessCalls: number;
+  /** Number of commits processed */
+  readonly commitsProcessed: number;
+  /** Number of new commits inserted */
+  readonly newCommitsInserted: number;
+}
 
 /**
  * Summary statistics for a completed repository analysis run.

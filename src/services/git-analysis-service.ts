@@ -27,7 +27,7 @@ import simpleGit, { type SimpleGit, type LogResult, type DefaultLogFields } from
 import { LoggerService } from '../logging/logger.js';
 import { CommitRepository } from '../database/commit-repository.js';
 import { PipelineRepository } from '../database/pipeline-repository.js';
-import { SccMetricsService } from './scc-metrics-service.js';
+import { SccMetricsService, type SccFileMetrics } from './scc-metrics-service.js';
 import type { CommitTagRow } from '../database/commit-types.js';
 import type { RepositoryEntry } from '../config/settings.js';
 import type {
@@ -201,6 +201,9 @@ export class GitAnalysisService {
    *
    * IQS-931: Computes effective since date from per-repo startDate and global sinceDate.
    * Per-repo startDate takes precedence; when both are set, uses the later date.
+   *
+   * GITX-131 Phase 3: When options.useGitLogAll is true, delegates to analyzeRepositoryFast()
+   * which uses a single git log --all query instead of per-branch iteration.
    */
   async analyzeRepository(
     repoEntry: RepositoryEntry,
@@ -294,6 +297,13 @@ export class GitAnalysisService {
       this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG] Repository URL (sanitized): ${sanitizedUrl}`);
     }
 
+    // GITX-131 Phase 3: Use optimized git log --all path when enabled
+    if (options.useGitLogAll === true) {
+      this.logger.info(CLASS_NAME, 'analyzeRepository', `Using optimized git log --all extraction for ${repoName}`);
+      return await this.analyzeRepositoryFast(git, repoContext, effectiveOptions, pipelineRunId);
+    }
+
+    // Standard path: per-branch iteration
     const tagMap = await this.buildTagMap(git, debugLogging);
     this.logger.debug(CLASS_NAME, 'analyzeRepository', `Tag map built: ${tagMap.size} tagged commits`);
 
@@ -302,7 +312,7 @@ export class GitAnalysisService {
       this.logger.debug(CLASS_NAME, 'analyzeRepository', `[GIT DEBUG] Tag extraction complete: ${tagMap.size} commits have tags`);
     }
 
-    const knownRelationships = await this.commitRepo.getKnownCommitBranchRelationships(repoName);
+    const knownRelationships = await this.commitRepo.getKnownCommitBranchRelationships(repoContext.name);
     this.logger.info(CLASS_NAME, 'analyzeRepository', `Known SHA-branch relationships: ${knownRelationships.size}`);
 
     const branches = effectiveOptions.sinceDate
@@ -348,6 +358,219 @@ export class GitAnalysisService {
     return { repoName, branchesProcessed, commitsInserted, branchRelationshipsRecorded, durationMs };
   }
 
+  /**
+   * GITX-131 Phase 3: Fast repository analysis using git log --all.
+   *
+   * Instead of iterating through branches one-by-one, this method:
+   * 1. Uses a single `git log --all --since=<date> --numstat` query
+   * 2. Deduplicates commits by SHA (each commit processed exactly once)
+   * 3. For each commit, queries `git branch --contains <sha>` to find all branches
+   * 4. Records branch relationships for all containing branches
+   *
+   * This eliminates redundant commit processing when commits appear on multiple branches.
+   *
+   * @param git - SimpleGit instance for the repository
+   * @param repoContext - Repository metadata (name, URL, organization)
+   * @param options - Analysis options including date range and skipScc flag
+   * @param pipelineRunId - Pipeline run ID for tracking
+   * @returns Analysis results matching analyzeRepository output format
+   */
+  private async analyzeRepositoryFast(
+    git: SimpleGit,
+    repoContext: RepoContext,
+    options: GitAnalysisOptions,
+    pipelineRunId: number,
+  ): Promise<RepoAnalysisResult> {
+    const startTime = Date.now();
+    const debugLogging = options.debugLogging ?? false;
+    const repoName = repoContext.name;
+
+    this.logger.info(CLASS_NAME, 'analyzeRepositoryFast', `Starting optimized extraction for ${repoName}`);
+
+    // Build tag map (needed for all commits)
+    const tagMap = await this.buildTagMap(git, debugLogging);
+    this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `Tag map built: ${tagMap.size} tagged commits`);
+
+    // Get known relationships for incremental processing
+    const knownRelationships = await this.commitRepo.getKnownCommitBranchRelationships(repoName);
+    this.logger.info(CLASS_NAME, 'analyzeRepositoryFast', `Known SHA-branch relationships: ${knownRelationships.size}`);
+
+    // Execute single git log --all query with date filtering
+    // SECURITY (GITX-131): Validate date parameters before passing to git (CWE-88)
+    const { validateDateParameter } = await import('../utils/date-validator.js');
+    const sinceDateValidation = validateDateParameter(options.sinceDate);
+    const untilDateValidation = validateDateParameter(options.untilDate);
+
+    if (!sinceDateValidation.isValid) {
+      const errorMsg = `Invalid sinceDate: ${sinceDateValidation.reason}`;
+      this.logger.error(CLASS_NAME, 'analyzeRepositoryFast', errorMsg);
+      return { repoName, branchesProcessed: 0, commitsInserted: 0, branchRelationshipsRecorded: 0, durationMs: Date.now() - startTime, error: errorMsg };
+    }
+    if (!untilDateValidation.isValid) {
+      const errorMsg = `Invalid untilDate: ${untilDateValidation.reason}`;
+      this.logger.error(CLASS_NAME, 'analyzeRepositoryFast', errorMsg);
+      return { repoName, branchesProcessed: 0, commitsInserted: 0, branchRelationshipsRecorded: 0, durationMs: Date.now() - startTime, error: errorMsg };
+    }
+
+    const logArgs = ['--all', '--numstat', '--date=iso'];
+    if (options.sinceDate) {
+      logArgs.push(`--since=${options.sinceDate}`);
+    }
+    if (options.untilDate) {
+      logArgs.push(`--until=${options.untilDate}`);
+    }
+
+    this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `Running: git log ${logArgs.join(' ')}`);
+    const logQueryStart = Date.now();
+
+    let logResult: LogResult<DefaultLogFields>;
+    try {
+      logResult = await git.log(logArgs);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(CLASS_NAME, 'analyzeRepositoryFast', `git log --all failed: ${message}`);
+      const durationMs = Date.now() - startTime;
+      return { repoName, branchesProcessed: 0, commitsInserted: 0, branchRelationshipsRecorded: 0, durationMs, error: message };
+    }
+
+    const logQueryDuration = Date.now() - logQueryStart;
+    const totalCommitsFound = logResult.all.length;
+    this.logger.info(CLASS_NAME, 'analyzeRepositoryFast', `git log --all found ${totalCommitsFound} commits in ${logQueryDuration}ms`);
+
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `[GIT DEBUG] git log --all returned ${totalCommitsFound} commits`);
+    }
+
+    // Deduplicate commits by SHA (git log --all may return same commit multiple times)
+    const uniqueCommits = new Map<string, DefaultLogFields>();
+    for (const commit of logResult.all) {
+      if (!uniqueCommits.has(commit.hash)) {
+        uniqueCommits.set(commit.hash, commit);
+      }
+    }
+
+    this.logger.info(CLASS_NAME, 'analyzeRepositoryFast', `Deduplicated to ${uniqueCommits.size} unique commits`);
+
+    let commitsInserted = 0;
+    let commitsSkipped = 0;
+    let branchRelationshipsRecorded = 0;
+    const processedBranches = new Set<string>();
+
+    // Process each unique commit
+    for (const [sha, logEntry] of uniqueCommits) {
+      this.logger.trace(CLASS_NAME, 'analyzeRepositoryFast', `Processing commit ${sha.substring(0, 8)}`);
+
+      // Get all branches containing this commit
+      const branchesContaining = await this.getBranchesContainingCommit(git, sha);
+
+      // Filter out stash refs
+      const validBranches = branchesContaining.filter(branch => !branch.startsWith('stash'));
+
+      if (validBranches.length === 0) {
+        this.logger.trace(CLASS_NAME, 'analyzeRepositoryFast', `Skipping ${sha.substring(0, 8)} - only on stash refs`);
+        commitsSkipped++;
+        continue;
+      }
+
+      if (debugLogging) {
+        this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `[GIT DEBUG] Commit ${sha.substring(0, 8)} on ${validBranches.length} branches: ${validBranches.slice(0, 3).join(', ')}${validBranches.length > 3 ? '...' : ''}`);
+      }
+
+      // Track unique branches
+      validBranches.forEach(b => processedBranches.add(b));
+
+      // Check if this is a new commit or just new branch relationships
+      const existingBranches = knownRelationships.get(sha);
+      const isNewCommit = existingBranches === undefined;
+
+      if (isNewCommit) {
+        // New commit - full processing
+        this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `New commit: ${sha.substring(0, 8)} by ${logEntry.author_name}`);
+
+        // Use the first branch for extraction (all branches contain the same commit)
+        const primaryBranch = validBranches[0] ?? 'unknown';
+        const extracted = extractCommitData(logEntry, primaryBranch);
+        const commitHistoryRow = buildCommitHistoryRow(extracted, repoContext);
+        await this.commitRepo.insertCommitHistory(commitHistoryRow);
+
+        if (debugLogging) {
+          this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `[GIT DEBUG] Commit: ${sha.substring(0, 8)} | Author: ${logEntry.author_name} | Date: ${logEntry.date}`);
+          this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `[GIT DEBUG]   Files: ${extracted.fileCount} | +${extracted.linesAdded}/-${extracted.linesRemoved} | Merge: ${extracted.isMerge}`);
+        }
+
+        // Process files (scc metrics, file types, directories)
+        if (extracted.files.length > 0) {
+          const filePaths = extracted.files.map((f) => f.filePath);
+
+          let sccMetrics: ReadonlyMap<string, SccFileMetrics>;
+          if (options.skipScc === true) {
+            sccMetrics = new Map();
+            this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `Skipping SCC metrics for ${sha.substring(0, 8)} (skipScc=true)`);
+          } else {
+            sccMetrics = await this.sccService.getFileMetricsViaScc(git, sha, filePaths);
+            this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `scc metrics collected for ${sccMetrics.size} of ${filePaths.length} files`);
+          }
+
+          const fileRows = this.sccService.buildCommitFileRows(sha, logEntry.author_name, extracted.files, sccMetrics);
+          await this.commitRepo.insertCommitFiles(sha, fileRows);
+
+          const fileTypeRows = this.sccService.buildFileTypeRows(sha, logEntry.author_name, extracted.files);
+          await this.commitRepo.insertCommitFileTypes(sha, fileTypeRows);
+
+          const dirRows = this.sccService.buildDirectoryRows(sha, logEntry.author_name, extracted.files);
+          await this.commitRepo.insertCommitDirectories(sha, dirRows);
+        }
+
+        // Insert tags if present
+        const tags = tagMap.get(sha);
+        if (tags && tags.length > 0) {
+          const tagRows: CommitTagRow[] = tags.map((tag) => ({ sha, tag, author: logEntry.author_name }));
+          await this.commitRepo.insertCommitTags(sha, tagRows);
+        }
+
+        // Insert commit words
+        const wordRows = extractCommitWords(sha, extracted.message, logEntry.author_name);
+        if (wordRows.length > 0) {
+          await this.commitRepo.insertCommitWords(sha, wordRows);
+        }
+
+        // Initialize known relationships with empty array
+        knownRelationships.set(sha, []);
+        commitsInserted++;
+      } else {
+        commitsSkipped++;
+      }
+
+      // Record branch relationships for all containing branches
+      for (const branch of validBranches) {
+        const existingBranches = knownRelationships.get(sha) ?? [];
+        if (!existingBranches.includes(branch)) {
+          await this.commitRepo.insertCommitBranchRelationship(
+            sha, branch, logEntry.author_name, new Date(logEntry.date),
+          );
+          existingBranches.push(branch);
+          branchRelationshipsRecorded++;
+        }
+      }
+
+      // Log to pipeline (fire-and-forget)
+      this.logPipelineCommit(pipelineRunId, sha, validBranches.join(','));
+    }
+
+    const durationMs = Date.now() - startTime;
+    const branchesProcessed = processedBranches.size;
+
+    this.logger.info(
+      CLASS_NAME,
+      'analyzeRepositoryFast',
+      `Repository ${repoName} complete: ${totalCommitsFound} total commits, ${uniqueCommits.size} unique, ` +
+      `${commitsInserted} new, ${commitsSkipped} existing, ${branchRelationshipsRecorded} relationships, ` +
+      `${branchesProcessed} branches touched in ${durationMs}ms`
+    );
+
+    return { repoName, branchesProcessed, commitsInserted, branchRelationshipsRecorded, durationMs };
+  }
+
   // --------------------------------------------------------------------------
   // Branch discovery
   // --------------------------------------------------------------------------
@@ -385,85 +608,117 @@ export class GitAnalysisService {
   async getAllBranches(git: SimpleGit, debugLogging = false): Promise<BranchInfo[]> {
     this.logger.debug(CLASS_NAME, 'getAllBranches', 'Listing all local and remote branches');
 
-    // GITX-2: Get local branches
-    const localBranchSummary = await git.branchLocal();
-    const localBranchNames = new Set(localBranchSummary.all);
+    // GITX-131 Phase 1: Use single git for-each-ref command instead of N subprocess calls
+    // Format: refname:short|committerdate:iso|reftype (where reftype is heads or remotes)
+    const startTime = Date.now();
 
-    // GITX-2: Get remote branches
-    let remoteBranchNames: string[] = [];
+    let output = '';
     try {
-      const remoteBranchSummary = await git.branch(['-r']);
-      // Filter out HEAD references (e.g., origin/HEAD -> origin/main)
-      remoteBranchNames = remoteBranchSummary.all.filter(b => !b.includes('HEAD'));
-      this.logger.debug(
-        CLASS_NAME,
-        'getAllBranches',
-        `Found ${localBranchSummary.all.length} local + ${remoteBranchNames.length} remote branches`,
-      );
+      output = await git.raw([
+        'for-each-ref',
+        '--format=%(refname:short)|%(committerdate:iso)|%(refname:lstrip=1)',
+        'refs/heads/',
+        'refs/remotes/'
+      ]);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(CLASS_NAME, 'getAllBranches', `Could not list remote branches: ${message}`);
-      // Continue with local branches only if remote listing fails
+      this.logger.error(CLASS_NAME, 'getAllBranches', `Failed to list branches: ${message}`);
+      return [];
     }
 
     const branches: BranchInfo[] = [];
+    const localBranchNames = new Set<string>();
+    const lines = output.trim().split('\n').filter(line => line.length > 0);
 
-    // IQS-936: Debug logging for branch discovery
     if (debugLogging) {
-      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Found ${localBranchSummary.all.length} local branches`);
-      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Found ${remoteBranchNames.length} remote branches`);
+      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Processing ${lines.length} total refs`);
     }
 
-    // Process local branches
-    for (const branchName of localBranchSummary.all) {
-      try {
-        // GITX-1 FIX: Use branch ref as positional arg, not 'from' option.
-        // simple-git's 'from' option generates "from.." which means "commits
-        // reachable from HEAD but not from the branch" - giving 0 results
-        // when HEAD IS on that branch. Using raw log with the ref directly
-        // gives us the actual latest commit on the branch.
-        const branchRef = `refs/heads/${branchName}`;
-        const log = await git.raw(['log', '-1', '--format=%H|%ai', branchRef]);
-        const [, dateStr] = log.trim().split('|');
-        const timestamp = dateStr ? new Date(dateStr).getTime() / 1000 : 0;
-        // GITX-2: Mark as local branch (isRemote: false)
-        branches.push({ name: branchName, lastCommitTimestamp: timestamp, isRemote: false });
-        this.logger.trace(CLASS_NAME, 'getAllBranches', `Branch ${branchName}: last commit ${dateStr ?? 'unknown'}`);
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(CLASS_NAME, 'getAllBranches', `Skipping local branch ${branchName}: ${message}`);
-      }
-    }
-
-    // GITX-2: Process remote branches (skip if local branch with same name exists)
-    for (const remoteBranchName of remoteBranchNames) {
-      // Remote branches come as "origin/branchName" - extract the local name part
-      // to check for duplicates with local branches
-      const parts = remoteBranchName.split('/');
-      const localEquivalent = parts.length > 1 ? parts.slice(1).join('/') : remoteBranchName;
-
-      // Skip if we already have a local branch with the same name
-      if (localBranchNames.has(localEquivalent)) {
-        this.logger.trace(CLASS_NAME, 'getAllBranches', `Skipping remote ${remoteBranchName} (local branch exists)`);
+    // First pass: collect all local branches
+    for (const line of lines) {
+      const parts = line.split('|');
+      if (parts.length < 3) {
+        this.logger.warn(CLASS_NAME, 'getAllBranches', `Malformed for-each-ref output: ${line}`);
         continue;
       }
 
-      try {
-        // GITX-2: Remote branches use refs/remotes/ prefix
-        const branchRef = `refs/remotes/${remoteBranchName}`;
-        const log = await git.raw(['log', '-1', '--format=%H|%ai', branchRef]);
-        const [, dateStr] = log.trim().split('|');
-        const timestamp = dateStr ? new Date(dateStr).getTime() / 1000 : 0;
-        // GITX-2: Store with full remote name and mark as remote (isRemote: true)
-        branches.push({ name: remoteBranchName, lastCommitTimestamp: timestamp, isRemote: true });
-        this.logger.trace(CLASS_NAME, 'getAllBranches', `Remote branch ${remoteBranchName}: last commit ${dateStr ?? 'unknown'}`);
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(CLASS_NAME, 'getAllBranches', `Skipping remote branch ${remoteBranchName}: ${message}`);
+      const branchName = parts[0] ?? '';
+      const refType = parts[2] ?? '';
+
+      // Skip HEAD references (e.g., origin/HEAD)
+      if (branchName.includes('HEAD')) {
+        continue;
+      }
+
+      const isRemote = refType.startsWith('remotes/');
+
+      // Only collect local branch names in first pass
+      if (!isRemote) {
+        localBranchNames.add(branchName);
       }
     }
 
-    this.logger.debug(CLASS_NAME, 'getAllBranches', `Found ${branches.length} total branches (local + remote)`);
+    // Second pass: build branch info array
+    for (const line of lines) {
+      const parts = line.split('|');
+      if (parts.length < 3) {
+        continue;
+      }
+
+      const branchName = parts[0] ?? '';
+      const dateStr = parts[1] ?? '';
+      const refType = parts[2] ?? '';
+
+      // Skip HEAD references
+      if (branchName.includes('HEAD')) {
+        continue;
+      }
+
+      const isRemote = refType.startsWith('remotes/');
+
+      // GITX-2: For remote branches, skip if local branch with same name exists
+      if (isRemote) {
+        // Remote branches come as "origin/branchName" - extract the local name part
+        const remoteParts = branchName.split('/');
+        const localEquivalent = remoteParts.length > 1 ? remoteParts.slice(1).join('/') : branchName;
+
+        if (localBranchNames.has(localEquivalent)) {
+          this.logger.trace(CLASS_NAME, 'getAllBranches', `Skipping remote ${branchName} (local branch exists)`);
+          continue;
+        }
+      }
+
+      // Parse timestamp
+      const timestamp = dateStr ? new Date(dateStr).getTime() / 1000 : 0;
+
+      branches.push({
+        name: branchName,
+        lastCommitTimestamp: timestamp,
+        isRemote
+      });
+
+      this.logger.trace(
+        CLASS_NAME,
+        'getAllBranches',
+        `${isRemote ? 'Remote' : 'Local'} branch ${branchName}: last commit ${dateStr ?? 'unknown'}`
+      );
+    }
+
+    const elapsedMs = Date.now() - startTime;
+    const localCount = branches.filter(b => !b.isRemote).length;
+    const remoteCount = branches.filter(b => b.isRemote).length;
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getAllBranches',
+      `Found ${localCount} local + ${remoteCount} remote branches (${branches.length} total) in ${elapsedMs}ms using single git for-each-ref call`
+    );
+
+    if (debugLogging) {
+      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Found ${localCount} local branches`);
+      this.logger.debug(CLASS_NAME, 'getAllBranches', `[GIT DEBUG] Found ${remoteCount} remote branches`);
+    }
+
     return branches;
   }
 
@@ -547,10 +802,21 @@ export class GitAnalysisService {
       // Collect scc file metrics and insert commit_files, commit_files_types, commit_directory
       // Maps from Python write_file_details_to_file() which calls create_commit_df, write_details_to_sql,
       // write_file_types_to_sql, and write_directories_to_sql
+      //
+      // GITX-131 Phase 2: Support skipScc option for fast incremental extraction
       if (extracted.files.length > 0) {
         const filePaths = extracted.files.map((f) => f.filePath);
-        const sccMetrics = await this.sccService.getFileMetricsViaScc(git, sha, filePaths);
-        this.logger.debug(CLASS_NAME, 'processBranch', `scc metrics collected for ${sccMetrics.size} of ${filePaths.length} files`);
+
+        // GITX-131: Skip SCC call when skipScc option is enabled (defer to backfill)
+        let sccMetrics: ReadonlyMap<string, SccFileMetrics>;
+        if (options.skipScc === true) {
+          // Empty map causes buildCommitFileRows to use zeros for all SCC fields
+          sccMetrics = new Map();
+          this.logger.debug(CLASS_NAME, 'processBranch', `Skipping SCC metrics for ${sha.substring(0, 8)} (skipScc=true, will backfill later)`);
+        } else {
+          sccMetrics = await this.sccService.getFileMetricsViaScc(git, sha, filePaths);
+          this.logger.debug(CLASS_NAME, 'processBranch', `scc metrics collected for ${sccMetrics.size} of ${filePaths.length} files`);
+        }
 
         // IQS-936: Debug logging for file diffs (TRACE level to prevent flooding)
         if (debugLogging) {
@@ -721,6 +987,66 @@ export class GitAnalysisService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(CLASS_NAME, 'getBranchLog', `Could not get log for ${branchName}: ${message}`);
       return null;
+    }
+  }
+
+  /**
+   * GITX-131 Phase 3: Get all branches containing a specific commit.
+   *
+   * Uses `git branch --all --contains <sha>` to find all local and remote branches
+   * that contain the given commit. Strips the refs/heads/ and refs/remotes/ prefixes
+   * to normalize branch names for database storage.
+   *
+   * @param git - SimpleGit instance
+   * @param sha - Commit SHA to query
+   * @returns Array of branch names (both local and remote)
+   */
+  private async getBranchesContainingCommit(git: SimpleGit, sha: string): Promise<string[]> {
+    // SECURITY (GITX-131): Validate SHA format to prevent command injection (CWE-78)
+    // Git SHAs are 40-character hexadecimal strings (full SHA) or 7+ chars (short SHA)
+    if (!sha || typeof sha !== 'string' || !/^[0-9a-f]{7,40}$/i.test(sha)) {
+      this.logger.warn(CLASS_NAME, 'getBranchesContainingCommit', `Invalid SHA format rejected: ${sha?.substring(0, 20) ?? 'undefined'}`);
+      return [];
+    }
+
+    try {
+      // Use git branch --all --contains to get both local and remote branches
+      const output = await git.raw(['branch', '--all', '--contains', sha]);
+
+      // Parse output: each line is a branch name, possibly with "* " prefix for current branch
+      // Format:
+      //   * main
+      //     feature/test
+      //     remotes/origin/main
+      const branches = output
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map(line => {
+          // Remove "* " prefix if present (current branch indicator)
+          let branch = line.startsWith('* ') ? line.substring(2).trim() : line;
+
+          // Strip refs/ prefix if present (shouldn't be, but be defensive)
+          if (branch.startsWith('refs/heads/')) {
+            branch = branch.substring('refs/heads/'.length);
+          } else if (branch.startsWith('refs/remotes/')) {
+            branch = branch.substring('refs/remotes/'.length);
+          } else if (branch.startsWith('remotes/')) {
+            // git branch --all output uses "remotes/" prefix, not "refs/remotes/"
+            branch = branch.substring('remotes/'.length);
+          }
+
+          return branch;
+        })
+        // Filter out HEAD and stash refs (we'll filter stash in caller)
+        .filter(branch => !branch.includes('HEAD'));
+
+      this.logger.trace(CLASS_NAME, 'getBranchesContainingCommit', `Commit ${sha.substring(0, 8)} on ${branches.length} branches`);
+      return branches;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(CLASS_NAME, 'getBranchesContainingCommit', `Failed to get branches for ${sha.substring(0, 8)}: ${message}`);
+      return [];
     }
   }
 
