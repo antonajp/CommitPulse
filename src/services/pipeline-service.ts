@@ -263,7 +263,7 @@ export class PipelineService {
     };
   }
 
-  /** Build a PipelineConfig from raw configuration values. GITX-130: Added selectedRepository parameter. */
+  /** Build a PipelineConfig from raw configuration values. GITX-130: Added selectedRepository parameter. GITX-131: Added useGitLogAll. */
   static buildConfig(
     steps?: readonly PipelineStepId[],
     jiraIncrement?: number,
@@ -274,6 +274,7 @@ export class PipelineService {
     sinceDate?: string,
     forceFullExtraction?: boolean,
     selectedRepository?: string,
+    useGitLogAll?: boolean,
   ): PipelineConfig {
     const effectiveSteps = (steps && steps.length > 0) ? steps : ALL_PIPELINE_STEPS;
     return {
@@ -286,6 +287,7 @@ export class PipelineService {
       sinceDate,
       forceFullExtraction,
       selectedRepository,
+      useGitLogAll,
     };
   }
 
@@ -423,7 +425,8 @@ export class PipelineService {
 
     // IQS-931: Pass global sinceDate from pipeline config
     // GITX-123: Pass forceFullExtraction to ignore database watermarks
-    const options: { sinceDate?: string; forceFullExtraction?: boolean } = {};
+    // GITX-131: Pass useGitLogAll for fast extraction mode
+    const options: { sinceDate?: string; forceFullExtraction?: boolean; useGitLogAll?: boolean } = {};
     if (this.config.sinceDate) {
       options.sinceDate = this.config.sinceDate;
     }
@@ -431,7 +434,11 @@ export class PipelineService {
       options.forceFullExtraction = true;
       this.logger.info(CLASS_NAME, 'runGitCommitExtraction', 'Full extraction mode: ignoring database watermarks');
     }
-    this.logger.debug(CLASS_NAME, 'runGitCommitExtraction', `Global sinceDate: ${this.config.sinceDate ?? '(none)'}, forceFullExtraction: ${this.config.forceFullExtraction ?? false}`);
+    if (this.config.useGitLogAll) {
+      options.useGitLogAll = true;
+      this.logger.info(CLASS_NAME, 'runGitCommitExtraction', 'Fast extraction mode: using git log --all');
+    }
+    this.logger.debug(CLASS_NAME, 'runGitCommitExtraction', `Global sinceDate: ${this.config.sinceDate ?? '(none)'}, forceFullExtraction: ${this.config.forceFullExtraction ?? false}, useGitLogAll: ${this.config.useGitLogAll ?? false}`);
 
     const result: AnalysisRunResult = await this.gitAnalysisService.analyzeRepositories(reposToProcess, options);
     this.lastGitAnalysisResult = result;

@@ -23,7 +23,7 @@ import { LinearIncrementalLoader } from '../services/linear-incremental-loader.j
 import { DataEnhancerService } from '../services/data-enhancer-service.js';
 import { TeamAssignmentService } from '../services/team-assignment-service.js';
 import { PipelineService } from '../services/pipeline-service.js';
-import type { ExtractionMode, ExtractionModeQuickPickItem } from '../services/git-analysis-types.js';
+import type { FastExtractionMode, ExtractionModeQuickPickItem } from '../services/git-analysis-types.js';
 
 /**
  * Class name constant for structured logging context.
@@ -36,23 +36,30 @@ const CLASS_NAME = 'Commands';
  *
  * @returns Array of Quick Pick items for extraction mode selection
  *
- * Ticket: GITX-123, GITX-124 (optimized to avoid database query), GITX-125 (exported for testing)
+ * Ticket: GITX-123, GITX-124 (optimized to avoid database query), GITX-125 (exported for testing), GITX-131 (added fast mode)
  */
 export function buildExtractionModeQuickPickItems(): ExtractionModeQuickPickItem[] {
   // GITX-124: Use static descriptions to avoid double database initialization.
   // The incremental mode will automatically detect the watermark during execution.
+  // GITX-131: Added fast mode as first option for optimized extraction.
   return [
     {
-      label: '$(sync) Incremental Extraction',
-      description: 'Extract new commits since last run',
-      detail: 'Processes only commits after the last extracted date',
-      mode: 'incremental' as ExtractionMode,
+      label: '$(rocket) Fast Incremental',
+      description: 'Optimized extraction (Recommended)',
+      detail: 'Single git query across all branches. Fastest for regular syncs.',
+      mode: 'fast',
+    },
+    {
+      label: '$(sync) Incremental',
+      description: 'Standard per-branch extraction',
+      detail: 'Iterates each branch separately. Slower but traditional.',
+      mode: 'incremental',
     },
     {
       label: '$(database) Full Re-extraction',
       description: 'Extract entire commit history',
       detail: 'Ignores previous data. Use if incremental sync has issues.',
-      mode: 'full' as ExtractionMode,
+      mode: 'full',
     },
   ];
 }
@@ -63,15 +70,16 @@ export function buildExtractionModeQuickPickItems(): ExtractionModeQuickPickItem
  *
  * GITX-124: Removed database query for last commit date to avoid double initialization.
  * The Quick Pick now shows immediately without database latency.
+ * GITX-131: Updated return type to FastExtractionMode to support 'fast' mode.
  *
  * @param logger - Logger instance for diagnostic messages
  * @returns The selected extraction mode, or undefined if cancelled
  *
- * Ticket: GITX-123, GITX-124, GITX-125 (exported for testing)
+ * Ticket: GITX-123, GITX-124, GITX-125 (exported for testing), GITX-131 (fast mode)
  */
 export async function showExtractionModeQuickPick(
   logger: LoggerService,
-): Promise<ExtractionMode | undefined> {
+): Promise<FastExtractionMode | undefined> {
   const items = buildExtractionModeQuickPickItems();
 
   const selected = await vscode.window.showQuickPick(items, {
@@ -91,11 +99,11 @@ export async function showExtractionModeQuickPick(
 /**
  * Result from determining extraction mode based on first-run detection.
  *
- * Ticket: GITX-126
+ * Ticket: GITX-126, GITX-131 (updated mode type to FastExtractionMode)
  */
 export interface ExtractionModeResult {
   /** The extraction mode to use */
-  mode: ExtractionMode;
+  mode: FastExtractionMode;
   /** Whether this is a first run (no existing data) */
   isFirstRun: boolean;
 }
@@ -337,7 +345,7 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
         return; // buildDatabaseConnection already showed error messages
       }
 
-      let extractionMode: ExtractionMode;
+      let extractionMode: FastExtractionMode;
       let isFirstRun = false;
 
       try {
@@ -362,7 +370,7 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
         logger.debug(CLASS_NAME, 'runPipeline', 'First-run check database connection closed');
       }
 
-      const modeLabel = extractionMode === 'full' ? 'Full' : 'Incremental';
+      const modeLabel = extractionMode === 'full' ? 'Full' : extractionMode === 'fast' ? 'Fast' : 'Incremental';
 
       await vscode.window.withProgress(
         {
@@ -378,6 +386,7 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
 
           // Build the pipeline service from current settings and secrets
           // GITX-123: Pass extraction mode to buildPipelineService
+          // GITX-131: extractionMode can now be 'fast' for optimized extraction
           const buildResult = await buildPipelineService(secretService, logger, extractionMode);
           if (!buildResult) {
             return; // buildPipelineService already showed error messages
@@ -490,7 +499,7 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
 
             const extractionMode = modeResult.mode;
             const isFirstRun = modeResult.isFirstRun;
-            const modeLabel = extractionMode === 'full' ? 'Full' : 'Incremental';
+            const modeLabel = extractionMode === 'full' ? 'Full' : extractionMode === 'fast' ? 'Fast' : 'Incremental';
 
             // GITX-126: Show informational message for first-run
             if (isFirstRun) {
@@ -524,7 +533,8 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
             const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo);
 
             // GITX-123: Build options from settings and extraction mode
-            const options: { sinceDate?: string; debugLogging?: boolean; forceFullExtraction?: boolean } = {};
+            // GITX-131: Added useGitLogAll for fast extraction mode
+            const options: { sinceDate?: string; debugLogging?: boolean; forceFullExtraction?: boolean; useGitLogAll?: boolean } = {};
             if (settings.pipeline.sinceDate) {
               options.sinceDate = settings.pipeline.sinceDate;
             }
@@ -535,6 +545,11 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
             if (extractionMode === 'full') {
               options.forceFullExtraction = true;
               logger.info(CLASS_NAME, 'runGitExtraction', 'Full extraction mode: ignoring database watermarks');
+            }
+            // GITX-131: Set optimization flag for fast extraction mode
+            if (extractionMode === 'fast') {
+              options.useGitLogAll = true;
+              logger.info(CLASS_NAME, 'runGitExtraction', 'Fast extraction mode: using git log --all');
             }
 
             const repoLabel = selectedRepo ? ` for ${selectedRepo}` : '';
@@ -686,7 +701,7 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
 
               const extractionMode = modeResult.mode;
               const isFirstRun = modeResult.isFirstRun;
-              const modeLabel = extractionMode === 'full' ? 'Full' : 'Incremental';
+              const modeLabel = extractionMode === 'full' ? 'Full' : extractionMode === 'fast' ? 'Fast' : 'Incremental';
 
               // Update progress notification to include repo name and mode
               progress.report({ message: `Extracting commits (${modeLabel})...` });
@@ -703,7 +718,8 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
               const gitAnalysisService = new GitAnalysisService(commitRepo, pipelineRepo);
 
               // Build options from settings and extraction mode
-              const options: { sinceDate?: string; debugLogging?: boolean; forceFullExtraction?: boolean } = {};
+              // GITX-131: Added useGitLogAll for fast extraction mode
+              const options: { sinceDate?: string; debugLogging?: boolean; forceFullExtraction?: boolean; useGitLogAll?: boolean } = {};
               if (settings.pipeline.sinceDate) {
                 options.sinceDate = settings.pipeline.sinceDate;
               }
@@ -714,6 +730,11 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
               if (extractionMode === 'full') {
                 options.forceFullExtraction = true;
                 logger.info(CLASS_NAME, 'runGitExtractionForRepo', 'Full extraction mode: ignoring database watermarks');
+              }
+              // GITX-131: Set optimization flag for fast extraction mode
+              if (extractionMode === 'fast') {
+                options.useGitLogAll = true;
+                logger.info(CLASS_NAME, 'runGitExtractionForRepo', 'Fast extraction mode: using git log --all');
               }
 
               logger.info(CLASS_NAME, 'runGitExtractionForRepo', `Extracting commits from repository: ${targetRepoName} (mode: ${modeLabel}, isFirstRun: ${isFirstRun})`);
@@ -1167,14 +1188,14 @@ interface BuildPipelineResult {
  *
  * @param secretService - SecretStorageService for credential retrieval
  * @param logger - Logger instance for diagnostic messages
- * @param extractionMode - Optional extraction mode (GITX-123). Default: 'incremental'
+ * @param extractionMode - Optional extraction mode (GITX-123, GITX-131). Default: 'incremental'
  * @param selectedRepository - Optional repository filter (GITX-130). When set, only this repository is processed.
  * @returns A BuildPipelineResult, or null if configuration is insufficient
  */
 async function buildPipelineService(
   secretService: SecretStorageService,
   logger: LoggerService,
-  extractionMode: ExtractionMode = 'incremental',
+  extractionMode: FastExtractionMode = 'incremental',
   selectedRepository?: string,
 ): Promise<BuildPipelineResult | null> {
   logger.debug(CLASS_NAME, 'buildPipelineService', 'Building PipelineService from settings and secrets');
@@ -1309,10 +1330,12 @@ async function buildPipelineService(
   );
   const teamAssignmentService = new TeamAssignmentService(contributorRepo, commitJiraRepo, pipelineRepo);
 
-  // Step 8: Build pipeline config (IQS-931: added sinceDate, GITX-123: added forceFullExtraction, GITX-130: added selectedRepository)
+  // Step 8: Build pipeline config (IQS-931: added sinceDate, GITX-123: added forceFullExtraction, GITX-130: added selectedRepository, GITX-131: added useGitLogAll)
   const configuredSteps = settings.pipeline.steps;
   const validatedSteps = PipelineService.validateSteps(configuredSteps);
   const forceFullExtraction = extractionMode === 'full';
+  // GITX-131: Set optimization flag for fast extraction mode
+  const useGitLogAll = extractionMode === 'fast';
   const pipelineConfig = PipelineService.buildConfig(
     validatedSteps,
     settings.jira.increment,
@@ -1323,9 +1346,10 @@ async function buildPipelineService(
     settings.pipeline.sinceDate,
     forceFullExtraction,
     selectedRepository,
+    useGitLogAll,
   );
 
-  const modeLabel = forceFullExtraction ? 'Full' : 'Incremental';
+  const modeLabel = extractionMode === 'full' ? 'Full' : extractionMode === 'fast' ? 'Fast' : 'Incremental';
   const repoLabel = selectedRepository ? `, selectedRepository=${selectedRepository}` : '';
   logger.info(CLASS_NAME, 'buildPipelineService', `Pipeline config: ${pipelineConfig.steps.length} steps, jiraIncrement=${pipelineConfig.jiraIncrement}, jiraDaysAgo=${pipelineConfig.jiraDaysAgo}, linearTeamKeys=${pipelineConfig.linearTeamKeys.length}, sinceDate=${pipelineConfig.sinceDate ?? '(none)'}, extractionMode=${modeLabel}${repoLabel}`);
 
