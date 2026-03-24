@@ -83,7 +83,7 @@ export type FastExtractionMode = 'fast' | 'incremental' | 'full';
 /**
  * Quick Pick item for extraction mode selection.
  * Includes label, description, detail, and the mode value.
- * Ticket: GITX-123
+ * Ticket: GITX-123, GITX-131 (updated mode type to FastExtractionMode)
  */
 export interface ExtractionModeQuickPickItem {
   /** Display label with icon (e.g., "$(sync) Incremental Extraction") */
@@ -93,7 +93,7 @@ export interface ExtractionModeQuickPickItem {
   /** Detailed explanation shown below */
   readonly detail: string;
   /** The extraction mode value */
-  readonly mode: ExtractionMode;
+  readonly mode: FastExtractionMode;
 }
 
 // ============================================================================

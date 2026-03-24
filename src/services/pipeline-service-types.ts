@@ -131,6 +131,14 @@ export interface PipelineConfig {
    * Ticket: GITX-130
    */
   readonly selectedRepository?: string;
+
+  /**
+   * Use optimized git log --all extraction instead of per-branch iteration.
+   * When true, uses a single git log query with branch relationship detection.
+   * When false/undefined, uses standard branch iteration (backward compatible).
+   * Ticket: GITX-131
+   */
+  readonly useGitLogAll?: boolean;
 }
 
 // ============================================================================

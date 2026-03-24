@@ -5,7 +5,7 @@
  * and determineExtractionMode() functions used by gitr.runPipeline and
  * gitr.runGitExtraction commands.
  *
- * Ticket: GITX-125, GITX-126 (first-run detection)
+ * Ticket: GITX-125, GITX-126 (first-run detection), GITX-131 (fast mode)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -35,23 +35,33 @@ describe('buildExtractionModeQuickPickItems', () => {
     LoggerService.resetInstance();
   });
 
-  it('should return exactly two Quick Pick items', () => {
+  // GITX-131: Updated to reflect three Quick Pick items with Fast Incremental first
+  it('should return exactly three Quick Pick items', () => {
     const items = buildExtractionModeQuickPickItems();
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
   });
 
-  it('should return incremental mode item first', () => {
+  it('should return fast mode item first (GITX-131)', () => {
     const items = buildExtractionModeQuickPickItems();
-    const incrementalItem = items[0];
+    const fastItem = items[0];
+
+    expect(fastItem).toBeDefined();
+    expect(fastItem!.mode).toBe('fast');
+    expect(fastItem!.label).toContain('Fast');
+  });
+
+  it('should return incremental mode item second', () => {
+    const items = buildExtractionModeQuickPickItems();
+    const incrementalItem = items[1];
 
     expect(incrementalItem).toBeDefined();
     expect(incrementalItem!.mode).toBe('incremental');
     expect(incrementalItem!.label).toContain('Incremental');
   });
 
-  it('should return full mode item second', () => {
+  it('should return full mode item third', () => {
     const items = buildExtractionModeQuickPickItems();
-    const fullItem = items[1];
+    const fullItem = items[2];
 
     expect(fullItem).toBeDefined();
     expect(fullItem!.mode).toBe('full');
@@ -61,10 +71,12 @@ describe('buildExtractionModeQuickPickItems', () => {
   it('should have correct labels with icons', () => {
     const items = buildExtractionModeQuickPickItems();
 
+    // Fast item should have rocket icon (GITX-131)
+    expect(items[0]!.label).toBe('$(rocket) Fast Incremental');
     // Incremental item should have sync icon
-    expect(items[0]!.label).toBe('$(sync) Incremental Extraction');
+    expect(items[1]!.label).toBe('$(sync) Incremental');
     // Full item should have database icon
-    expect(items[1]!.label).toBe('$(database) Full Re-extraction');
+    expect(items[2]!.label).toBe('$(database) Full Re-extraction');
   });
 
   it('should have descriptions for all items', () => {
@@ -85,30 +97,44 @@ describe('buildExtractionModeQuickPickItems', () => {
     }
   });
 
+  it('should have correct description for fast mode (GITX-131)', () => {
+    const items = buildExtractionModeQuickPickItems();
+    const fastItem = items[0];
+
+    expect(fastItem!.description).toBe('Optimized extraction (Recommended)');
+  });
+
   it('should have correct description for incremental mode', () => {
     const items = buildExtractionModeQuickPickItems();
-    const incrementalItem = items[0];
+    const incrementalItem = items[1];
 
-    expect(incrementalItem!.description).toBe('Extract new commits since last run');
+    expect(incrementalItem!.description).toBe('Standard per-branch extraction');
   });
 
   it('should have correct description for full mode', () => {
     const items = buildExtractionModeQuickPickItems();
-    const fullItem = items[1];
+    const fullItem = items[2];
 
     expect(fullItem!.description).toBe('Extract entire commit history');
   });
 
+  it('should have correct detail for fast mode (GITX-131)', () => {
+    const items = buildExtractionModeQuickPickItems();
+    const fastItem = items[0];
+
+    expect(fastItem!.detail).toBe('Single git query across all branches. Fastest for regular syncs.');
+  });
+
   it('should have correct detail for incremental mode', () => {
     const items = buildExtractionModeQuickPickItems();
-    const incrementalItem = items[0];
+    const incrementalItem = items[1];
 
-    expect(incrementalItem!.detail).toBe('Processes only commits after the last extracted date');
+    expect(incrementalItem!.detail).toBe('Iterates each branch separately. Slower but traditional.');
   });
 
   it('should have correct detail for full mode', () => {
     const items = buildExtractionModeQuickPickItems();
-    const fullItem = items[1];
+    const fullItem = items[2];
 
     expect(fullItem!.detail).toBe('Ignores previous data. Use if incremental sync has issues.');
   });
@@ -121,7 +147,8 @@ describe('buildExtractionModeQuickPickItems', () => {
       expect(typeof item.label).toBe('string');
       expect(typeof item.description).toBe('string');
       expect(typeof item.detail).toBe('string');
-      expect(['incremental', 'full']).toContain(item.mode);
+      // GITX-131: Updated to include 'fast' mode
+      expect(['fast', 'incremental', 'full']).toContain(item.mode);
     }
   });
 
@@ -159,11 +186,27 @@ describe('showExtractionModeQuickPick', () => {
     }
   });
 
+  it('should return fast mode when user selects fast (GITX-131)', async () => {
+    const fastItem: ExtractionModeQuickPickItem = {
+      label: '$(rocket) Fast Incremental',
+      description: 'Optimized extraction (Recommended)',
+      detail: 'Single git query across all branches. Fastest for regular syncs.',
+      mode: 'fast',
+    };
+
+    vi.spyOn(window, 'showQuickPick').mockResolvedValue(fastItem);
+
+    const result = await showExtractionModeQuickPick(logger);
+
+    expect(result).toBe('fast');
+    logger.dispose();
+  });
+
   it('should return incremental mode when user selects incremental', async () => {
     const incrementalItem: ExtractionModeQuickPickItem = {
-      label: '$(sync) Incremental Extraction',
-      description: 'Extract new commits since last run',
-      detail: 'Processes only commits after the last extracted date',
+      label: '$(sync) Incremental',
+      description: 'Standard per-branch extraction',
+      detail: 'Iterates each branch separately. Slower but traditional.',
       mode: 'incremental',
     };
 
