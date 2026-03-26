@@ -142,6 +142,16 @@ export interface ScheduleSettings {
 }
 
 /**
+ * Valid extraction modes for pipeline execution.
+ * - 'fast': Single git log --all query (recommended for scheduled runs)
+ * - 'incremental': Traditional per-branch iteration
+ * - 'full': Re-extract entire history, ignoring watermarks
+ *
+ * Ticket: GITX-132
+ */
+export type ExtractionMode = 'fast' | 'incremental' | 'full';
+
+/**
  * Pipeline step configuration.
  * Controls which steps are executed during a pipeline run.
  */
@@ -154,6 +164,13 @@ export interface PipelineSettings {
    * Ticket: IQS-931
    */
   readonly sinceDate?: string;
+  /**
+   * Default extraction mode for scheduled pipeline runs.
+   * Manual runs always show Quick Pick for mode selection.
+   * Default: 'fast' for optimized scheduled pipeline execution.
+   * Ticket: GITX-132
+   */
+  readonly defaultExtractionMode: ExtractionMode;
 }
 
 /**
@@ -322,11 +339,13 @@ export function getSettings(): GitrxConfiguration {
   const rawLogLevel = config.get<string>('logLevel', 'INFO');
   const logLevel = validateLogLevel(rawLogLevel, logger);
 
-  // Read pipeline settings (IQS-931: added sinceDate)
+  // Read pipeline settings (IQS-931: added sinceDate, GITX-132: added defaultExtractionMode)
   const rawSinceDate = config.get<string>('pipeline.sinceDate', '');
+  const rawExtractionMode = config.get<string>('pipeline.defaultExtractionMode', 'fast');
   const pipeline: PipelineSettings = Object.freeze({
     steps: config.get<string[]>('pipeline.steps', []),
     sinceDate: validateIsoDate(rawSinceDate, 'pipeline.sinceDate', logger),
+    defaultExtractionMode: validateExtractionMode(rawExtractionMode, logger),
   });
 
   // Read Docker settings
@@ -497,6 +516,30 @@ function validateLogLevel(level: string, logger: LoggerService): LogLevelString 
   }
   logger.warn(CLASS_NAME, 'validateLogLevel', `Invalid log level '${level}', falling back to INFO`);
   return 'INFO';
+}
+
+/**
+ * Valid extraction mode values for runtime validation.
+ * Ticket: GITX-132
+ */
+const VALID_EXTRACTION_MODES: readonly ExtractionMode[] = ['fast', 'incremental', 'full'];
+
+/**
+ * Validate that an extraction mode string is one of the known values.
+ *
+ * @param mode - The extraction mode string to validate
+ * @param logger - Logger instance for reporting issues
+ * @returns The validated extraction mode, or 'fast' if invalid
+ *
+ * Ticket: GITX-132
+ */
+function validateExtractionMode(mode: string, logger: LoggerService): ExtractionMode {
+  const lower = mode.toLowerCase() as ExtractionMode;
+  if (VALID_EXTRACTION_MODES.includes(lower)) {
+    return lower;
+  }
+  logger.warn(CLASS_NAME, 'validateExtractionMode', `Invalid extraction mode '${mode}', falling back to 'fast'`);
+  return 'fast';
 }
 
 /**

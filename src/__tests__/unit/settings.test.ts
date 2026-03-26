@@ -859,4 +859,61 @@ describe('Settings Configuration Reader', () => {
       expect(Object.isFrozen(settings.git)).toBe(true);
     });
   });
+
+  /**
+   * pipeline.defaultExtractionMode validation tests for GITX-132.
+   * Validates the default extraction mode for scheduled pipeline runs.
+   */
+  describe('pipeline.defaultExtractionMode Validation (GITX-132)', () => {
+    it('should default to "fast" when not configured', () => {
+      const settings = getSettings();
+      expect(settings.pipeline.defaultExtractionMode).toBe('fast');
+    });
+
+    it('should accept "fast" mode', () => {
+      _setMockConfig('gitrx.pipeline.defaultExtractionMode', 'fast');
+      const settings = getSettings();
+      expect(settings.pipeline.defaultExtractionMode).toBe('fast');
+    });
+
+    it('should accept "incremental" mode', () => {
+      _setMockConfig('gitrx.pipeline.defaultExtractionMode', 'incremental');
+      const settings = getSettings();
+      expect(settings.pipeline.defaultExtractionMode).toBe('incremental');
+    });
+
+    it('should accept "full" mode', () => {
+      _setMockConfig('gitrx.pipeline.defaultExtractionMode', 'full');
+      const settings = getSettings();
+      expect(settings.pipeline.defaultExtractionMode).toBe('full');
+    });
+
+    it('should normalize uppercase to lowercase', () => {
+      _setMockConfig('gitrx.pipeline.defaultExtractionMode', 'FAST');
+      const settings = getSettings();
+      expect(settings.pipeline.defaultExtractionMode).toBe('fast');
+    });
+
+    it('should fall back to "fast" for invalid mode', () => {
+      _setMockConfig('gitrx.pipeline.defaultExtractionMode', 'invalid');
+      const settings = getSettings();
+      expect(settings.pipeline.defaultExtractionMode).toBe('fast');
+    });
+
+    it('should fall back to "fast" for empty string', () => {
+      _setMockConfig('gitrx.pipeline.defaultExtractionMode', '');
+      const settings = getSettings();
+      expect(settings.pipeline.defaultExtractionMode).toBe('fast');
+    });
+
+    it('should include defaultExtractionMode in PipelineSettings interface', () => {
+      const settings = getSettings();
+      expect(settings.pipeline).toHaveProperty('defaultExtractionMode');
+    });
+
+    it('should return frozen pipeline settings with defaultExtractionMode', () => {
+      const settings = getSettings();
+      expect(Object.isFrozen(settings.pipeline)).toBe(true);
+    });
+  });
 });
