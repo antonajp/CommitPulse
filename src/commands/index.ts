@@ -251,6 +251,7 @@ export function isPipelineRunning(): boolean {
  * Builds the PipelineService, runs the pipeline, and cleans up.
  *
  * Sets the pipelineRunning flag for mutual exclusion.
+ * GITX-132: Uses gitrx.pipeline.defaultExtractionMode setting (default: 'fast').
  *
  * @param secretService - SecretStorageService for credential retrieval
  */
@@ -267,7 +268,13 @@ export async function executePipelineRun(secretService: SecretStorageService): P
   logger.debug(CLASS_NAME, 'executePipelineRun', 'Pipeline running flag set to true');
 
   try {
-    const buildResult = await buildPipelineService(secretService, logger);
+    // GITX-132: Read extraction mode from settings (default: 'fast' for scheduled runs)
+    const settings = getSettings();
+    const extractionMode = settings.pipeline.defaultExtractionMode;
+    const modeLabel = extractionMode === 'full' ? 'Full' : extractionMode === 'fast' ? 'Fast' : 'Incremental';
+    logger.info(CLASS_NAME, 'executePipelineRun', `Using extraction mode from settings: ${modeLabel}`);
+
+    const buildResult = await buildPipelineService(secretService, logger, extractionMode);
     if (!buildResult) {
       logger.error(CLASS_NAME, 'executePipelineRun', 'Failed to build pipeline service');
       return;
@@ -285,7 +292,7 @@ export async function executePipelineRun(secretService: SecretStorageService): P
       const errorCount = result.stepResults.filter((r) => r.status === 'ERROR').length;
       const totalSteps = result.stepResults.length;
 
-      const message = `Gitr: Scheduled pipeline ${statusMsg} (${successCount}/${totalSteps} steps OK, ${errorCount} errors, ${Math.round(result.totalDurationMs / 1000)}s)`;
+      const message = `Gitr: Scheduled pipeline ${statusMsg} [${modeLabel}] (${successCount}/${totalSteps} steps OK, ${errorCount} errors, ${Math.round(result.totalDurationMs / 1000)}s)`;
       logger.critical(CLASS_NAME, 'executePipelineRun', message);
     } finally {
       try {

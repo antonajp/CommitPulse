@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -504,6 +504,17 @@
           "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$",
           "description": "Earliest commit date to extract (YYYY-MM-DD). Commits before this date are ignored. Per-repo startDate takes precedence.",
           "markdownDescription": "Global cutoff date for commit extraction (YYYY-MM-DD format).\n\nCommits before this date are ignored during the `gitCommitExtraction` pipeline step. This is useful for large repositories with many years of history where only recent commits are relevant.\n\n**Priority**: Per-repository `startDate` settings override this global setting. When both are set, the *later* of the two dates is used.\n\n**Examples:**\n```json\n// Extract commits from 2023 onwards\n\"gitrx.pipeline.sinceDate\": \"2023-01-01\"\n\n// No cutoff (extract all history)\n\"gitrx.pipeline.sinceDate\": \"\"\n```"
+        },
+        "gitrx.pipeline.defaultExtractionMode": {
+          "type": "string",
+          "enum": [
+            "fast",
+            "incremental",
+            "full"
+          ],
+          "default": "fast",
+          "description": "Default extraction mode for scheduled pipeline runs. Fast mode (recommended) uses optimized single git query.",
+          "markdownDescription": "Default extraction mode for **scheduled** pipeline runs (GITX-132).\n\n- **fast** (default, recommended) — Single `git log --all` query across all branches. Fastest for regular incremental syncs.\n- **incremental** — Traditional per-branch iteration. Slower but includes full SCC metrics.\n- **full** — Re-extract entire commit history, ignoring watermarks.\n\n**Note:** Manual `Gitr: Run Pipeline` commands always show a Quick Pick for mode selection. This setting only affects scheduled runs."
         },
         "gitrx.docker.postgresVersion": {
           "type": "string",
