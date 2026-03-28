@@ -38,7 +38,8 @@ export type ChartType =
   | 'commitHygiene'
   | 'architectureDrift'
   | 'storyPointsTrend'
-  | 'fileContributionReport';
+  | 'fileContributionReport'
+  | 'complexityTrend';
 
 /**
  * Chart category for grouping in the TreeView.

@@ -27,6 +27,7 @@ import { HygienePanel } from './views/webview/hygiene-panel.js';
 import { DriftPanel } from './views/webview/drift-panel.js';
 import { StoryPointsTrendPanel } from './views/webview/story-points-trend-panel.js';
 import { FileAuthorLocPanel } from './views/webview/file-author-loc-panel.js';
+import { ComplexityTrendPanel } from './views/webview/complexity-trend-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 
 /**
@@ -764,6 +765,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     FileAuthorLocPanel.createOrShow(context.extensionUri, secretService);
   });
   disposables.push(openFileContributionReportDisposable);
+
+  // gitrx.openComplexityTrend - Open the Complexity Trend chart (GITX-133)
+  const openComplexityTrendDisposable = vscode.commands.registerCommand('gitrx.openComplexityTrend', () => {
+    logger?.info(CLASS_NAME, 'openComplexityTrend', 'Command executed: gitrx.openComplexityTrend');
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'openComplexityTrend', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    ComplexityTrendPanel.createOrShow(context.extensionUri, secretService);
+  });
+  disposables.push(openComplexityTrendDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }

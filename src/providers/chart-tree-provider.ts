@@ -211,6 +211,14 @@ export const CHART_CATALOG: readonly ChartDefinition[] = [
     description: 'Analyze contributor ownership by file',
     icon: 'file-code',
   },
+  {
+    type: 'complexityTrend',
+    label: 'Complexity Trend',
+    category: 'Quality',
+    command: 'gitrx.openComplexityTrend',
+    description: 'Code complexity over time by contributor',
+    icon: 'graph-line',
+  },
 ] as const;
 
 /**
