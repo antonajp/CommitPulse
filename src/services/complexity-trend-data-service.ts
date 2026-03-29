@@ -2,11 +2,19 @@
  * Data service for the Complexity Trend chart.
  * Provides methods to fetch complexity trend data from commit_files
  * joined with commit_history and commit_contributors, with optional
- * filtering by date range, team, contributor, and repository.
+ * filtering by date range, team, contributor, repository, and tech stack.
+ *
+ * GITX-136: Added support for multi-series visualization with:
+ * - viewMode (contributor/team/repository/archLayer)
+ * - metric (average/total)
+ * - period (weekly/monthly/annual)
+ * - topN limiting
+ * - selectedEntities multi-select
+ * - pre-filters applied before viewMode breakdown
  *
  * All queries use parameterized SQL ($1, $2 placeholders).
  *
- * Ticket: GITX-133
+ * Ticket: GITX-133, GITX-134, GITX-136
  */
 
 import { DatabaseService } from '../database/database-service.js';
@@ -17,24 +25,16 @@ import {
   QUERY_COMPLEXITY_TREND_TEAMS,
   QUERY_COMPLEXITY_TREND_CONTRIBUTORS,
   QUERY_COMPLEXITY_TREND_REPOSITORIES,
-  QUERY_COMPLEXITY_TREND_DAILY,
-  QUERY_COMPLEXITY_TREND_WEEKLY,
-  QUERY_COMPLEXITY_TREND_MONTHLY,
-  QUERY_COMPLEXITY_TREND_DAILY_TEAM,
-  QUERY_COMPLEXITY_TREND_WEEKLY_TEAM,
-  QUERY_COMPLEXITY_TREND_MONTHLY_TEAM,
-  QUERY_COMPLEXITY_TREND_DAILY_CONTRIBUTOR,
-  QUERY_COMPLEXITY_TREND_WEEKLY_CONTRIBUTOR,
-  QUERY_COMPLEXITY_TREND_MONTHLY_CONTRIBUTOR,
-  QUERY_COMPLEXITY_TREND_DAILY_REPOSITORY,
-  QUERY_COMPLEXITY_TREND_WEEKLY_REPOSITORY,
-  QUERY_COMPLEXITY_TREND_MONTHLY_REPOSITORY,
+  QUERY_COMPLEXITY_TREND_TECH_STACKS,
 } from '../database/queries/complexity-trend-queries.js';
 import type {
   ComplexityTrendFilters,
   ComplexityTrendPoint,
   ComplexityTrendFilterOptions,
   ComplexityTrendPeriod,
+  ComplexityTrendViewMode,
+  ComplexityTrendTopN,
+  ComplexityTrendEntityRanking,
 } from '../views/webview/complexity-trend-protocol.js';
 
 /**
@@ -65,8 +65,45 @@ const MAX_DATE_RANGE_DAYS = 730;
 
 /**
  * Allowed period values (runtime allowlist).
+ * GITX-136: Removed 'daily', added 'annual'.
  */
-const ALLOWED_PERIODS: readonly ComplexityTrendPeriod[] = ['daily', 'weekly', 'monthly'] as const;
+const ALLOWED_PERIODS: readonly ComplexityTrendPeriod[] = ['weekly', 'monthly', 'annual'] as const;
+
+/**
+ * Allowed viewMode values (runtime allowlist) - GITX-136.
+ */
+const ALLOWED_VIEW_MODES: readonly ComplexityTrendViewMode[] = [
+  'contributor',
+  'team',
+  'repository',
+  'archLayer',
+] as const;
+
+/**
+ * Allowed topN values (runtime allowlist) - GITX-136.
+ */
+const ALLOWED_TOP_N: readonly ComplexityTrendTopN[] = [5, 10, 20] as const;
+
+/**
+ * Allowed tech stack categories (CWE-20 input validation).
+ * These must match the categories in vw_technology_stack_category.
+ * Ticket: GITX-134
+ */
+const ALLOWED_TECH_STACK_CATEGORIES: readonly string[] = [
+  'Audio',
+  'Backend',
+  'Configuration',
+  'Database',
+  'Dev Ops',
+  'Document',
+  'Frontend',
+  'Image',
+  'Multimedia',
+  'Other',
+  'Process Automation',
+  'Reports',
+  'Testing',
+] as const;
 
 /**
  * Response type for chart data.
@@ -77,10 +114,18 @@ export interface ComplexityTrendChartData {
 }
 
 /**
+ * Internal type for query builder result.
+ */
+interface QueryBuilderResult {
+  readonly sql: string;
+  readonly params: readonly unknown[];
+}
+
+/**
  * Service responsible for querying commit_files and commit_history tables
  * and returning typed data for the Complexity Trend chart.
  *
- * Ticket: GITX-133
+ * Ticket: GITX-133, GITX-134, GITX-136
  */
 export class ComplexityTrendDataService {
   private readonly logger: LoggerService;
@@ -115,35 +160,38 @@ export class ComplexityTrendDataService {
   }
 
   /**
-   * Fetch filter options for dropdowns (teams, contributors, repos).
+   * Fetch filter options for dropdowns (teams, contributors, repos, tech stacks).
    *
-   * @returns Filter options with teams, contributors, and repositories
+   * @returns Filter options with teams, contributors, repositories, and techStacks
    */
   async getFilterOptions(): Promise<ComplexityTrendFilterOptions> {
     this.logger.debug(CLASS_NAME, 'getFilterOptions', 'Fetching filter options');
 
     try {
-      const [teamsResult, contributorsResult, reposResult] = await Promise.all([
+      const [teamsResult, contributorsResult, reposResult, techStacksResult] = await Promise.all([
         this.db.query<{ team: string }>(QUERY_COMPLEXITY_TREND_TEAMS),
         this.db.query<{ contributor: string }>(QUERY_COMPLEXITY_TREND_CONTRIBUTORS),
         this.db.query<{ repository: string }>(QUERY_COMPLEXITY_TREND_REPOSITORIES),
+        this.db.query<{ category: string }>(QUERY_COMPLEXITY_TREND_TECH_STACKS),
       ]);
 
       const teams = teamsResult.rows.map(row => row.team).filter(Boolean);
       const contributors = contributorsResult.rows.map(row => row.contributor).filter(Boolean);
       const repositories = reposResult.rows.map(row => row.repository).filter(Boolean);
+      const techStacks = techStacksResult.rows.map(row => row.category).filter(Boolean);
 
       this.logger.debug(
         CLASS_NAME,
         'getFilterOptions',
-        `Found ${teams.length} teams, ${contributors.length} contributors, ${repositories.length} repositories`,
+        `Found ${teams.length} teams, ${contributors.length} contributors, ` +
+          `${repositories.length} repositories, ${techStacks.length} tech stacks`,
       );
 
-      return { teams, contributors, repositories };
+      return { teams, contributors, repositories, techStacks };
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.warn(CLASS_NAME, 'getFilterOptions', `Error fetching filter options: ${errorMsg}`);
-      return { teams: [], contributors: [], repositories: [] };
+      return { teams: [], contributors: [], repositories: [], techStacks: [] };
     }
   }
 
@@ -154,10 +202,40 @@ export class ComplexityTrendDataService {
    * @throws Error if any filter is invalid
    */
   private validateFilters(filters: ComplexityTrendFilters): void {
-    // Validate period
-    const period = filters.period ?? 'weekly';
+    // Validate period (GITX-136: weekly, monthly, annual)
+    const period = filters.period ?? 'monthly';
     if (!ALLOWED_PERIODS.includes(period)) {
       throw new Error(`Invalid period: ${period}. Allowed: ${ALLOWED_PERIODS.join(', ')}`);
+    }
+
+    // Validate viewMode (GITX-136)
+    if (filters.viewMode !== undefined && !ALLOWED_VIEW_MODES.includes(filters.viewMode)) {
+      throw new Error(`Invalid viewMode: ${filters.viewMode}. Allowed: ${ALLOWED_VIEW_MODES.join(', ')}`);
+    }
+
+    // Validate metric (GITX-136)
+    if (filters.metric !== undefined && filters.metric !== 'average' && filters.metric !== 'total') {
+      throw new Error(`Invalid metric: ${filters.metric}. Allowed: average, total`);
+    }
+
+    // Validate topN (GITX-136)
+    if (filters.topN !== undefined && !ALLOWED_TOP_N.includes(filters.topN)) {
+      throw new Error(`Invalid topN: ${filters.topN}. Allowed: ${ALLOWED_TOP_N.join(', ')}`);
+    }
+
+    // Validate selectedEntities (GITX-136)
+    if (filters.selectedEntities !== undefined) {
+      if (!Array.isArray(filters.selectedEntities)) {
+        throw new Error('selectedEntities must be an array');
+      }
+      if (filters.selectedEntities.length > 50) {
+        throw new Error('selectedEntities exceeds maximum of 50 entities');
+      }
+      for (const entity of filters.selectedEntities) {
+        if (typeof entity !== 'string' || entity.length > MAX_FILTER_STRING_LENGTH) {
+          throw new Error(`Invalid entity in selectedEntities: exceeds ${MAX_FILTER_STRING_LENGTH} characters`);
+        }
+      }
     }
 
     // Validate dates
@@ -181,7 +259,7 @@ export class ComplexityTrendDataService {
       }
     }
 
-    // Validate string length for filter values
+    // Validate string length for pre-filter values
     if (filters.team && filters.team.length > MAX_FILTER_STRING_LENGTH) {
       throw new Error(`Team filter exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
     }
@@ -191,67 +269,179 @@ export class ComplexityTrendDataService {
     if (filters.repository && filters.repository.length > MAX_FILTER_STRING_LENGTH) {
       throw new Error(`Repository filter exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
     }
+
+    // Validate tech stack against allowlist (GITX-134)
+    if (filters.techStack) {
+      if (filters.techStack.length > MAX_FILTER_STRING_LENGTH) {
+        throw new Error(`Tech stack filter exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
+      }
+      if (!ALLOWED_TECH_STACK_CATEGORIES.includes(filters.techStack)) {
+        throw new Error(
+          `Invalid tech stack category: ${filters.techStack}. Allowed: ${ALLOWED_TECH_STACK_CATEGORIES.join(', ')}`,
+        );
+      }
+    }
   }
 
   /**
-   * Allowed filter type values (runtime allowlist for defense-in-depth).
-   */
-  private static readonly ALLOWED_FILTER_TYPES = ['none', 'team', 'contributor', 'repository'] as const;
-
-  /**
-   * Select the appropriate query based on period and filter type.
-   * Performs runtime validation as defense-in-depth against query injection.
+   * Get the date aggregation expression based on period.
+   * Uses allowlist validation for defense-in-depth.
+   * GITX-136: Added 'annual' period, removed 'daily'.
    *
-   * @param period - Time period (daily, weekly, monthly)
-   * @param filterType - Type of filter applied (none, team, contributor, repository)
-   * @returns SQL query string
-   * @throws Error if period or filterType is invalid
+   * @param period - Time period (weekly, monthly, annual)
+   * @returns SQL expression for date aggregation
    */
-  private selectQuery(
-    period: ComplexityTrendPeriod,
-    filterType: 'none' | 'team' | 'contributor' | 'repository',
-  ): string {
-    // Defense-in-depth: Runtime validation to prevent SQL injection
-    // even if TypeScript type system is bypassed
+  private getDateAggregation(period: ComplexityTrendPeriod): string {
+    // Allowlist validation - this should never throw if validateFilters was called
     if (!ALLOWED_PERIODS.includes(period)) {
-      this.logger.error(CLASS_NAME, 'selectQuery', `Invalid period rejected: ${String(period)}`);
-      throw new Error(`Invalid period: ${String(period)}`);
-    }
-    if (!ComplexityTrendDataService.ALLOWED_FILTER_TYPES.includes(filterType)) {
-      this.logger.error(CLASS_NAME, 'selectQuery', `Invalid filterType rejected: ${String(filterType)}`);
-      throw new Error(`Invalid filterType: ${String(filterType)}`);
+      throw new Error(`Invalid period: ${period}`);
     }
 
-    // Use a lookup table approach to avoid dynamic query construction
-    const queryMap: Record<ComplexityTrendPeriod, Record<'none' | 'team' | 'contributor' | 'repository', string>> = {
-      daily: {
-        none: QUERY_COMPLEXITY_TREND_DAILY,
-        team: QUERY_COMPLEXITY_TREND_DAILY_TEAM,
-        contributor: QUERY_COMPLEXITY_TREND_DAILY_CONTRIBUTOR,
-        repository: QUERY_COMPLEXITY_TREND_DAILY_REPOSITORY,
-      },
-      weekly: {
-        none: QUERY_COMPLEXITY_TREND_WEEKLY,
-        team: QUERY_COMPLEXITY_TREND_WEEKLY_TEAM,
-        contributor: QUERY_COMPLEXITY_TREND_WEEKLY_CONTRIBUTOR,
-        repository: QUERY_COMPLEXITY_TREND_WEEKLY_REPOSITORY,
-      },
-      monthly: {
-        none: QUERY_COMPLEXITY_TREND_MONTHLY,
-        team: QUERY_COMPLEXITY_TREND_MONTHLY_TEAM,
-        contributor: QUERY_COMPLEXITY_TREND_MONTHLY_CONTRIBUTOR,
-        repository: QUERY_COMPLEXITY_TREND_MONTHLY_REPOSITORY,
-      },
+    // Static lookup - no string interpolation
+    const dateAggregationMap: Record<ComplexityTrendPeriod, string> = {
+      weekly: "DATE_TRUNC('week', ch.commit_date)::DATE",
+      monthly: "DATE_TRUNC('month', ch.commit_date)::DATE",
+      annual: "DATE_TRUNC('year', ch.commit_date)::DATE",
     };
 
-    return queryMap[period][filterType];
+    return dateAggregationMap[period];
+  }
+
+  /**
+   * Get the group key expression based on viewMode dimension.
+   * Uses allowlist validation for defense-in-depth.
+   * GITX-136: Renamed from getGroupKeyExpression, uses viewMode.
+   *
+   * @param viewMode - View mode dimension
+   * @returns SQL expression for group key
+   */
+  private getViewModeExpression(viewMode: ComplexityTrendViewMode): string {
+    // Allowlist validation - this should never throw if validateFilters was called
+    if (!ALLOWED_VIEW_MODES.includes(viewMode)) {
+      throw new Error(`Invalid viewMode: ${viewMode}`);
+    }
+
+    // Static lookup - no string interpolation
+    const viewModeMap: Record<ComplexityTrendViewMode, string> = {
+      contributor: 'COALESCE(cc.full_name, ch.author)',
+      team: "COALESCE(cc.team, 'Unassigned')",
+      repository: 'ch.repository',
+      archLayer: 'vtsc.category',
+    };
+
+    return viewModeMap[viewMode];
+  }
+
+  /**
+   * Build SQL query dynamically based on filters.
+   * Uses parameterized queries only - no string interpolation of user input.
+   *
+   * GITX-136: Updated to support viewMode, topN, selectedEntities, and totalComplexity.
+   *
+   * @param filters - Validated filters
+   * @param startDate - Start date (validated)
+   * @param endDate - End date (validated)
+   * @returns QueryBuilderResult with SQL and parameters
+   */
+  private buildQuery(
+    filters: ComplexityTrendFilters,
+    startDate: string,
+    endDate: string,
+  ): QueryBuilderResult {
+    const period = filters.period ?? 'monthly';
+    const viewMode = filters.viewMode ?? 'contributor';
+
+    const dateAggregation = this.getDateAggregation(period);
+    const viewModeExpression = this.getViewModeExpression(viewMode);
+
+    // Build parameter array - dates are always first two params
+    const params: unknown[] = [startDate, endDate];
+    let paramIndex = 3;
+
+    // Build WHERE clause conditions
+    const whereConditions: string[] = [
+      'ch.is_merge = FALSE',
+      '(cf.complexity IS NOT NULL OR cf.weighted_complexity IS NOT NULL)',
+      'ch.commit_date >= $1::DATE',
+      'ch.commit_date <= $2::DATE',
+    ];
+
+    // Determine if tech stack JOIN is needed (GITX-136)
+    const needsTechStackJoin = viewMode === 'archLayer' || filters.techStack !== undefined;
+
+    // Add pre-filter conditions with parameterized values (GITX-136)
+    if (filters.team) {
+      whereConditions.push(`cc.team = $${paramIndex}`);
+      params.push(filters.team);
+      paramIndex++;
+    }
+    if (filters.contributor) {
+      whereConditions.push(`(cc.full_name = $${paramIndex} OR ch.author = $${paramIndex})`);
+      params.push(filters.contributor);
+      paramIndex++;
+    }
+    if (filters.repository) {
+      whereConditions.push(`ch.repository = $${paramIndex}`);
+      params.push(filters.repository);
+      paramIndex++;
+    }
+    if (filters.techStack) {
+      whereConditions.push(`vtsc.category = $${paramIndex}`);
+      params.push(filters.techStack);
+      paramIndex++;
+    }
+
+    // Add selectedEntities filter if provided (GITX-136)
+    if (filters.selectedEntities && filters.selectedEntities.length > 0) {
+      const placeholders = filters.selectedEntities.map((_, i) => `$${paramIndex + i}`).join(', ');
+      whereConditions.push(`${viewModeExpression} IN (${placeholders})`);
+      params.push(...filters.selectedEntities);
+      paramIndex += filters.selectedEntities.length;
+    }
+
+    // Build the complete SQL query
+    const techStackJoin = needsTechStackJoin
+      ? 'LEFT JOIN vw_technology_stack_category vtsc ON cf.file_extension = vtsc.file_extension'
+      : '';
+
+    // Add LIMIT as parameterized value (CWE-89 prevention)
+    const limitParamIndex = paramIndex;
+    params.push(MAX_RESULT_ROWS);
+
+    // GITX-136: Added total_complexity for metric toggle support
+    const sql = `
+SELECT
+  ${dateAggregation} AS date,
+  ${viewModeExpression} AS group_key,
+  AVG(COALESCE(cf.complexity, cf.weighted_complexity, 0))::NUMERIC(10,2) AS avg_complexity,
+  SUM(COALESCE(cf.complexity, cf.weighted_complexity, 0))::NUMERIC(10,2) AS total_complexity,
+  SUM(COALESCE(cf.complexity_change, 0))::BIGINT AS complexity_delta,
+  MAX(COALESCE(cf.complexity, cf.weighted_complexity, 0))::INTEGER AS max_complexity,
+  COUNT(DISTINCT ch.sha)::INTEGER AS commit_count,
+  COUNT(DISTINCT cf.filename)::INTEGER AS file_count
+FROM commit_files cf
+INNER JOIN commit_history ch ON cf.sha = ch.sha
+LEFT JOIN commit_contributors cc ON ch.author = cc.login
+${techStackJoin}
+WHERE ${whereConditions.join('\n  AND ')}
+GROUP BY ${dateAggregation}, ${viewModeExpression}
+ORDER BY date ASC, total_complexity DESC
+LIMIT $${limitParamIndex};
+`;
+
+    this.logger.trace(CLASS_NAME, 'buildQuery', `Generated SQL for viewMode=${viewMode}, period=${period}`);
+    this.logger.trace(CLASS_NAME, 'buildQuery', `Params: ${JSON.stringify(params)}`);
+
+    return { sql, params };
   }
 
   /**
    * Fetch complexity trend data with optional filters.
    * Validates inputs before query execution.
    *
-   * @param filters - Optional date range, period, team, contributor, repository filters
+   * GITX-136: Updated to support viewMode, topN, selectedEntities, and totalComplexity.
+   *
+   * @param filters - Optional filters including viewMode, metric, topN, selectedEntities
    * @returns Array of ComplexityTrendPoint sorted by date ascending
    */
   async getComplexityTrend(filters: ComplexityTrendFilters = {}): Promise<readonly ComplexityTrendPoint[]> {
@@ -264,34 +454,14 @@ export class ComplexityTrendDataService {
     const endDate: string = filters.endDate ?? new Date().toISOString().split('T')[0]!;
     const startDate = filters.startDate ?? this.calculateStartDate(endDate, DEFAULT_DAYS_BACK);
 
-    const period: ComplexityTrendPeriod = filters.period ?? 'weekly';
-
-    // Determine filter type and select query
-    let filterType: 'none' | 'team' | 'contributor' | 'repository' = 'none';
-    let params: unknown[] = [startDate, endDate];
-
-    if (filters.team) {
-      filterType = 'team';
-      params = [startDate, endDate, filters.team];
-      this.logger.debug(CLASS_NAME, 'getComplexityTrend', `Using team filter: ${filters.team}`);
-    } else if (filters.contributor) {
-      filterType = 'contributor';
-      params = [startDate, endDate, filters.contributor];
-      this.logger.debug(CLASS_NAME, 'getComplexityTrend', `Using contributor filter: ${filters.contributor}`);
-    } else if (filters.repository) {
-      filterType = 'repository';
-      params = [startDate, endDate, filters.repository];
-      this.logger.debug(CLASS_NAME, 'getComplexityTrend', `Using repository filter: ${filters.repository}`);
-    }
-
-    const sql = this.selectQuery(period, filterType);
-    this.logger.trace(CLASS_NAME, 'getComplexityTrend', `Period: ${period}, Filter: ${filterType}`);
-    this.logger.trace(CLASS_NAME, 'getComplexityTrend', `Params: ${JSON.stringify(params)}`);
+    // Build and execute query
+    const { sql, params } = this.buildQuery(filters, startDate, endDate);
 
     const result = await this.db.query<{
       date: Date | string;
       group_key: string;
       avg_complexity: number;
+      total_complexity: number;
       complexity_delta: number;
       max_complexity: number;
       commit_count: number;
@@ -300,8 +470,8 @@ export class ComplexityTrendDataService {
 
     this.logger.debug(CLASS_NAME, 'getComplexityTrend', `Query returned ${result.rows.length} rows`);
 
-    // Apply row limit for safety
-    const limitedRows = result.rows.slice(0, MAX_RESULT_ROWS);
+    // Apply row limit for safety (limit is in query, but double-check)
+    let limitedRows = result.rows.slice(0, MAX_RESULT_ROWS);
     if (result.rows.length > MAX_RESULT_ROWS) {
       this.logger.warn(
         CLASS_NAME,
@@ -310,10 +480,22 @@ export class ComplexityTrendDataService {
       );
     }
 
+    // GITX-136: Apply topN filtering if specified and no selectedEntities
+    if (filters.topN && (!filters.selectedEntities || filters.selectedEntities.length === 0)) {
+      const topEntities = this.getTopEntities(limitedRows, filters.topN);
+      limitedRows = limitedRows.filter(row => topEntities.has(row.group_key));
+      this.logger.debug(
+        CLASS_NAME,
+        'getComplexityTrend',
+        `Applied topN=${filters.topN}, kept ${topEntities.size} entities`,
+      );
+    }
+
     const rows: ComplexityTrendPoint[] = limitedRows.map(row => ({
       date: row.date instanceof Date ? row.date.toISOString().split('T')[0] ?? '' : String(row.date),
       groupKey: row.group_key ?? 'Unknown',
       avgComplexity: Number(row.avg_complexity) || 0,
+      totalComplexity: Number(row.total_complexity) || 0,
       complexityDelta: Number(row.complexity_delta) || 0,
       maxComplexity: Number(row.max_complexity) || 0,
       commitCount: Number(row.commit_count) || 0,
@@ -322,6 +504,33 @@ export class ComplexityTrendDataService {
 
     this.logger.debug(CLASS_NAME, 'getComplexityTrend', `Returning ${rows.length} trend data points`);
     return rows;
+  }
+
+  /**
+   * Get top N entities by total complexity from result set.
+   * GITX-136
+   *
+   * @param rows - Query result rows
+   * @param topN - Number of top entities to return
+   * @returns Set of entity names (group_key values)
+   */
+  private getTopEntities(
+    rows: readonly { group_key: string; total_complexity: number }[],
+    topN: ComplexityTrendTopN,
+  ): Set<string> {
+    // Sum total complexity by entity
+    const entityTotals = new Map<string, number>();
+    for (const row of rows) {
+      const current = entityTotals.get(row.group_key) ?? 0;
+      entityTotals.set(row.group_key, current + Number(row.total_complexity));
+    }
+
+    // Sort by total complexity descending and take top N
+    const sorted = Array.from(entityTotals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topN);
+
+    return new Set(sorted.map(([entity]) => entity));
   }
 
   /**
@@ -345,6 +554,109 @@ export class ComplexityTrendDataService {
     this.logger.info(CLASS_NAME, 'getChartData', `Chart data ready: ${data.length} data points`);
 
     return { data, hasData: data.length > 0 };
+  }
+
+  /**
+   * Get entity rankings for the Top N dropdown and multi-select picker.
+   * Returns entities sorted by total complexity descending.
+   * GITX-136
+   *
+   * @param viewMode - Which dimension to rank entities for
+   * @param filters - Pre-filters to apply before ranking
+   * @returns Array of entity rankings sorted by total complexity
+   */
+  async getEntityRankings(
+    viewMode: ComplexityTrendViewMode,
+    filters: ComplexityTrendFilters = {},
+  ): Promise<readonly ComplexityTrendEntityRanking[]> {
+    this.logger.debug(
+      CLASS_NAME,
+      'getEntityRankings',
+      `Fetching rankings for viewMode=${viewMode}, filters=${JSON.stringify(filters)}`,
+    );
+
+    // Validate viewMode
+    if (!ALLOWED_VIEW_MODES.includes(viewMode)) {
+      throw new Error(`Invalid viewMode: ${viewMode}. Allowed: ${ALLOWED_VIEW_MODES.join(', ')}`);
+    }
+
+    // Calculate date range
+    const endDate: string = filters.endDate ?? new Date().toISOString().split('T')[0]!;
+    const startDate = filters.startDate ?? this.calculateStartDate(endDate, DEFAULT_DAYS_BACK);
+
+    const viewModeExpression = this.getViewModeExpression(viewMode);
+
+    // Build parameter array
+    const params: unknown[] = [startDate, endDate];
+    let paramIndex = 3;
+
+    // Build WHERE clause conditions
+    const whereConditions: string[] = [
+      'ch.is_merge = FALSE',
+      '(cf.complexity IS NOT NULL OR cf.weighted_complexity IS NOT NULL)',
+      'ch.commit_date >= $1::DATE',
+      'ch.commit_date <= $2::DATE',
+    ];
+
+    // Determine if tech stack JOIN is needed
+    const needsTechStackJoin = viewMode === 'archLayer' || filters.techStack !== undefined;
+
+    // Add pre-filter conditions
+    if (filters.team) {
+      whereConditions.push(`cc.team = $${paramIndex}`);
+      params.push(filters.team);
+      paramIndex++;
+    }
+    if (filters.contributor) {
+      whereConditions.push(`(cc.full_name = $${paramIndex} OR ch.author = $${paramIndex})`);
+      params.push(filters.contributor);
+      paramIndex++;
+    }
+    if (filters.repository) {
+      whereConditions.push(`ch.repository = $${paramIndex}`);
+      params.push(filters.repository);
+      paramIndex++;
+    }
+    if (filters.techStack) {
+      whereConditions.push(`vtsc.category = $${paramIndex}`);
+      params.push(filters.techStack);
+      paramIndex++;
+    }
+
+    const techStackJoin = needsTechStackJoin
+      ? 'LEFT JOIN vw_technology_stack_category vtsc ON cf.file_extension = vtsc.file_extension'
+      : '';
+
+    // Limit to 100 entities max
+    const limitParamIndex = paramIndex;
+    params.push(100);
+
+    const sql = `
+SELECT
+  ${viewModeExpression} AS entity,
+  SUM(COALESCE(cf.complexity, cf.weighted_complexity, 0))::NUMERIC(10,2) AS total_complexity
+FROM commit_files cf
+INNER JOIN commit_history ch ON cf.sha = ch.sha
+LEFT JOIN commit_contributors cc ON ch.author = cc.login
+${techStackJoin}
+WHERE ${whereConditions.join('\n  AND ')}
+GROUP BY ${viewModeExpression}
+HAVING SUM(COALESCE(cf.complexity, cf.weighted_complexity, 0)) > 0
+ORDER BY total_complexity DESC
+LIMIT $${limitParamIndex};
+`;
+
+    const result = await this.db.query<{
+      entity: string;
+      total_complexity: number;
+    }>(sql, params);
+
+    this.logger.debug(CLASS_NAME, 'getEntityRankings', `Query returned ${result.rows.length} entities`);
+
+    return result.rows.map(row => ({
+      entity: row.entity ?? 'Unknown',
+      totalComplexity: Number(row.total_complexity) || 0,
+    }));
   }
 
   /**

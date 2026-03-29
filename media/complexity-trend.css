@@ -3,7 +3,10 @@
  * Uses VS Code CSS variables for theme integration.
  * Reuses base styles from story-points-trend.css patterns.
  *
- * Ticket: GITX-133
+ * GITX-136: Added tab-group, metric-toggle, and entity-select styles
+ * for multi-series visualization controls.
+ *
+ * Ticket: GITX-133, GITX-134, GITX-136
  */
 
 /* ============================================================================
@@ -273,6 +276,353 @@ body {
 }
 
 /* ============================================================================
+   Chart Controls Bar (GITX-136)
+   Contains tab-group, metric-toggle, period-toggle, top-N, entity-select
+   ============================================================================ */
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  margin-bottom: 12px;
+}
+
+/* ============================================================================
+   Tab Group (View Mode Toggle) - GITX-136
+   Styled like LOC Committed chart tabs
+   ============================================================================ */
+
+.tab-group {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.tab-btn {
+  padding: 4px 14px;
+  font-size: 0.85em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-descriptionForeground, #888888);
+  background-color: transparent;
+  border: none;
+  border-right: 1px solid var(--vscode-panel-border, #444444);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.tab-btn:last-child {
+  border-right: none;
+}
+
+.tab-btn:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.tab-btn.active {
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  font-weight: 600;
+}
+
+.tab-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+/* ============================================================================
+   Metric Toggle (Average/Total) - GITX-136
+   ============================================================================ */
+
+.metric-toggle {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.metric-btn {
+  padding: 4px 12px;
+  font-size: 0.82em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-descriptionForeground, #888888);
+  background-color: transparent;
+  border: none;
+  border-right: 1px solid var(--vscode-panel-border, #444444);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.metric-btn:last-child {
+  border-right: none;
+}
+
+.metric-btn:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.metric-btn.active {
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  font-weight: 600;
+}
+
+.metric-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+/* ============================================================================
+   Period Toggle (Weekly/Monthly/Annual) - GITX-136
+   ============================================================================ */
+
+.period-toggle {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.period-btn {
+  padding: 4px 12px;
+  font-size: 0.82em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-descriptionForeground, #888888);
+  background-color: transparent;
+  border: none;
+  border-right: 1px solid var(--vscode-panel-border, #444444);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.period-btn:last-child {
+  border-right: none;
+}
+
+.period-btn:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.period-btn.active {
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  font-weight: 600;
+}
+
+.period-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+/* ============================================================================
+   Top N Dropdown - GITX-136
+   ============================================================================ */
+
+.topn-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topn-group label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #999);
+  white-space: nowrap;
+}
+
+.topn-group select {
+  background: var(--vscode-dropdown-background, #3c3c3c);
+  color: var(--vscode-dropdown-foreground, #cccccc);
+  border: 1px solid var(--vscode-dropdown-border, #444);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.85em;
+  min-width: 70px;
+  cursor: pointer;
+}
+
+.topn-group select:hover {
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.topn-group select:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+/* ============================================================================
+   Entity Multi-Select Picker - GITX-136
+   ============================================================================ */
+
+.entity-select-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.entity-select-group label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #999);
+  white-space: nowrap;
+}
+
+.entity-select-btn {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  border: 1px solid var(--vscode-dropdown-border, #444);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.entity-select-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.entity-select-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+}
+
+.entity-select-btn .badge {
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #ffffff);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 0.75em;
+  font-weight: 600;
+}
+
+/* Entity Picker Dropdown Panel */
+.entity-picker-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 250px;
+  max-width: 350px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--vscode-dropdown-background, #3c3c3c);
+  border: 1px solid var(--vscode-dropdown-border, #444);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  display: none;
+}
+
+.entity-picker-panel.visible {
+  display: block;
+}
+
+.entity-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+  background: var(--vscode-sideBar-background, #252526);
+}
+
+.entity-picker-header button {
+  background: none;
+  border: none;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  font-size: 0.8em;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.entity-picker-header button:hover {
+  text-decoration: underline;
+}
+
+.entity-picker-list {
+  padding: 4px 0;
+}
+
+.entity-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.entity-picker-item:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.entity-picker-item input[type="checkbox"] {
+  accent-color: var(--vscode-focusBorder, #007acc);
+  cursor: pointer;
+}
+
+.entity-picker-item label {
+  flex: 1;
+  font-size: 0.85em;
+  color: var(--vscode-foreground, #cccccc);
+  cursor: pointer;
+}
+
+.entity-picker-item .entity-complexity {
+  font-size: 0.75em;
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+/* Selected entities chips */
+.selected-entities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #ffffff);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+}
+
+.entity-chip .remove-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-badge-foreground, #ffffff);
+  cursor: pointer;
+  font-size: 0.9em;
+  line-height: 1;
+  opacity: 0.7;
+  padding: 0 2px;
+}
+
+.entity-chip .remove-btn:hover {
+  opacity: 1;
+}
+
+/* Container for relative positioning of picker */
+.entity-select-container {
+  position: relative;
+}
+
+/* ============================================================================
    Summary Stats
    ============================================================================ */
 
@@ -398,15 +748,51 @@ body {
 }
 
 /* ============================================================================
+   Legend Controls (GITX-134)
+   ============================================================================ */
+
+.legend-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.legend-select-all-btn,
+.legend-clear-all-btn {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.legend-select-all-btn:hover,
+.legend-clear-all-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.legend-select-all-btn:focus,
+.legend-clear-all-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+}
+
+/* ============================================================================
    Legend (Complexity Trend specific: color swatch + line samples)
+   Interactive legend for series toggling (GITX-134)
    ============================================================================ */
 
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 8px;
   margin-bottom: 16px;
   padding: 8px;
+  background: var(--vscode-textCodeBlock-background, #1e1e1e);
+  border-radius: 4px;
+  border: 1px solid var(--vscode-panel-border, #444);
 }
 
 .complexity-legend .legend-item {
@@ -417,7 +803,9 @@ body {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: background-color 0.15s;
+  transition: background-color 0.15s, opacity 0.15s;
+  min-height: 44px; /* Touch target minimum (GITX-134) */
+  min-width: 44px;
 }
 
 .complexity-legend .legend-item:hover {
@@ -425,11 +813,21 @@ body {
 }
 
 .complexity-legend .legend-item:focus {
-  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  outline: 2px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: 1px;
 }
 
 .complexity-legend .legend-item.disabled {
   opacity: 0.4;
+}
+
+.complexity-legend .legend-item.disabled .legend-swatch {
+  background-color: var(--vscode-disabledForeground, #666) !important;
+}
+
+.complexity-legend .legend-item.disabled .legend-label {
+  text-decoration: line-through;
+  color: var(--vscode-disabledForeground, #666);
 }
 
 .complexity-legend .legend-swatch {
@@ -437,10 +835,12 @@ body {
   height: 3px;
   border-radius: 2px;
   flex-shrink: 0;
+  transition: background-color 0.15s;
 }
 
 .complexity-legend .legend-label {
   color: var(--vscode-foreground, #cccccc);
+  transition: color 0.15s;
 }
 
 /* ============================================================================
@@ -603,6 +1003,28 @@ body {
    Responsive
    ============================================================================ */
 
+@media (max-width: 900px) {
+  /* Stack chart controls vertically on medium screens (GITX-136) */
+  .chart-controls {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .tab-group,
+  .metric-toggle,
+  .period-toggle {
+    width: 100%;
+  }
+
+  .tab-btn,
+  .metric-btn,
+  .period-btn {
+    flex: 1;
+    text-align: center;
+  }
+}
+
 @media (max-width: 600px) {
   .chart-header {
     flex-direction: column;
@@ -627,5 +1049,74 @@ body {
 
   .summary-stats {
     flex-direction: column;
+  }
+
+  /* Touch-friendly controls on mobile (GITX-136) */
+  .tab-btn,
+  .metric-btn,
+  .period-btn {
+    padding: 8px 10px;
+    min-height: 44px;
+  }
+
+  .topn-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topn-group select {
+    flex: 1;
+    max-width: 120px;
+  }
+
+  .entity-select-group {
+    width: 100%;
+  }
+
+  .entity-select-btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .entity-picker-panel {
+    left: 0;
+    right: 0;
+    min-width: unset;
+    max-width: unset;
+  }
+
+  /* Touch-friendly legend on mobile (GITX-134) */
+  .chart-legend {
+    gap: 4px;
+  }
+
+  .complexity-legend .legend-item {
+    min-height: 48px;
+    padding: 8px 12px;
+  }
+
+  .legend-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .legend-select-all-btn,
+  .legend-clear-all-btn {
+    flex: 1;
+    padding: 8px;
+  }
+}
+
+/* ============================================================================
+   High Contrast Mode Support
+   ============================================================================ */
+
+@media (prefers-contrast: more) {
+  .complexity-legend .legend-item:focus {
+    outline-width: 3px;
+  }
+
+  .complexity-legend .legend-item.disabled {
+    opacity: 0.6;
   }
 }
