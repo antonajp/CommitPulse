@@ -8,7 +8,7 @@
  * - Rate limiting on message handlers
  * - Proper disposal and resource cleanup
  *
- * Ticket: GITX-133
+ * Ticket: GITX-133, GITX-134, GITX-136
  */
 
 import * as vscode from 'vscode';
@@ -273,6 +273,20 @@ export class ComplexityTrendPanel implements vscode.Disposable {
           this.postMessage({
             type: 'complexityTrendFilterOptions',
             options,
+          });
+          break;
+        }
+
+        case 'requestComplexityTrendEntityRanking': {
+          // GITX-136: Handle entity ranking request for multi-select picker
+          const rankings = await this.dataService.getEntityRankings(
+            message.viewMode,
+            message.filters,
+          );
+          this.postMessage({
+            type: 'complexityTrendEntityRanking',
+            rankings,
+            viewMode: message.viewMode,
           });
           break;
         }
