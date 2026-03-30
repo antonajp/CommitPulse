@@ -61,16 +61,15 @@ ORDER BY repository ASC;
 `;
 
 /**
- * Get distinct technology stack categories from vw_technology_stack_category.
- * Used for tech stack filter dropdown (GITX-134).
+ * Get distinct architecture component categories from commit_files.arc_component.
+ * Used for tech stack filter dropdown (GITX-134, GITX-141).
  */
 export const QUERY_COMPLEXITY_TREND_TECH_STACKS = `
-SELECT DISTINCT category
-FROM vw_technology_stack_category
-WHERE category IS NOT NULL
-  AND category != ''
-  AND category != 'Other'
-ORDER BY category ASC;
+SELECT DISTINCT arc_component AS category
+FROM commit_files
+WHERE arc_component IS NOT NULL
+  AND arc_component != ''
+ORDER BY arc_component ASC;
 `;
 
 // Note: Dynamic query construction is handled in ComplexityTrendDataService.buildQuery()

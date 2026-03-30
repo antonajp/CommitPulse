@@ -279,8 +279,8 @@ export class DashboardDataService {
   // ==========================================================================
 
   /**
-   * Fetch technology stack distribution: file extensions grouped by category.
-   * Queries vw_technology_stack_category view.
+   * Fetch technology stack distribution: files grouped by architecture component.
+   * Queries commit_files.arc_component column directly (GITX-141).
    *
    * @param filters - Optional repository filter
    * @returns Array of TechStackEntry sorted by file count descending
@@ -289,47 +289,43 @@ export class DashboardDataService {
     this.validateFilters(filters, 'getTechStackDistribution');
     this.logger.debug(CLASS_NAME, 'getTechStackDistribution', `Fetching tech stack distribution: filters=${JSON.stringify(filters)}`);
 
-    const conditions: string[] = [];
+    const conditions: string[] = ['cf.arc_component IS NOT NULL'];
     const params: unknown[] = [];
     let paramIndex = 1;
 
     const repos = normalizeRepositoryFilter(filters.repository);
     if (repos) {
-      // Join with commit_history to get repository context
-      // vw_technology_stack_category is based on commit_files_types which has sha FK to commit_history
       const placeholders = repos.map((_, i) => `$${paramIndex + i}`);
       params.push(...repos);
       paramIndex += repos.length;
       conditions.push(`ch.repository IN (${placeholders.join(', ')})`);
     }
 
-    // Build the query with optional repository filter
-    // Need to join commit_files_types with commit_history to filter by repository
-    // since vw_technology_stack_category doesn't include repository context directly
+    // Build the query - GITX-141: Use commit_files.arc_component directly
     let sql: string;
-    if (conditions.length > 0) {
-      // Query with repository filter - join through commit_files_types and commit_history
+    if (repos) {
+      // Query with repository filter - join commit_files with commit_history
       sql = `
         SELECT
-          vtsc.category,
-          COUNT(DISTINCT cft.file_extension)::INTEGER AS extension_count,
+          cf.arc_component AS category,
+          COUNT(DISTINCT cf.file_extension)::INTEGER AS extension_count,
           COUNT(*)::INTEGER AS file_count
-        FROM commit_files_types cft
-        INNER JOIN commit_history ch ON cft.sha = ch.sha
-        INNER JOIN vw_technology_stack_category vtsc ON cft.file_extension = vtsc.file_extension
+        FROM commit_files cf
+        INNER JOIN commit_history ch ON cf.sha = ch.sha
         WHERE ${conditions.join(' AND ')}
-        GROUP BY vtsc.category
+        GROUP BY cf.arc_component
         ORDER BY file_count DESC
       `;
     } else {
-      // Original query without filter
+      // Query without filter - direct aggregation on commit_files
       sql = `
         SELECT
-          vtsc.category,
-          COUNT(DISTINCT vtsc.file_extension)::INTEGER AS extension_count,
+          cf.arc_component AS category,
+          COUNT(DISTINCT cf.file_extension)::INTEGER AS extension_count,
           COUNT(*)::INTEGER AS file_count
-        FROM vw_technology_stack_category vtsc
-        GROUP BY vtsc.category
+        FROM commit_files cf
+        WHERE cf.arc_component IS NOT NULL
+        GROUP BY cf.arc_component
         ORDER BY file_count DESC
       `;
     }

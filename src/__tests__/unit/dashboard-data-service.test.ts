@@ -174,10 +174,11 @@ describe('DashboardDataService', () => {
     });
 
     it('should return mapped tech stack entries', async () => {
+      // GITX-141: Updated to use new arc_component category names
       vi.mocked(mockDb.query).mockResolvedValueOnce({
         rows: [
-          { category: 'Frontend', extension_count: 5, file_count: 120 },
-          { category: 'Backend', extension_count: 3, file_count: 80 },
+          { category: 'Front-End', extension_count: 5, file_count: 120 },
+          { category: 'Back-End', extension_count: 3, file_count: 80 },
         ],
         rowCount: 2,
       });
@@ -186,12 +187,12 @@ describe('DashboardDataService', () => {
 
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual({
-        category: 'Frontend',
+        category: 'Front-End',
         extensionCount: 5,
         fileCount: 120,
       });
       expect(result[1]).toEqual({
-        category: 'Backend',
+        category: 'Back-End',
         extensionCount: 3,
         fileCount: 80,
       });

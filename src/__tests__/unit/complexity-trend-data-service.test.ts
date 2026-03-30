@@ -195,11 +195,12 @@ describe('ComplexityTrendDataService', () => {
   // getComplexityTrend - viewMode parameter (GITX-136)
   // ==========================================================================
   describe('viewMode parameter', () => {
+    // GITX-141: Updated archLayer to use cf.arc_component instead of vtsc.category
     const testCases: { viewMode: ComplexityTrendViewMode; expectedFragment: string }[] = [
       { viewMode: 'contributor', expectedFragment: 'COALESCE(cc.full_name, ch.author)' },
       { viewMode: 'team', expectedFragment: "COALESCE(cc.team, 'Unassigned')" },
       { viewMode: 'repository', expectedFragment: 'ch.repository' },
-      { viewMode: 'archLayer', expectedFragment: 'vtsc.category' },
+      { viewMode: 'archLayer', expectedFragment: 'cf.arc_component' },
     ];
 
     testCases.forEach(({ viewMode, expectedFragment }) => {
@@ -217,7 +218,8 @@ describe('ComplexityTrendDataService', () => {
       });
     });
 
-    it('should include tech stack JOIN when viewMode is archLayer', async () => {
+    // GITX-141: archLayer now uses cf.arc_component directly, no JOIN needed
+    it('should use arc_component column when viewMode is archLayer', async () => {
       await service.getComplexityTrend({
         viewMode: 'archLayer',
         startDate: '2025-01-01',
@@ -226,20 +228,23 @@ describe('ComplexityTrendDataService', () => {
 
       const call = vi.mocked(mockDb.query).mock.calls[0];
       const sql = call![0] as string;
-      expect(sql).toContain('vw_technology_stack_category');
+      expect(sql).toContain('cf.arc_component');
+      expect(sql).not.toContain('vw_technology_stack_category');
     });
 
-    it('should include tech stack JOIN when techStack filter is set', async () => {
+    // GITX-141: techStack filter now uses cf.arc_component directly, no JOIN needed
+    it('should filter by arc_component when techStack filter is set', async () => {
       await service.getComplexityTrend({
         viewMode: 'contributor',
-        techStack: 'Frontend',
+        techStack: 'Front-End',
         startDate: '2025-01-01',
         endDate: '2025-03-01',
       });
 
       const call = vi.mocked(mockDb.query).mock.calls[0];
       const sql = call![0] as string;
-      expect(sql).toContain('vw_technology_stack_category');
+      expect(sql).toContain('cf.arc_component');
+      expect(sql).not.toContain('vw_technology_stack_category');
     });
 
     it('should reject invalid viewMode values', async () => {
@@ -256,22 +261,20 @@ describe('ComplexityTrendDataService', () => {
   });
 
   // ==========================================================================
-  // getComplexityTrend - techStack filter validation (GITX-134)
+  // getComplexityTrend - techStack filter validation (GITX-134, GITX-141)
   // ==========================================================================
   describe('techStack filter validation', () => {
+    // GITX-141: Updated to use new arc_component category names
     const validTechStacks = [
-      'Audio',
-      'Backend',
+      'Assets',
+      'Back-End',
+      'Build/Tooling',
       'Configuration',
       'Database',
-      'Dev Ops',
-      'Document',
-      'Frontend',
-      'Image',
-      'Multimedia',
+      'DevOps/CI',
+      'Documentation',
+      'Front-End',
       'Other',
-      'Process Automation',
-      'Reports',
       'Testing',
     ];
 
@@ -299,7 +302,7 @@ describe('ComplexityTrendDataService', () => {
     it('should reject SQL injection in techStack', async () => {
       await expect(
         service.getComplexityTrend({
-          techStack: "Frontend'; DROP TABLE--",
+          techStack: "Front-End'; DROP TABLE--",
           startDate: '2025-01-01',
           endDate: '2025-03-01',
         }),
@@ -319,14 +322,14 @@ describe('ComplexityTrendDataService', () => {
 
     it('should include techStack filter as parameterized value', async () => {
       await service.getComplexityTrend({
-        techStack: 'Frontend',
+        techStack: 'Front-End',
         startDate: '2025-01-01',
         endDate: '2025-03-01',
       });
 
       const call = vi.mocked(mockDb.query).mock.calls[0];
       const params = call![1] as unknown[];
-      expect(params).toContain('Frontend');
+      expect(params).toContain('Front-End');
     });
   });
 
@@ -527,10 +530,11 @@ describe('ComplexityTrendDataService', () => {
       expect(params).toContain('my-app');
     });
 
+    // GITX-141: techStack filter now uses cf.arc_component directly
     it('should combine multiple filters correctly', async () => {
       await service.getComplexityTrend({
         team: 'Platform',
-        techStack: 'Frontend',
+        techStack: 'Front-End',
         startDate: '2025-01-01',
         endDate: '2025-03-01',
       });
@@ -541,11 +545,11 @@ describe('ComplexityTrendDataService', () => {
 
       // Both filters should be present as parameters
       expect(params).toContain('Platform');
-      expect(params).toContain('Frontend');
+      expect(params).toContain('Front-End');
 
       // SQL should contain both filter clauses
       expect(sql).toContain('cc.team');
-      expect(sql).toContain('vtsc.category');
+      expect(sql).toContain('cf.arc_component');
     });
   });
 
@@ -655,6 +659,7 @@ describe('ComplexityTrendDataService', () => {
       expect(sql).toContain('ch.repository');
     });
 
+    // GITX-141: archLayer now uses cf.arc_component directly
     it('should use correct entity expression for archLayer viewMode', async () => {
       await service.getEntityRankings('archLayer', {
         startDate: '2025-01-01',
@@ -663,10 +668,11 @@ describe('ComplexityTrendDataService', () => {
 
       const call = vi.mocked(mockDb.query).mock.calls[0];
       const sql = call![0] as string;
-      expect(sql).toContain('vtsc.category');
+      expect(sql).toContain('cf.arc_component');
     });
 
-    it('should include tech stack JOIN for archLayer viewMode', async () => {
+    // GITX-141: archLayer uses cf.arc_component directly, no JOIN needed
+    it('should not include tech stack JOIN for archLayer viewMode', async () => {
       await service.getEntityRankings('archLayer', {
         startDate: '2025-01-01',
         endDate: '2025-03-01',
@@ -674,7 +680,8 @@ describe('ComplexityTrendDataService', () => {
 
       const call = vi.mocked(mockDb.query).mock.calls[0];
       const sql = call![0] as string;
-      expect(sql).toContain('vw_technology_stack_category');
+      expect(sql).not.toContain('vw_technology_stack_category');
+      expect(sql).toContain('cf.arc_component');
     });
 
     it('should apply pre-filters to ranking query', async () => {
