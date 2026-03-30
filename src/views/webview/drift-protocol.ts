@@ -28,11 +28,27 @@ import type { SharedWebviewToHost } from './shared-protocol.js';
 // ============================================================================
 
 /**
+ * Filters object sent from webview to extension host.
+ * GITX-142: Updated to support multi-select repositories and date range.
+ */
+export interface DriftFilters {
+  /** Multi-select repository filter (GITX-142) */
+  readonly repositories?: readonly string[];
+  /** Start date for date range filter (YYYY-MM-DD) (GITX-142) */
+  readonly startDate?: string;
+  /** End date for date range filter (YYYY-MM-DD) (GITX-142) */
+  readonly endDate?: string;
+}
+
+/**
  * Request to load architecture drift data.
- * Optional repository, component, and date range filters.
+ * GITX-142: Updated to use DriftFilters with multi-select and date range.
  */
 export interface RequestDriftData {
   readonly type: 'requestDriftData';
+  /** Filters object with repositories array and date range (GITX-142) */
+  readonly filters?: DriftFilters;
+  /** @deprecated Use filters.repositories instead */
   readonly repository?: string;
   readonly component?: string;
   readonly minHeatIntensity?: number;
@@ -243,6 +259,41 @@ export interface DriftLoadingState {
 }
 
 /**
+ * Filter options sent from extension host to webview.
+ * Used to populate the filter dropdowns.
+ * GITX-142: Used for multi-select repository dropdown.
+ */
+export interface DriftFilterOptions {
+  readonly type: 'driftFilterOptions';
+  /** Available repositories for multi-select */
+  readonly repositories: readonly string[];
+  /** Available components (kept for component visibility toggles) */
+  readonly components: readonly string[];
+}
+
+/**
+ * Cell drill-down response with commit details.
+ * GITX-142: Added to protocol for proper typing.
+ */
+export interface ResponseCellDrillDown {
+  readonly type: 'cellDrillDown';
+  readonly component: string;
+  readonly week: string;
+  readonly commits: readonly CrossComponentCommit[];
+  readonly hasData: boolean;
+}
+
+/**
+ * Component drill-down response with drift details.
+ * GITX-142: Added to protocol for proper typing.
+ */
+export interface ResponseComponentDrillDown {
+  readonly type: 'componentDrillDown';
+  readonly component: string;
+  readonly drift: ArchitectureDrift | null;
+}
+
+/**
  * Union type of all messages sent from the extension host to the webview.
  */
 export type DriftHostToWebview =
@@ -255,4 +306,7 @@ export type DriftHostToWebview =
   | ResponseSeverityDrilldown
   | ResponseComponentPairCommits
   | DriftResponseError
-  | DriftLoadingState;
+  | DriftLoadingState
+  | DriftFilterOptions
+  | ResponseCellDrillDown
+  | ResponseComponentDrillDown;

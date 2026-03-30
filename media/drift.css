@@ -985,6 +985,189 @@ body {
 }
 
 /* ============================================================================
+   Multi-Select Dropdown (GITX-142)
+   Copied from dashboard.css with drift-specific adjustments.
+   ============================================================================ */
+
+.filter-group-multiselect {
+  position: relative;
+}
+
+.multiselect-container {
+  position: relative;
+  min-width: 160px;
+}
+
+.multiselect-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  gap: 8px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, #555);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.9em;
+  font-family: var(--vscode-font-family, inherit);
+}
+
+.multiselect-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multiselect-arrow {
+  font-size: 0.7em;
+  color: var(--vscode-descriptionForeground, #888888);
+  flex-shrink: 0;
+}
+
+.multiselect-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  min-width: 200px;
+  max-height: 280px;
+  margin-top: 2px;
+  background-color: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-input-border, #555555);
+  border-radius: 4px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.multiselect-actions {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444444);
+  background-color: var(--vscode-sideBar-background, #252526);
+}
+
+.multiselect-action-btn {
+  flex: 1;
+  padding: 3px 8px;
+  font-size: 0.8em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.multiselect-action-btn:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.multiselect-action-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+.multiselect-options {
+  overflow-y: auto;
+  max-height: 200px;
+  padding: 4px 0;
+}
+
+.multiselect-option {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.multiselect-option:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.multiselect-option input[type="checkbox"] {
+  margin: 0;
+  margin-right: 8px;
+  cursor: pointer;
+  accent-color: var(--vscode-button-background, #0e639c);
+}
+
+.multiselect-option label {
+  flex: 1;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: var(--vscode-foreground, #cccccc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Focus styles for accessibility */
+.multiselect-button:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+.multiselect-dropdown:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+}
+
+/* ============================================================================
+   Date Range Filter (GITX-142)
+   ============================================================================ */
+
+.date-range-group {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.date-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.date-input-wrapper label {
+  font-size: 0.75em;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.date-input-wrapper input[type="date"] {
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, #555);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.9em;
+  min-width: 130px;
+}
+
+.date-input-wrapper input[type="date"]:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.date-input-wrapper input[type="date"]:invalid {
+  border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+/* Date input icon styling for dark theme */
+.date-input-wrapper input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
+
+/* ============================================================================
    Responsive
    ============================================================================ */
 

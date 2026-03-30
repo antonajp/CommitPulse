@@ -60,27 +60,31 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
     <div class="chart-header">
       <h1>Architecture Drift Heat Map</h1>
       <div class="controls">
-        <div class="filter-group">
-          <label for="repositoryFilter">Repository</label>
-          <select id="repositoryFilter" aria-label="Repository filter" tabindex="0">
-            <option value="">All Repositories</option>
-          </select>
+        <div class="filter-group filter-group-multiselect">
+          <label for="repoFilterButton">Repository</label>
+          <div class="multiselect-container" id="repoFilterContainer">
+            <button type="button" id="repoFilterButton" class="multiselect-button" aria-haspopup="listbox" aria-expanded="false" aria-label="Repository filter" tabindex="0">
+              <span class="multiselect-label" id="repoFilterLabel">All Repos</span>
+              <span class="multiselect-arrow" aria-hidden="true">▼</span>
+            </button>
+            <div class="multiselect-dropdown" id="repoFilterDropdown" role="listbox" aria-multiselectable="true" tabindex="-1" style="display:none;">
+              <div class="multiselect-actions">
+                <button type="button" class="multiselect-action-btn" id="repoSelectAll">Select All</button>
+                <button type="button" class="multiselect-action-btn" id="repoClearAll">Clear All</button>
+              </div>
+              <div class="multiselect-options" id="repoFilterOptions"></div>
+            </div>
+          </div>
         </div>
-        <div class="filter-group">
-          <label for="componentFilter">Component</label>
-          <select id="componentFilter" aria-label="Component filter" tabindex="0">
-            <option value="">All Components</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label for="severityFilter">Severity</label>
-          <select id="severityFilter" aria-label="Severity filter" tabindex="0">
-            <option value="">All Severities</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
+        <div class="date-range-group">
+          <div class="date-input-wrapper">
+            <label for="startDateFilter">Start Date</label>
+            <input type="date" id="startDateFilter" aria-label="Start date filter" tabindex="0">
+          </div>
+          <div class="date-input-wrapper">
+            <label for="endDateFilter">End Date</label>
+            <input type="date" id="endDateFilter" aria-label="End date filter" tabindex="0">
+          </div>
         </div>
         <button class="action-btn" id="applyFilterBtn" aria-label="Apply filters" tabindex="0">Apply</button>
         <button class="export-btn" id="exportCsvBtn" aria-label="Export chart data as CSV" tabindex="0">Export CSV</button>
@@ -220,7 +224,7 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       ${generateCsvExportScript()}
 
       // ======================================================================
-      // State
+      // State (GITX-142: Added filter state persistence)
       // ======================================================================
       var heatMapData = null;
       var driftData = null;
@@ -228,6 +232,13 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       var summaryData = null;
       var hiddenComponents = new Set();
       var showCrossComponentOnly = false;
+
+      // Filter state (GITX-142)
+      var selectedRepositories = [];  // Array of selected repo names
+      var availableRepositories = []; // All available repos
+      var filterStartDate = '';       // YYYY-MM-DD
+      var filterEndDate = '';         // YYYY-MM-DD
+      var repoDropdownOpen = false;
 
       // Heat intensity colors (white -> blue -> purple -> red)
       var INTENSITY_COLORS = [
@@ -250,13 +261,21 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       };
 
       // ======================================================================
-      // DOM References
+      // DOM References (GITX-142: Updated for multi-select and date range)
       // ======================================================================
       var exportCsvBtn = document.getElementById('exportCsvBtn');
       var applyFilterBtn = document.getElementById('applyFilterBtn');
-      var repositoryFilter = document.getElementById('repositoryFilter');
-      var componentFilter = document.getElementById('componentFilter');
-      var severityFilter = document.getElementById('severityFilter');
+      // Multi-select repository filter (GITX-142)
+      var repoFilterButton = document.getElementById('repoFilterButton');
+      var repoFilterLabel = document.getElementById('repoFilterLabel');
+      var repoFilterDropdown = document.getElementById('repoFilterDropdown');
+      var repoFilterOptions = document.getElementById('repoFilterOptions');
+      var repoSelectAllBtn = document.getElementById('repoSelectAll');
+      var repoClearAllBtn = document.getElementById('repoClearAll');
+      // Date range filters (GITX-142)
+      var startDateFilter = document.getElementById('startDateFilter');
+      var endDateFilter = document.getElementById('endDateFilter');
+      // Cross-component toggle
       var showCrossComponentOnlyCheckbox = document.getElementById('showCrossComponentOnly');
       var loadingState = document.getElementById('loadingState');
       var errorState = document.getElementById('errorState');
@@ -274,7 +293,7 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       var tooltip = document.getElementById('tooltip');
 
       // ======================================================================
-      // Event Handlers
+      // Event Handlers (GITX-142: Multi-select and date range support)
       // ======================================================================
       exportCsvBtn.addEventListener('click', function() {
         if (!driftData || driftData.length === 0) { return; }
@@ -289,6 +308,9 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       });
 
       applyFilterBtn.addEventListener('click', function() {
+        // Validate date range before applying
+        if (!validateDateRange()) { return; }
+        saveFilterState();
         requestData();
       });
 
@@ -300,6 +322,179 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       closeDrillDown.addEventListener('click', function() {
         drillDownPanel.style.display = 'none';
       });
+
+      // ======================================================================
+      // Multi-Select Repository Filter (GITX-142)
+      // ======================================================================
+      repoFilterButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleRepoDropdown();
+      });
+
+      repoFilterButton.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleRepoDropdown();
+        } else if (e.key === 'Escape' && repoDropdownOpen) {
+          closeRepoDropdown();
+        }
+      });
+
+      repoSelectAllBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        selectedRepositories = availableRepositories.slice();
+        updateRepoCheckboxes();
+        updateRepoFilterLabel();
+      });
+
+      repoClearAllBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        selectedRepositories = [];
+        updateRepoCheckboxes();
+        updateRepoFilterLabel();
+      });
+
+      // Close dropdown when clicking outside
+      document.addEventListener('click', function(e) {
+        if (repoDropdownOpen && !repoFilterDropdown.contains(e.target) && e.target !== repoFilterButton) {
+          closeRepoDropdown();
+        }
+      });
+
+      // Keyboard navigation in dropdown
+      repoFilterDropdown.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          closeRepoDropdown();
+          repoFilterButton.focus();
+        }
+      });
+
+      function toggleRepoDropdown() {
+        repoDropdownOpen = !repoDropdownOpen;
+        repoFilterDropdown.style.display = repoDropdownOpen ? 'flex' : 'none';
+        repoFilterButton.setAttribute('aria-expanded', repoDropdownOpen.toString());
+      }
+
+      function closeRepoDropdown() {
+        repoDropdownOpen = false;
+        repoFilterDropdown.style.display = 'none';
+        repoFilterButton.setAttribute('aria-expanded', 'false');
+      }
+
+      function updateRepoCheckboxes() {
+        var checkboxes = repoFilterOptions.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(function(checkbox) {
+          checkbox.checked = selectedRepositories.indexOf(checkbox.value) !== -1;
+        });
+      }
+
+      function updateRepoFilterLabel() {
+        if (selectedRepositories.length === 0 || selectedRepositories.length === availableRepositories.length) {
+          repoFilterLabel.textContent = 'All Repos';
+        } else if (selectedRepositories.length === 1) {
+          repoFilterLabel.textContent = selectedRepositories[0];
+        } else {
+          repoFilterLabel.textContent = selectedRepositories.length + ' repos';
+        }
+      }
+
+      function renderRepoOptions(repositories) {
+        availableRepositories = repositories.slice();
+        repoFilterOptions.innerHTML = '';
+
+        repositories.forEach(function(repo) {
+          var option = document.createElement('div');
+          option.className = 'multiselect-option';
+          option.setAttribute('role', 'option');
+
+          var checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.id = 'repo_' + repo.replace(/[^a-zA-Z0-9]/g, '_');
+          checkbox.value = repo;
+          checkbox.checked = selectedRepositories.length === 0 || selectedRepositories.indexOf(repo) !== -1;
+
+          checkbox.addEventListener('change', function() {
+            if (this.checked) {
+              if (selectedRepositories.indexOf(repo) === -1) {
+                selectedRepositories.push(repo);
+              }
+            } else {
+              var idx = selectedRepositories.indexOf(repo);
+              if (idx !== -1) {
+                selectedRepositories.splice(idx, 1);
+              }
+            }
+            updateRepoFilterLabel();
+          });
+
+          var label = document.createElement('label');
+          label.htmlFor = checkbox.id;
+          label.textContent = repo;
+
+          option.appendChild(checkbox);
+          option.appendChild(label);
+          repoFilterOptions.appendChild(option);
+        });
+
+        // Initialize: if no repos selected, treat as "all"
+        if (selectedRepositories.length === 0) {
+          selectedRepositories = repositories.slice();
+        }
+        updateRepoFilterLabel();
+      }
+
+      // ======================================================================
+      // Date Range Validation (GITX-142)
+      // ======================================================================
+      function validateDateRange() {
+        var start = startDateFilter.value;
+        var end = endDateFilter.value;
+
+        // Both empty is valid (no date filter)
+        if (!start && !end) { return true; }
+
+        // If one is set, both should be set
+        if ((start && !end) || (!start && end)) {
+          showError('Please provide both start and end dates, or leave both empty.');
+          return false;
+        }
+
+        // Validate date format (YYYY-MM-DD)
+        var dateRegex = /^\\d{4}-\\d{2}-\\d{2}$/;
+        if (!dateRegex.test(start) || !dateRegex.test(end)) {
+          showError('Invalid date format. Please use the date picker.');
+          return false;
+        }
+
+        // End must be >= start
+        if (new Date(end) < new Date(start)) {
+          showError('End date must be on or after start date.');
+          return false;
+        }
+
+        // Max 5 years range
+        var startDate = new Date(start);
+        var endDate = new Date(end);
+        var diffYears = (endDate - startDate) / (1000 * 60 * 60 * 24 * 365);
+        if (diffYears > 5) {
+          showError('Date range cannot exceed 5 years.');
+          return false;
+        }
+
+        return true;
+      }
+
+      // Set default date range (last 90 days)
+      function setDefaultDateRange() {
+        var end = new Date();
+        var start = new Date();
+        start.setDate(start.getDate() - 90);
+
+        startDateFilter.value = start.toISOString().split('T')[0];
+        endDateFilter.value = end.toISOString().split('T')[0];
+        filterStartDate = startDateFilter.value;
+        filterEndDate = endDateFilter.value;
+      }
 
       // ======================================================================
       // Message Handling
@@ -365,27 +560,12 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       }
 
       function handleFilterOptions(message) {
-        // Populate repository filter
-        while (repositoryFilter.options.length > 1) {
-          repositoryFilter.remove(1);
-        }
-        (message.repositories || []).forEach(function(repo) {
-          var option = document.createElement('option');
-          option.value = repo;
-          option.textContent = repo;
-          repositoryFilter.appendChild(option);
-        });
+        // GITX-142: Render multi-select repository options (preserving current selection)
+        var repos = message.repositories || [];
+        renderRepoOptions(repos);
 
-        // Populate component filter
-        while (componentFilter.options.length > 1) {
-          componentFilter.remove(1);
-        }
-        (message.components || []).forEach(function(comp) {
-          var option = document.createElement('option');
-          option.value = comp;
-          option.textContent = comp;
-          componentFilter.appendChild(option);
-        });
+        // Component list is still used for component visibility toggles
+        // (components are filtered via heat map clicks, not dropdown)
       }
 
       function handleCellDrillDown(message) {
@@ -894,11 +1074,61 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       }
 
       function getFilters() {
+        // GITX-142: Return multi-select repositories and date range
         var filters = {};
-        if (repositoryFilter.value) { filters.repository = repositoryFilter.value; }
-        if (componentFilter.value) { filters.component = componentFilter.value; }
-        if (severityFilter.value) { filters.severity = severityFilter.value; }
+
+        // Multi-select repositories: only include if not "all"
+        if (selectedRepositories.length > 0 && selectedRepositories.length < availableRepositories.length) {
+          filters.repositories = selectedRepositories.slice();
+        }
+
+        // Date range
+        var start = startDateFilter.value;
+        var end = endDateFilter.value;
+        if (start && end) {
+          filters.startDate = start;
+          filters.endDate = end;
+        }
+
         return filters;
+      }
+
+      // ======================================================================
+      // Filter State Persistence (GITX-142)
+      // Uses vscode.getState()/setState() to persist across panel close/reopen
+      // ======================================================================
+      function saveFilterState() {
+        var currentState = vscode.getState() || {};
+        currentState.filterState = {
+          selectedRepositories: selectedRepositories.slice(),
+          startDate: startDateFilter.value,
+          endDate: endDateFilter.value
+        };
+        vscode.setState(currentState);
+      }
+
+      function restoreFilterState() {
+        var state = vscode.getState() || {};
+        var filterState = state.filterState;
+
+        if (filterState) {
+          // Restore date range
+          if (filterState.startDate) {
+            startDateFilter.value = filterState.startDate;
+            filterStartDate = filterState.startDate;
+          }
+          if (filterState.endDate) {
+            endDateFilter.value = filterState.endDate;
+            filterEndDate = filterState.endDate;
+          }
+          // Restore selected repositories
+          if (filterState.selectedRepositories && filterState.selectedRepositories.length > 0) {
+            selectedRepositories = filterState.selectedRepositories.slice();
+          }
+        } else {
+          // First load: set default date range (last 90 days)
+          setDefaultDateRange();
+        }
       }
 
       // ======================================================================
@@ -988,8 +1218,9 @@ export function generateDriftHtml(config: DriftHtmlConfig): string {
       initChartExplanations();
 
       // ======================================================================
-      // Initial Load
+      // Initial Load (GITX-142: Restore filter state before requesting data)
       // ======================================================================
+      restoreFilterState();
       requestData();
 
     })();
