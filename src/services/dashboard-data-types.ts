@@ -275,8 +275,8 @@ export interface DashboardFilters {
   readonly endDate?: string;
   /** Filter by team name */
   readonly team?: string;
-  /** Filter by repository name */
-  readonly repository?: string;
+  /** Filter by repository name(s) - supports single string or array for multi-select */
+  readonly repository?: string | readonly string[];
 }
 
 /**

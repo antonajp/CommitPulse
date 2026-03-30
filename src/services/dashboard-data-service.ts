@@ -57,6 +57,32 @@ const ALLOWED_GRANULARITIES: readonly string[] = ['day', 'week'] as const;
  */
 const MAX_FILTER_STRING_LENGTH = 200;
 
+/**
+ * Maximum number of repositories allowed in the filter array.
+ * Prevents performance issues from extremely large arrays.
+ * CWE-20: Input validation.
+ */
+const MAX_REPOSITORY_ARRAY_LENGTH = 50;
+
+/**
+ * Normalize repository filter to an array and validate length.
+ * @param repository - Single string or array of strings
+ * @returns Validated array of repository names, or undefined
+ */
+function normalizeRepositoryFilter(repository: string | readonly string[] | undefined): readonly string[] | undefined {
+  if (repository === undefined) {
+    return undefined;
+  }
+  const repos = typeof repository === 'string' ? [repository] : repository;
+  if (repos.length === 0) {
+    return undefined;
+  }
+  if (repos.length > MAX_REPOSITORY_ARRAY_LENGTH) {
+    throw new Error(`Repository filter exceeds maximum of ${MAX_REPOSITORY_ARRAY_LENGTH} entries.`);
+  }
+  return repos;
+}
+
 
 /**
  * Service responsible for querying database views and returning
@@ -72,6 +98,32 @@ export class DashboardDataService {
     this.logger = LoggerService.getInstance();
     this.db = db;
     this.logger.debug(CLASS_NAME, 'constructor', 'DashboardDataService created');
+  }
+
+  // ==========================================================================
+  // Helper Methods
+  // ==========================================================================
+
+  /**
+   * Build a parameterized IN clause for repository filtering.
+   * @param repos - Array of repository names
+   * @param params - Parameter array to append values to
+   * @param startParamIndex - Starting parameter index ($N)
+   * @param tableAlias - Table alias for the repository column (e.g., 'ch')
+   * @returns Object with condition string and next parameter index
+   */
+  private buildRepositoryInClause(
+    repos: readonly string[],
+    params: unknown[],
+    startParamIndex: number,
+    tableAlias: string,
+  ): { condition: string; nextParamIndex: number } {
+    const placeholders = repos.map((_, i) => `$${startParamIndex + i}`);
+    params.push(...repos);
+    return {
+      condition: `${tableAlias}.repository IN (${placeholders.join(', ')})`,
+      nextParamIndex: startParamIndex + repos.length,
+    };
   }
 
   // ==========================================================================
@@ -119,11 +171,18 @@ export class DashboardDataService {
       }
     }
 
-    // Validate repository filter string length
+    // Validate repository filter - can be string or array
     if (filters.repository !== undefined) {
-      if (filters.repository.length > MAX_FILTER_STRING_LENGTH) {
-        this.logger.warn(CLASS_NAME, methodName, `Repository filter exceeds max length: ${filters.repository.length} > ${MAX_FILTER_STRING_LENGTH}`);
-        throw new Error(`Repository filter exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
+      const repos = typeof filters.repository === 'string' ? [filters.repository] : filters.repository;
+      if (repos.length > MAX_REPOSITORY_ARRAY_LENGTH) {
+        this.logger.warn(CLASS_NAME, methodName, `Repository filter array exceeds max length: ${repos.length} > ${MAX_REPOSITORY_ARRAY_LENGTH}`);
+        throw new Error(`Repository filter exceeds maximum of ${MAX_REPOSITORY_ARRAY_LENGTH} entries.`);
+      }
+      for (const repo of repos) {
+        if (repo.length > MAX_FILTER_STRING_LENGTH) {
+          this.logger.warn(CLASS_NAME, methodName, `Repository name exceeds max length: ${repo.length} > ${MAX_FILTER_STRING_LENGTH}`);
+          throw new Error(`Repository name exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
+        }
       }
     }
   }
@@ -174,9 +233,12 @@ export class DashboardDataService {
       paramIndex++;
     }
     if (filters.repository) {
-      conditions.push(`ch.repository = $${paramIndex}`);
-      params.push(filters.repository);
-      paramIndex++;
+      const repos = normalizeRepositoryFilter(filters.repository);
+      if (repos) {
+        const { condition, nextParamIndex } = this.buildRepositoryInClause(repos, params, paramIndex, 'ch');
+        conditions.push(condition);
+        paramIndex = nextParamIndex;
+      }
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -220,28 +282,68 @@ export class DashboardDataService {
    * Fetch technology stack distribution: file extensions grouped by category.
    * Queries vw_technology_stack_category view.
    *
+   * @param filters - Optional repository filter
    * @returns Array of TechStackEntry sorted by file count descending
    */
-  async getTechStackDistribution(): Promise<TechStackEntry[]> {
-    this.logger.debug(CLASS_NAME, 'getTechStackDistribution', 'Fetching tech stack distribution');
+  async getTechStackDistribution(filters: DashboardFilters = {}): Promise<TechStackEntry[]> {
+    this.validateFilters(filters, 'getTechStackDistribution');
+    this.logger.debug(CLASS_NAME, 'getTechStackDistribution', `Fetching tech stack distribution: filters=${JSON.stringify(filters)}`);
 
-    const sql = `
-      SELECT
-        vtsc.category,
-        COUNT(DISTINCT vtsc.file_extension)::INTEGER AS extension_count,
-        COUNT(*)::INTEGER AS file_count
-      FROM vw_technology_stack_category vtsc
-      GROUP BY vtsc.category
-      ORDER BY file_count DESC
-    `;
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    const repos = normalizeRepositoryFilter(filters.repository);
+    if (repos) {
+      // Join with commit_history to get repository context
+      // vw_technology_stack_category is based on commit_files_types which has sha FK to commit_history
+      const placeholders = repos.map((_, i) => `$${paramIndex + i}`);
+      params.push(...repos);
+      paramIndex += repos.length;
+      conditions.push(`ch.repository IN (${placeholders.join(', ')})`);
+    }
+
+    // Build the query with optional repository filter
+    // Need to join commit_files_types with commit_history to filter by repository
+    // since vw_technology_stack_category doesn't include repository context directly
+    let sql: string;
+    if (conditions.length > 0) {
+      // Query with repository filter - join through commit_files_types and commit_history
+      sql = `
+        SELECT
+          vtsc.category,
+          COUNT(DISTINCT cft.file_extension)::INTEGER AS extension_count,
+          COUNT(*)::INTEGER AS file_count
+        FROM commit_files_types cft
+        INNER JOIN commit_history ch ON cft.sha = ch.sha
+        INNER JOIN vw_technology_stack_category vtsc ON cft.file_extension = vtsc.file_extension
+        WHERE ${conditions.join(' AND ')}
+        GROUP BY vtsc.category
+        ORDER BY file_count DESC
+      `;
+    } else {
+      // Original query without filter
+      sql = `
+        SELECT
+          vtsc.category,
+          COUNT(DISTINCT vtsc.file_extension)::INTEGER AS extension_count,
+          COUNT(*)::INTEGER AS file_count
+        FROM vw_technology_stack_category vtsc
+        GROUP BY vtsc.category
+        ORDER BY file_count DESC
+      `;
+    }
 
     this.logger.trace(CLASS_NAME, 'getTechStackDistribution', `SQL: ${sql.trim()}`);
+    if (params.length > 0) {
+      this.logger.trace(CLASS_NAME, 'getTechStackDistribution', `Params: ${JSON.stringify(params)}`);
+    }
 
     const result = await this.db.query<{
       category: string;
       extension_count: number;
       file_count: number;
-    }>(sql);
+    }>(sql, params);
 
     this.logger.debug(CLASS_NAME, 'getTechStackDistribution', `Returned ${result.rowCount} categories`);
 
@@ -258,9 +360,9 @@ export class DashboardDataService {
 
   /**
    * Fetch team scorecard summary data from vw_scorecard.
-   * Optionally filtered by team.
+   * Optionally filtered by team and repository.
    *
-   * @param filters - Optional team filter
+   * @param filters - Optional team and repository filters
    * @returns Array of ScorecardRow sorted by total score descending
    */
   async getScorecard(filters: DashboardFilters = {}): Promise<ScorecardRow[]> {
@@ -277,6 +379,20 @@ export class DashboardDataService {
       conditions.push(`vs.team = $${paramIndex}`);
       params.push(filters.team);
       paramIndex++;
+    }
+
+    const repos = normalizeRepositoryFilter(filters.repository);
+    if (repos) {
+      // Filter by repository - need to ensure contributors have commits in selected repos
+      const placeholders = repos.map((_, i) => `$${paramIndex + i}`);
+      params.push(...repos);
+      paramIndex += repos.length;
+      conditions.push(`EXISTS (
+        SELECT 1 FROM commit_history ch
+        INNER JOIN commit_contributors cc2 ON ch.author = cc2.login
+        WHERE cc2.full_name = vs.full_name
+        AND ch.repository IN (${placeholders.join(', ')})
+      )`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -314,9 +430,9 @@ export class DashboardDataService {
 
   /**
    * Fetch detailed scorecard breakdown from vw_scorecard_detail.
-   * Optionally filtered by team.
+   * Optionally filtered by team and repository.
    *
-   * @param filters - Optional team filter
+   * @param filters - Optional team and repository filters
    * @returns Array of ScorecardDetailRow sorted by total computed score descending
    */
   async getScorecardDetail(filters: DashboardFilters = {}): Promise<ScorecardDetailRow[]> {
@@ -333,6 +449,20 @@ export class DashboardDataService {
       conditions.push(`vsd.team = $${paramIndex}`);
       params.push(filters.team);
       paramIndex++;
+    }
+
+    const repos = normalizeRepositoryFilter(filters.repository);
+    if (repos) {
+      // Filter by repository - need to ensure contributors have commits in selected repos
+      const placeholders = repos.map((_, i) => `$${paramIndex + i}`);
+      params.push(...repos);
+      paramIndex += repos.length;
+      conditions.push(`EXISTS (
+        SELECT 1 FROM commit_history ch
+        INNER JOIN commit_contributors cc2 ON ch.author = cc2.login
+        WHERE cc2.full_name = vsd.full_name
+        AND ch.repository IN (${placeholders.join(', ')})
+      )`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -354,6 +484,7 @@ export class DashboardDataService {
     `;
 
     this.logger.trace(CLASS_NAME, 'getScorecardDetail', `SQL: ${sql.trim()}`);
+    this.logger.trace(CLASS_NAME, 'getScorecardDetail', `Params: ${JSON.stringify(params)}`);
 
     const result = await this.db.query<{
       full_name: string;
@@ -421,6 +552,14 @@ export class DashboardDataService {
       topFilesParams.push(filters.team);
       paramIndex++;
     }
+    if (filters.repository) {
+      const repos = normalizeRepositoryFilter(filters.repository);
+      if (repos) {
+        const { condition, nextParamIndex } = this.buildRepositoryInClause(repos, topFilesParams, paramIndex, 'vcfch');
+        topFilesConditions.push(condition);
+        paramIndex = nextParamIndex;
+      }
+    }
 
     const topFilesWhere = topFilesConditions.length > 0 ? `WHERE ${topFilesConditions.join(' AND ')}` : '';
 
@@ -475,6 +614,14 @@ export class DashboardDataService {
       detailParams.push(filters.team);
       detailParamIndex++;
     }
+    if (filters.repository) {
+      const repos = normalizeRepositoryFilter(filters.repository);
+      if (repos) {
+        const { condition, nextParamIndex } = this.buildRepositoryInClause(repos, detailParams, detailParamIndex, 'vcfch');
+        detailConditions.push(condition);
+        detailParamIndex = nextParamIndex;
+      }
+    }
 
     const detailWhere = `WHERE ${detailConditions.join(' AND ')}`;
 
@@ -517,7 +664,7 @@ export class DashboardDataService {
    *
    * Ticket: IQS-942
    *
-   * @param filters - Optional team filter
+   * @param filters - Optional team and repository filters
    * @returns Array of ScorecardDetailRow with profile and commitCount populated
    */
   async getScorecardDetailWithProfiles(filters: DashboardFilters = {}): Promise<ScorecardDetailRow[]> {
@@ -534,6 +681,20 @@ export class DashboardDataService {
       conditions.push(`vsd.team = $${paramIndex}`);
       params.push(filters.team);
       paramIndex++;
+    }
+
+    const repos = normalizeRepositoryFilter(filters.repository);
+    if (repos) {
+      // Filter by repository - need to ensure contributors have commits in selected repos
+      const placeholders = repos.map((_, i) => `$${paramIndex + i}`);
+      params.push(...repos);
+      paramIndex += repos.length;
+      conditions.push(`EXISTS (
+        SELECT 1 FROM commit_history ch
+        INNER JOIN commit_contributors cc2 ON ch.author = cc2.login
+        WHERE cc2.full_name = vsd.full_name
+        AND ch.repository IN (${placeholders.join(', ')})
+      )`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

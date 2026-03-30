@@ -48,6 +48,7 @@ export interface RequestCommitVelocity {
  */
 export interface RequestTechStack {
   readonly type: 'requestTechStack';
+  readonly filters: DashboardFilters;
 }
 
 /**

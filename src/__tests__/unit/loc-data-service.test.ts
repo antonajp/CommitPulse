@@ -311,7 +311,7 @@ describe('LocDataService', () => {
         const longRepo = 'B'.repeat(201);
         await expect(service.getLocCommitted('repository', {
           repository: longRepo,
-        })).rejects.toThrow('Repository filter exceeds maximum length');
+        })).rejects.toThrow('Repository name exceeds maximum length');
         expect(mockDb.query).not.toHaveBeenCalled();
       });
     });

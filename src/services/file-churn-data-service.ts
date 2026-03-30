@@ -60,6 +60,12 @@ const ALLOWED_FILE_CHURN_GROUP_BY: readonly string[] = ['team', 'individual'] as
 const MAX_FILTER_STRING_LENGTH = 200;
 
 /**
+ * Maximum number of repositories allowed in the filter array.
+ * CWE-20: Input validation.
+ */
+const MAX_REPOSITORY_ARRAY_LENGTH = 50;
+
+/**
  * Maximum allowed length for filename parameter (drilldown).
  * CWE-20: Input validation.
  */
@@ -120,10 +126,18 @@ export class FileChurnDataService {
         throw new Error(`Team filter exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
       }
     }
+    // Validate repository filter - can be string or array
     if (filters.repository !== undefined) {
-      if (filters.repository.length > MAX_FILTER_STRING_LENGTH) {
-        this.logger.warn(CLASS_NAME, methodName, `Repository filter exceeds max length: ${filters.repository.length} > ${MAX_FILTER_STRING_LENGTH}`);
-        throw new Error(`Repository filter exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
+      const repos = typeof filters.repository === 'string' ? [filters.repository] : filters.repository;
+      if (repos.length > MAX_REPOSITORY_ARRAY_LENGTH) {
+        this.logger.warn(CLASS_NAME, methodName, `Repository filter array exceeds max length: ${repos.length} > ${MAX_REPOSITORY_ARRAY_LENGTH}`);
+        throw new Error(`Repository filter exceeds maximum of ${MAX_REPOSITORY_ARRAY_LENGTH} entries.`);
+      }
+      for (const repo of repos) {
+        if (repo.length > MAX_FILTER_STRING_LENGTH) {
+          this.logger.warn(CLASS_NAME, methodName, `Repository name exceeds max length: ${repo.length} > ${MAX_FILTER_STRING_LENGTH}`);
+          throw new Error(`Repository name exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
+        }
       }
     }
   }
@@ -204,9 +218,13 @@ export class FileChurnDataService {
       paramIndex++;
     }
     if (filters.repository) {
-      additionalConditions.push(`ch.repository = $${paramIndex}`);
-      params.push(filters.repository);
-      paramIndex++;
+      const repos = typeof filters.repository === 'string' ? [filters.repository] : filters.repository;
+      if (repos.length > 0) {
+        const placeholders = repos.map((_, i) => `$${paramIndex + i}`);
+        additionalConditions.push(`ch.repository IN (${placeholders.join(', ')})`);
+        params.push(...repos);
+        paramIndex += repos.length;
+      }
     }
 
     // Build the full query based on groupBy mode
@@ -314,6 +332,15 @@ export class FileChurnDataService {
       dateConditions.push(`AND ch.commit_date <= $${paramIndex}`);
       params.push(filters.endDate);
       paramIndex++;
+    }
+    if (filters.repository) {
+      const repos = typeof filters.repository === 'string' ? [filters.repository] : filters.repository;
+      if (repos.length > 0) {
+        const placeholders = repos.map((_, i) => `$${paramIndex + i}`);
+        dateConditions.push(`AND ch.repository IN (${placeholders.join(', ')})`);
+        params.push(...repos);
+        paramIndex += repos.length;
+      }
     }
 
     const sql = `${baseQuery}\n${dateConditions.join('\n')}\n${FILE_CHURN_DRILLDOWN_DATE_SUFFIX}`;

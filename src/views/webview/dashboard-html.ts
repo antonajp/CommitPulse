@@ -118,11 +118,21 @@ export function generateDashboardHtml(config: DashboardHtmlConfig): string {
             <option value="">All Teams</option>
           </select>
         </div>
-        <div class="filter-group">
-          <label for="repoFilter">Repo:</label>
-          <select id="repoFilter" class="filter-input" aria-label="Repository filter">
-            <option value="">All Repos</option>
-          </select>
+        <div class="filter-group filter-group-multiselect">
+          <label for="repoFilterButton">Repo:</label>
+          <div class="multiselect-container" id="repoFilterContainer">
+            <button type="button" id="repoFilterButton" class="multiselect-button filter-input" aria-haspopup="listbox" aria-expanded="false" aria-label="Repository filter">
+              <span class="multiselect-label" id="repoFilterLabel">All Repos</span>
+              <span class="multiselect-arrow" aria-hidden="true">▼</span>
+            </button>
+            <div class="multiselect-dropdown" id="repoFilterDropdown" role="listbox" aria-multiselectable="true" tabindex="-1" style="display:none;">
+              <div class="multiselect-actions">
+                <button type="button" class="multiselect-action-btn" id="repoSelectAll">Select All</button>
+                <button type="button" class="multiselect-action-btn" id="repoClearAll">Clear All</button>
+              </div>
+              <div class="multiselect-options" id="repoFilterOptions"></div>
+            </div>
+          </div>
         </div>
         <div class="filter-group">
           <label for="granularity">Group by:</label>
@@ -429,12 +439,22 @@ ${generateFileChurnStateScript()}
       // ======================================================================
       // Helpers
       // ======================================================================
+      // Get selected repositories as array (empty array returns undefined)
+      function getSelectedRepos() {
+        var checkboxes = document.querySelectorAll('#repoFilterOptions input[type="checkbox"]:checked');
+        var repos = [];
+        checkboxes.forEach(function(cb) {
+          repos.push(cb.value);
+        });
+        return repos.length > 0 ? repos : undefined;
+      }
+
       function getFilters() {
         return {
           startDate: document.getElementById('startDate').value || undefined,
           endDate: document.getElementById('endDate').value || undefined,
           team: document.getElementById('teamFilter').value || undefined,
-          repository: document.getElementById('repoFilter').value || undefined,
+          repository: getSelectedRepos() || undefined,
         };
       }
 
@@ -456,7 +476,7 @@ ${generateFileChurnStateScript()}
         showLoading('fileChurnCard');
         vscode.postMessage({ type: 'requestFilterOptions' });
         vscode.postMessage({ type: 'requestCommitVelocity', granularity: getGranularity(), filters });
-        vscode.postMessage({ type: 'requestTechStack' });
+        vscode.postMessage({ type: 'requestTechStack', filters });
         vscode.postMessage({ type: 'requestScorecardDetail', filters });
         vscode.postMessage({ type: 'requestLocCommitted', groupBy: locCurrentGroupBy, filters: getLocFilters() });
         vscode.postMessage({ type: 'requestTopComplexFiles', groupBy: complexityCurrentGroupBy, topN: COMPLEXITY_DEFAULT_TOP_N, filters });
@@ -697,11 +717,11 @@ ${generateFileChurnStateScript()}
       // ======================================================================
       function populateFilterOptions(options) {
         const teamSelect = document.getElementById('teamFilter');
-        const repoSelect = document.getElementById('repoFilter');
+        const repoOptionsContainer = document.getElementById('repoFilterOptions');
 
         // Preserve current selections
         const currentTeam = teamSelect.value;
-        const currentRepo = repoSelect.value;
+        const currentRepos = getSelectedRepos() || [];
 
         // Clear and rebuild team options
         teamSelect.innerHTML = '<option value="">All Teams</option>';
@@ -713,15 +733,106 @@ ${generateFileChurnStateScript()}
         });
         if (currentTeam) { teamSelect.value = currentTeam; }
 
-        // Clear and rebuild repo options
-        repoSelect.innerHTML = '<option value="">All Repos</option>';
+        // Clear and rebuild repo checkboxes
+        repoOptionsContainer.innerHTML = '';
+
+        // Check for pending repository selection from state restoration (GITX-137)
+        var pendingRepos = window._pendingRepoSelection || currentRepos;
+        if (window._pendingRepoSelection) {
+          delete window._pendingRepoSelection;
+        }
+
         (options.repositories || []).forEach(function(repo) {
-          const opt = document.createElement('option');
-          opt.value = repo;
-          opt.textContent = repo;
-          repoSelect.appendChild(opt);
+          var optionDiv = document.createElement('div');
+          optionDiv.className = 'multiselect-option';
+
+          var checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.id = 'repo-' + repo.replace(/[^a-zA-Z0-9]/g, '-');
+          checkbox.value = repo;
+          checkbox.checked = pendingRepos.includes(repo);
+          checkbox.addEventListener('change', updateRepoFilterLabel);
+
+          var label = document.createElement('label');
+          label.htmlFor = checkbox.id;
+          label.textContent = repo;
+
+          optionDiv.appendChild(checkbox);
+          optionDiv.appendChild(label);
+          repoOptionsContainer.appendChild(optionDiv);
         });
-        if (currentRepo) { repoSelect.value = currentRepo; }
+
+        updateRepoFilterLabel();
+      }
+
+      // ======================================================================
+      // Multi-Select Repository Filter (GITX-137)
+      // ======================================================================
+
+      function initMultiSelectRepo() {
+        var button = document.getElementById('repoFilterButton');
+        var dropdown = document.getElementById('repoFilterDropdown');
+        var container = document.getElementById('repoFilterContainer');
+
+        // Toggle dropdown
+        button.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var isExpanded = button.getAttribute('aria-expanded') === 'true';
+          button.setAttribute('aria-expanded', !isExpanded);
+          dropdown.style.display = isExpanded ? 'none' : 'block';
+          if (!isExpanded) {
+            dropdown.focus();
+          }
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+          if (!container.contains(e.target)) {
+            button.setAttribute('aria-expanded', 'false');
+            dropdown.style.display = 'none';
+          }
+        });
+
+        // Select All button
+        document.getElementById('repoSelectAll').addEventListener('click', function(e) {
+          e.stopPropagation();
+          var checkboxes = document.querySelectorAll('#repoFilterOptions input[type="checkbox"]');
+          checkboxes.forEach(function(cb) { cb.checked = true; });
+          updateRepoFilterLabel();
+        });
+
+        // Clear All button
+        document.getElementById('repoClearAll').addEventListener('click', function(e) {
+          e.stopPropagation();
+          var checkboxes = document.querySelectorAll('#repoFilterOptions input[type="checkbox"]');
+          checkboxes.forEach(function(cb) { cb.checked = false; });
+          updateRepoFilterLabel();
+        });
+
+        // Keyboard navigation
+        dropdown.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') {
+            button.setAttribute('aria-expanded', 'false');
+            dropdown.style.display = 'none';
+            button.focus();
+          }
+        });
+      }
+
+      function updateRepoFilterLabel() {
+        var checkboxes = document.querySelectorAll('#repoFilterOptions input[type="checkbox"]');
+        var checked = document.querySelectorAll('#repoFilterOptions input[type="checkbox"]:checked');
+        var label = document.getElementById('repoFilterLabel');
+
+        if (checked.length === 0) {
+          label.textContent = 'All Repos';
+        } else if (checked.length === checkboxes.length) {
+          label.textContent = 'All Repos';
+        } else if (checked.length === 1) {
+          label.textContent = checked[0].nextElementSibling.textContent;
+        } else {
+          label.textContent = checked.length + ' repos selected';
+        }
       }
 
       // ======================================================================
@@ -1041,6 +1152,11 @@ ${generateFileChurnEventListeners()}
       // Keyboard accessibility setup (IQS-871)
       // ======================================================================
       setupKeyboardAccessibility();
+
+      // ======================================================================
+      // Multi-Select Repository Filter Initialization (GITX-137)
+      // ======================================================================
+      initMultiSelectRepo();
 
       // ======================================================================
       // State restoration and initial data load (IQS-871)
