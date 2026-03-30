@@ -127,7 +127,7 @@ export interface ComplexityTrendFilterOptions {
   readonly teams: readonly string[];
   readonly contributors: readonly string[];
   readonly repositories: readonly string[];
-  /** Technology stack categories (architectural layers) from vw_technology_stack_category */
+  /** Architecture layer categories from commit_files.arc_component (GITX-141) */
   readonly techStacks: readonly string[];
 }
 

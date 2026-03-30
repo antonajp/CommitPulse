@@ -39,11 +39,11 @@ export type VelocityGranularity = 'day' | 'week';
 
 /**
  * Technology stack distribution entry.
- * Groups file extensions by category with file counts.
- * Maps from vw_technology_stack_category.
+ * Groups files by architecture component with counts.
+ * Maps from commit_files.arc_component (GITX-141).
  */
 export interface TechStackEntry {
-  /** Category name (e.g., "Frontend", "Backend", "Database") */
+  /** Category name (e.g., "Front-End", "Back-End", "Database", "DevOps/CI") */
   readonly category: string;
   /** Number of distinct file extensions in this category */
   readonly extensionCount: number;

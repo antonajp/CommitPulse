@@ -86,22 +86,19 @@ const ALLOWED_TOP_N: readonly ComplexityTrendTopN[] = [5, 10, 20] as const;
 
 /**
  * Allowed tech stack categories (CWE-20 input validation).
- * These must match the categories in vw_technology_stack_category.
- * Ticket: GITX-134
+ * These must match the categories in commit_files.arc_component (GITX-141).
+ * Ticket: GITX-134, GITX-141
  */
 const ALLOWED_TECH_STACK_CATEGORIES: readonly string[] = [
-  'Audio',
-  'Backend',
+  'Assets',
+  'Back-End',
+  'Build/Tooling',
   'Configuration',
   'Database',
-  'Dev Ops',
-  'Document',
-  'Frontend',
-  'Image',
-  'Multimedia',
+  'DevOps/CI',
+  'Documentation',
+  'Front-End',
   'Other',
-  'Process Automation',
-  'Reports',
   'Testing',
 ] as const;
 
@@ -322,11 +319,12 @@ export class ComplexityTrendDataService {
     }
 
     // Static lookup - no string interpolation
+    // GITX-141: archLayer now uses commit_files.arc_component directly
     const viewModeMap: Record<ComplexityTrendViewMode, string> = {
       contributor: 'COALESCE(cc.full_name, ch.author)',
       team: "COALESCE(cc.team, 'Unassigned')",
       repository: 'ch.repository',
-      archLayer: 'vtsc.category',
+      archLayer: 'cf.arc_component',
     };
 
     return viewModeMap[viewMode];
@@ -366,9 +364,6 @@ export class ComplexityTrendDataService {
       'ch.commit_date <= $2::DATE',
     ];
 
-    // Determine if tech stack JOIN is needed (GITX-136)
-    const needsTechStackJoin = viewMode === 'archLayer' || filters.techStack !== undefined;
-
     // Add pre-filter conditions with parameterized values (GITX-136)
     if (filters.team) {
       whereConditions.push(`cc.team = $${paramIndex}`);
@@ -385,8 +380,9 @@ export class ComplexityTrendDataService {
       params.push(filters.repository);
       paramIndex++;
     }
+    // GITX-141: Use commit_files.arc_component directly instead of vw_technology_stack_category
     if (filters.techStack) {
-      whereConditions.push(`vtsc.category = $${paramIndex}`);
+      whereConditions.push(`cf.arc_component = $${paramIndex}`);
       params.push(filters.techStack);
       paramIndex++;
     }
@@ -399,16 +395,12 @@ export class ComplexityTrendDataService {
       paramIndex += filters.selectedEntities.length;
     }
 
-    // Build the complete SQL query
-    const techStackJoin = needsTechStackJoin
-      ? 'LEFT JOIN vw_technology_stack_category vtsc ON cf.file_extension = vtsc.file_extension'
-      : '';
-
     // Add LIMIT as parameterized value (CWE-89 prevention)
     const limitParamIndex = paramIndex;
     params.push(MAX_RESULT_ROWS);
 
     // GITX-136: Added total_complexity for metric toggle support
+    // GITX-141: Removed vw_technology_stack_category JOIN - use cf.arc_component directly
     const sql = `
 SELECT
   ${dateAggregation} AS date,
@@ -422,7 +414,6 @@ SELECT
 FROM commit_files cf
 INNER JOIN commit_history ch ON cf.sha = ch.sha
 LEFT JOIN commit_contributors cc ON ch.author = cc.login
-${techStackJoin}
 WHERE ${whereConditions.join('\n  AND ')}
 GROUP BY ${dateAggregation}, ${viewModeExpression}
 ORDER BY date ASC, total_complexity DESC
@@ -598,9 +589,6 @@ LIMIT $${limitParamIndex};
       'ch.commit_date <= $2::DATE',
     ];
 
-    // Determine if tech stack JOIN is needed
-    const needsTechStackJoin = viewMode === 'archLayer' || filters.techStack !== undefined;
-
     // Add pre-filter conditions
     if (filters.team) {
       whereConditions.push(`cc.team = $${paramIndex}`);
@@ -617,20 +605,18 @@ LIMIT $${limitParamIndex};
       params.push(filters.repository);
       paramIndex++;
     }
+    // GITX-141: Use commit_files.arc_component directly instead of vw_technology_stack_category
     if (filters.techStack) {
-      whereConditions.push(`vtsc.category = $${paramIndex}`);
+      whereConditions.push(`cf.arc_component = $${paramIndex}`);
       params.push(filters.techStack);
       paramIndex++;
     }
-
-    const techStackJoin = needsTechStackJoin
-      ? 'LEFT JOIN vw_technology_stack_category vtsc ON cf.file_extension = vtsc.file_extension'
-      : '';
 
     // Limit to 100 entities max
     const limitParamIndex = paramIndex;
     params.push(100);
 
+    // GITX-141: Removed vw_technology_stack_category JOIN - use cf.arc_component directly
     const sql = `
 SELECT
   ${viewModeExpression} AS entity,
@@ -638,7 +624,6 @@ SELECT
 FROM commit_files cf
 INNER JOIN commit_history ch ON cf.sha = ch.sha
 LEFT JOIN commit_contributors cc ON ch.author = cc.login
-${techStackJoin}
 WHERE ${whereConditions.join('\n  AND ')}
 GROUP BY ${viewModeExpression}
 HAVING SUM(COALESCE(cf.complexity, cf.weighted_complexity, 0)) > 0
