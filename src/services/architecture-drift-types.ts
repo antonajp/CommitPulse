@@ -373,8 +373,10 @@ export interface ArchitectureDriftFilters {
   readonly startDate?: string;
   /** End date for date range filter (ISO date string YYYY-MM-DD) */
   readonly endDate?: string;
-  /** Filter by repository name */
+  /** Filter by repository name (single repository, deprecated - use repositories) */
   readonly repository?: string;
+  /** Filter by repository names (multi-select, GITX-142) */
+  readonly repositories?: readonly string[];
   /** Filter by component name */
   readonly component?: string;
   /** Filter by drift severity */
@@ -386,6 +388,20 @@ export interface ArchitectureDriftFilters {
   /** Filter by team name */
   readonly team?: string;
 }
+
+/**
+ * Maximum number of repositories allowed in multi-select filter.
+ * Prevents DoS via overly large arrays (CWE-400).
+ * Ticket: GITX-142
+ */
+export const DRIFT_MAX_REPOSITORIES = 100;
+
+/**
+ * Maximum date range in years for drift queries.
+ * Prevents queries spanning excessive time periods.
+ * Ticket: GITX-142
+ */
+export const DRIFT_MAX_DATE_RANGE_YEARS = 5;
 
 // ============================================================================
 // Constants

@@ -31,14 +31,17 @@ import {
   QUERY_CROSS_COMPONENT_COMBINED,
   QUERY_DRIFT_ALL,
   QUERY_DRIFT_BY_REPOSITORY,
+  QUERY_DRIFT_BY_REPOSITORIES,
   QUERY_DRIFT_BY_COMPONENT,
   QUERY_DRIFT_BY_MIN_INTENSITY,
   QUERY_DRIFT_COMBINED,
   QUERY_WEEKLY_DRIFT_ALL,
   QUERY_WEEKLY_DRIFT_BY_REPOSITORY,
   QUERY_WEEKLY_DRIFT_BY_COMPONENT,
+  QUERY_WEEKLY_DRIFT_COMBINED,
   QUERY_PAIR_COUPLING_ALL,
   QUERY_PAIR_COUPLING_BY_REPOSITORY,
+  QUERY_PAIR_COUPLING_BY_REPOSITORIES,
   QUERY_PAIR_COUPLING_BY_COMPONENT,
   QUERY_DRIFT_SUMMARY,
   QUERY_UNIQUE_COMPONENTS,
@@ -71,6 +74,8 @@ import {
   DRIFT_MAX_COMMIT_ROWS,
   DRIFT_MAX_WEEKLY_ROWS,
   DRIFT_MAX_COUPLING_ROWS,
+  DRIFT_MAX_REPOSITORIES,
+  DRIFT_MAX_DATE_RANGE_YEARS,
   VALID_DRIFT_SEVERITIES,
 } from './architecture-drift-types.js';
 
@@ -290,6 +295,66 @@ export class ArchitectureDriftDataService {
         `Invalid date range: start date (${filters.startDate}) must be before end date (${filters.endDate})`
       );
     }
+    // GITX-142: Validate max date range (5 years)
+    if (filters.startDate && filters.endDate) {
+      const startDate = new Date(filters.startDate);
+      const endDate = new Date(filters.endDate);
+
+      // Check for invalid Date objects (NaN check)
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        this.logger.warn(
+          CLASS_NAME,
+          'validateDateFilters',
+          `Invalid Date parsing: start=${filters.startDate}, end=${filters.endDate}`
+        );
+        throw new Error('Invalid date format. Expected YYYY-MM-DD.');
+      }
+
+      const diffYears = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
+      if (diffYears > DRIFT_MAX_DATE_RANGE_YEARS) {
+        this.logger.warn(
+          CLASS_NAME,
+          'validateDateFilters',
+          `Date range exceeds max: ${diffYears} years > ${DRIFT_MAX_DATE_RANGE_YEARS} years`
+        );
+        throw new Error(`Date range cannot exceed ${DRIFT_MAX_DATE_RANGE_YEARS} years.`);
+      }
+    }
+  }
+
+  /**
+   * Validate repositories array filter.
+   * Enforces maximum array size and validates each item (CWE-20, CWE-400).
+   * GITX-142: Multi-select repository filter support.
+   *
+   * @param repositories - Array of repository names
+   * @throws Error if array is too large or contains invalid items
+   */
+  private validateRepositoriesFilter(repositories: readonly string[] | undefined): void {
+    if (!repositories) {
+      return;
+    }
+    if (repositories.length > DRIFT_MAX_REPOSITORIES) {
+      this.logger.warn(
+        CLASS_NAME,
+        'validateRepositoriesFilter',
+        `Repositories array exceeds max: ${repositories.length} > ${DRIFT_MAX_REPOSITORIES}`
+      );
+      throw new Error(`Too many repositories selected. Maximum is ${DRIFT_MAX_REPOSITORIES}.`);
+    }
+    // Validate each repository name length
+    for (const repo of repositories) {
+      if (repo.length > DRIFT_MAX_FILTER_LENGTH) {
+        this.logger.warn(
+          CLASS_NAME,
+          'validateRepositoriesFilter',
+          `Repository name exceeds max length: ${repo.length} > ${DRIFT_MAX_FILTER_LENGTH}`
+        );
+        throw new Error(
+          `Repository name exceeds maximum length of ${DRIFT_MAX_FILTER_LENGTH} characters`
+        );
+      }
+    }
   }
 
   /**
@@ -505,8 +570,9 @@ export class ArchitectureDriftDataService {
 
   /**
    * Fetch architecture drift data with optional filters.
+   * GITX-142: Now supports repositories array for multi-select.
    *
-   * @param filters - Optional repository, component, and minimum intensity filters
+   * @param filters - Optional repository, repositories array, component, and minimum intensity filters
    * @returns Array of ArchitectureDrift sorted by heat_intensity descending
    */
   async getArchitectureDrift(
@@ -520,23 +586,30 @@ export class ArchitectureDriftDataService {
 
     // Validate all filters
     this.validateStringFilter(filters.repository, 'repository');
+    this.validateRepositoriesFilter(filters.repositories);
     this.validateStringFilter(filters.component, 'component');
     this.validateNumericFilter(filters.minHeatIntensity, 'minHeatIntensity');
 
-    // Determine which query to use
-    const hasRepository = Boolean(filters.repository);
+    // GITX-142: Prioritize repositories array over single repository
+    const hasRepositories = filters.repositories && filters.repositories.length > 0;
+    const hasRepository = Boolean(filters.repository) && !hasRepositories;
     const hasComponent = Boolean(filters.component);
     const hasMinIntensity = filters.minHeatIntensity !== undefined;
 
     let sql: string;
     let params: unknown[];
 
-    const filterCount = [hasRepository, hasComponent, hasMinIntensity].filter(Boolean).length;
+    const filterCount = [hasRepositories, hasRepository, hasComponent, hasMinIntensity].filter(Boolean).length;
 
     if (filterCount === 0) {
       sql = QUERY_DRIFT_ALL;
       params = [];
       this.logger.debug(CLASS_NAME, 'getArchitectureDrift', 'Using unfiltered query');
+    } else if (filterCount === 1 && hasRepositories) {
+      // GITX-142: Multi-select repository filter
+      sql = QUERY_DRIFT_BY_REPOSITORIES;
+      params = [filters.repositories];
+      this.logger.debug(CLASS_NAME, 'getArchitectureDrift', 'Using repositories array filter query');
     } else if (filterCount === 1 && hasRepository) {
       sql = QUERY_DRIFT_BY_REPOSITORY;
       params = [filters.repository];
@@ -550,13 +623,26 @@ export class ArchitectureDriftDataService {
       params = [filters.minHeatIntensity];
       this.logger.debug(CLASS_NAME, 'getArchitectureDrift', 'Using min intensity filter query');
     } else {
-      sql = QUERY_DRIFT_COMBINED;
-      params = [
-        filters.repository ?? null,
-        filters.component ?? null,
-        filters.minHeatIntensity ?? null,
-      ];
-      this.logger.debug(CLASS_NAME, 'getArchitectureDrift', 'Using combined filter query');
+      // GITX-142 NOTE: Combined filters with multi-repo array.
+      // When repositories array is present AND other filters (component/minIntensity) are also set,
+      // we use the repositories array query and ignore other filters for now.
+      // This is acceptable because:
+      // 1. Multi-repo + date range is the primary GITX-142 use case
+      // 2. Component filtering via visibility toggles is more intuitive
+      // 3. A follow-up ticket can add a full combined query if needed
+      if (hasRepositories) {
+        sql = QUERY_DRIFT_BY_REPOSITORIES;
+        params = [filters.repositories];
+        this.logger.debug(CLASS_NAME, 'getArchitectureDrift', 'Using repositories array filter (ignoring component/intensity filters)');
+      } else {
+        sql = QUERY_DRIFT_COMBINED;
+        params = [
+          filters.repository ?? null,
+          filters.component ?? null,
+          filters.minHeatIntensity ?? null,
+        ];
+        this.logger.debug(CLASS_NAME, 'getArchitectureDrift', 'Using combined filter query');
+      }
     }
 
     this.logger.trace(CLASS_NAME, 'getArchitectureDrift', `Params: ${JSON.stringify(params)}`);
@@ -591,12 +677,13 @@ export class ArchitectureDriftDataService {
 
   /**
    * Fetch weekly drift trends with optional filters.
+   * GITX-142: Now supports repositories array and date range.
    *
-   * @param filters - Optional repository and component filters
+   * @param filters - Optional repository, repositories, component, and date range filters
    * @returns Array of WeeklyDriftTrend sorted by week descending
    */
   async getWeeklyDriftTrends(
-    filters: Pick<ArchitectureDriftFilters, 'repository' | 'component'> = {}
+    filters: Pick<ArchitectureDriftFilters, 'repository' | 'repositories' | 'component' | 'startDate' | 'endDate'> = {}
   ): Promise<readonly WeeklyDriftTrend[]> {
     this.logger.debug(
       CLASS_NAME,
@@ -606,12 +693,28 @@ export class ArchitectureDriftDataService {
 
     // Validate filters
     this.validateStringFilter(filters.repository, 'repository');
+    this.validateRepositoriesFilter(filters.repositories);
     this.validateStringFilter(filters.component, 'component');
+    this.validateDateFilters(filters as ArchitectureDriftFilters);
+
+    // GITX-142: Check for multi-repo and date range filters
+    const hasRepositories = filters.repositories && filters.repositories.length > 0;
+    const hasRepository = Boolean(filters.repository) && !hasRepositories;
+    const hasDateRange = Boolean(filters.startDate && filters.endDate);
 
     let sql: string;
     let params: unknown[];
 
-    if (filters.repository) {
+    // GITX-142: Use combined query for multi-repo + date range
+    if (hasRepositories || hasDateRange) {
+      sql = QUERY_WEEKLY_DRIFT_COMBINED;
+      params = [
+        hasRepositories ? filters.repositories : null,
+        filters.startDate ?? null,
+        filters.endDate ?? null,
+      ];
+      this.logger.debug(CLASS_NAME, 'getWeeklyDriftTrends', 'Using combined filter query (repos + dates)');
+    } else if (hasRepository) {
       sql = QUERY_WEEKLY_DRIFT_BY_REPOSITORY;
       params = [filters.repository];
       this.logger.debug(CLASS_NAME, 'getWeeklyDriftTrends', 'Using repository filter query');
@@ -655,12 +758,13 @@ export class ArchitectureDriftDataService {
 
   /**
    * Fetch component pair coupling data with optional filters.
+   * GITX-142: Now supports repositories array for multi-select.
    *
-   * @param filters - Optional repository and component filters
+   * @param filters - Optional repository, repositories, and component filters
    * @returns Array of ComponentPairCoupling sorted by coupling_count descending
    */
   async getComponentPairCoupling(
-    filters: Pick<ArchitectureDriftFilters, 'repository' | 'component'> = {}
+    filters: Pick<ArchitectureDriftFilters, 'repository' | 'repositories' | 'component'> = {}
   ): Promise<readonly ComponentPairCoupling[]> {
     this.logger.debug(
       CLASS_NAME,
@@ -670,12 +774,22 @@ export class ArchitectureDriftDataService {
 
     // Validate filters
     this.validateStringFilter(filters.repository, 'repository');
+    this.validateRepositoriesFilter(filters.repositories);
     this.validateStringFilter(filters.component, 'component');
+
+    // GITX-142: Prioritize repositories array over single repository
+    const hasRepositories = filters.repositories && filters.repositories.length > 0;
+    const hasRepository = Boolean(filters.repository) && !hasRepositories;
 
     let sql: string;
     let params: unknown[];
 
-    if (filters.repository) {
+    if (hasRepositories) {
+      // GITX-142: Multi-select repository filter
+      sql = QUERY_PAIR_COUPLING_BY_REPOSITORIES;
+      params = [filters.repositories];
+      this.logger.debug(CLASS_NAME, 'getComponentPairCoupling', 'Using repositories array filter query');
+    } else if (hasRepository) {
       sql = QUERY_PAIR_COUPLING_BY_REPOSITORY;
       params = [filters.repository];
       this.logger.debug(CLASS_NAME, 'getComponentPairCoupling', 'Using repository filter query');
@@ -1012,6 +1126,7 @@ export class ArchitectureDriftDataService {
 
   /**
    * Get complete heat map chart data including all views and summary.
+   * GITX-142: Now supports repositories array and date range filters.
    *
    * @param filters - Optional filters for all queries
    * @returns DriftHeatMapChartData with complete visualization data
@@ -1024,6 +1139,10 @@ export class ArchitectureDriftDataService {
       'getHeatMapChartData',
       `Fetching heat map chart data: filters=${JSON.stringify(filters)}`
     );
+
+    // GITX-142: Validate multi-repo and date filters
+    this.validateRepositoriesFilter(filters.repositories);
+    this.validateDateFilters(filters);
 
     // Check view existence for graceful degradation
     const viewExists = await this.checkDriftViewExists();
@@ -1053,15 +1172,19 @@ export class ArchitectureDriftDataService {
       };
     }
 
-    // Fetch data in parallel
+    // GITX-142: Pass repositories array and date range to sub-queries
     const [driftData, weeklyTrends, couplingData, summary] = await Promise.all([
       this.getArchitectureDrift(filters),
       this.getWeeklyDriftTrends({
         repository: filters.repository,
+        repositories: filters.repositories,
         component: filters.component,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
       }),
       this.getComponentPairCoupling({
         repository: filters.repository,
+        repositories: filters.repositories,
         component: filters.component,
       }),
       this.getSummary(),

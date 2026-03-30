@@ -425,6 +425,37 @@ export const QUERY_DRIFT_COMBINED = `
   LIMIT ${DRIFT_QUERY_MAX_ROWS}
 `;
 
+/**
+ * Query to fetch architecture drift by multiple repositories.
+ * GITX-142: Supports multi-select repository filter.
+ *
+ * Parameters:
+ *   $1 - repositories (TEXT[]) - array of repository names
+ */
+export const QUERY_DRIFT_BY_REPOSITORIES = `
+  SELECT
+    component,
+    repository,
+    cross_component_commits,
+    total_commits,
+    drift_percentage,
+    total_churn,
+    avg_components_per_commit,
+    critical_count,
+    high_count,
+    medium_count,
+    low_count,
+    unique_authors,
+    unique_teams,
+    first_drift_date,
+    last_drift_date,
+    heat_intensity
+  FROM vw_architecture_drift
+  WHERE repository = ANY($1)
+  ORDER BY heat_intensity DESC
+  LIMIT ${DRIFT_QUERY_MAX_ROWS}
+`;
+
 // ============================================================================
 // Weekly Drift Trend Queries
 // ============================================================================
@@ -508,6 +539,68 @@ export const QUERY_WEEKLY_DRIFT_BY_COMPONENT = `
   LIMIT ${DRIFT_QUERY_MAX_WEEKLY_ROWS}
 `;
 
+/**
+ * Query to fetch weekly drift by multiple repositories.
+ * GITX-142: Supports multi-select repository filter.
+ *
+ * Parameters:
+ *   $1 - repositories (TEXT[]) - array of repository names
+ */
+export const QUERY_WEEKLY_DRIFT_BY_REPOSITORIES = `
+  SELECT
+    week,
+    component,
+    repository,
+    cross_component_commits,
+    total_commits,
+    drift_percentage,
+    weekly_churn,
+    avg_components,
+    critical_count,
+    high_count,
+    medium_count,
+    low_count,
+    unique_authors,
+    heat_intensity
+  FROM vw_architecture_drift_weekly
+  WHERE repository = ANY($1)
+  ORDER BY week DESC, heat_intensity DESC
+  LIMIT ${DRIFT_QUERY_MAX_WEEKLY_ROWS}
+`;
+
+/**
+ * Query to fetch weekly drift by repositories and date range.
+ * GITX-142: Combined multi-repo and date filter.
+ *
+ * Parameters:
+ *   $1 - repositories (TEXT[]) - array of repository names (nullable, NULL = all)
+ *   $2 - start_date (DATE) - start of date range (nullable)
+ *   $3 - end_date (DATE) - end of date range (nullable)
+ */
+export const QUERY_WEEKLY_DRIFT_COMBINED = `
+  SELECT
+    week,
+    component,
+    repository,
+    cross_component_commits,
+    total_commits,
+    drift_percentage,
+    weekly_churn,
+    avg_components,
+    critical_count,
+    high_count,
+    medium_count,
+    low_count,
+    unique_authors,
+    heat_intensity
+  FROM vw_architecture_drift_weekly
+  WHERE (repository = ANY($1) OR $1 IS NULL)
+    AND (week >= $2::DATE OR $2 IS NULL)
+    AND (week <= $3::DATE OR $3 IS NULL)
+  ORDER BY week DESC, heat_intensity DESC
+  LIMIT ${DRIFT_QUERY_MAX_WEEKLY_ROWS}
+`;
+
 // ============================================================================
 // Component Pair Coupling Queries
 // ============================================================================
@@ -581,6 +674,33 @@ export const QUERY_PAIR_COUPLING_BY_COMPONENT = `
     coupling_strength
   FROM vw_component_pair_coupling
   WHERE component_a = $1 OR component_b = $1
+  ORDER BY coupling_count DESC, coupling_strength DESC
+  LIMIT ${DRIFT_QUERY_MAX_COUPLING_ROWS}
+`;
+
+/**
+ * Query to fetch component pair coupling by multiple repositories.
+ * GITX-142: Supports multi-select repository filter.
+ *
+ * Parameters:
+ *   $1 - repositories (TEXT[]) - array of repository names
+ */
+export const QUERY_PAIR_COUPLING_BY_REPOSITORIES = `
+  SELECT
+    component_a,
+    component_b,
+    repository,
+    coupling_count,
+    unique_commits,
+    unique_authors,
+    unique_teams,
+    critical_count,
+    high_count,
+    first_coupling_date,
+    last_coupling_date,
+    coupling_strength
+  FROM vw_component_pair_coupling
+  WHERE repository = ANY($1)
   ORDER BY coupling_count DESC, coupling_strength DESC
   LIMIT ${DRIFT_QUERY_MAX_COUPLING_ROWS}
 `;

@@ -112,33 +112,31 @@ describe('generateDriftHtml', () => {
   });
 
   describe('Filter controls', () => {
-    it('should include repository filter', () => {
+    it('should include multi-select repository filter', () => {
+      // GITX-142: Updated to multi-select repository filter
       const config = createMockConfig();
       const html = generateDriftHtml(config);
 
-      expect(html).toContain('id="repositoryFilter"');
+      expect(html).toContain('id="repoFilterButton"');
+      expect(html).toContain('id="repoFilterDropdown"');
+      expect(html).toContain('id="repoSelectAll"');
+      expect(html).toContain('id="repoClearAll"');
       expect(html).toContain('Repository');
     });
 
-    it('should include component filter', () => {
+    it('should include date range filters', () => {
+      // GITX-142: Added date range picker inputs
       const config = createMockConfig();
       const html = generateDriftHtml(config);
 
-      expect(html).toContain('id="componentFilter"');
-      expect(html).toContain('Component');
+      expect(html).toContain('id="startDateFilter"');
+      expect(html).toContain('id="endDateFilter"');
+      expect(html).toContain('Start Date');
+      expect(html).toContain('End Date');
     });
 
-    it('should include severity filter', () => {
-      const config = createMockConfig();
-      const html = generateDriftHtml(config);
-
-      expect(html).toContain('id="severityFilter"');
-      expect(html).toContain('Severity');
-      expect(html).toContain('value="critical"');
-      expect(html).toContain('value="high"');
-      expect(html).toContain('value="medium"');
-      expect(html).toContain('value="low"');
-    });
+    // GITX-142: Component and Severity filters removed from UI per AC4
+    // Component visibility toggles remain in the chartArea section
 
     it('should include apply filter button', () => {
       const config = createMockConfig();
@@ -338,9 +336,10 @@ describe('generateDriftHtml', () => {
       const config = createMockConfig();
       const html = generateDriftHtml(config);
 
+      // GITX-142: Updated for multi-select repository and date range filters
       expect(html).toContain('aria-label="Repository filter"');
-      expect(html).toContain('aria-label="Component filter"');
-      expect(html).toContain('aria-label="Severity filter"');
+      expect(html).toContain('aria-label="Start date filter"');
+      expect(html).toContain('aria-label="End date filter"');
       expect(html).toContain('aria-label="Apply filters"');
       expect(html).toContain('aria-label="Export chart data as CSV"');
       expect(html).toContain('aria-label="Show only cross-component commits"');
