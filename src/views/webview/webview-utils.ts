@@ -403,16 +403,26 @@ export function generateStatePersistenceScript(): string {
         var startDateEl = document.getElementById('startDate');
         var endDateEl = document.getElementById('endDate');
         var teamEl = document.getElementById('teamFilter');
-        var repoEl = document.getElementById('repoFilter');
         var granularityEl = document.getElementById('granularity');
         var jiraProjectEl = document.getElementById('jiraProjectFilter');
 
         if (startDateEl) { filterState.startDate = startDateEl.value; }
         if (endDateEl) { filterState.endDate = endDateEl.value; }
         if (teamEl) { filterState.team = teamEl.value; }
-        if (repoEl) { filterState.repository = repoEl.value; }
         if (granularityEl) { filterState.granularity = granularityEl.value; }
         if (jiraProjectEl) { filterState.jiraProject = jiraProjectEl.value; }
+
+        // Handle multi-select repository filter (GITX-137)
+        var repoCheckboxes = document.querySelectorAll('#repoFilterOptions input[type="checkbox"]:checked');
+        if (repoCheckboxes.length > 0) {
+          var repos = [];
+          repoCheckboxes.forEach(function(cb) { repos.push(cb.value); });
+          filterState.repositories = repos;
+        } else {
+          // If no checkboxes checked, try legacy single-select (backwards compatibility)
+          var repoEl = document.getElementById('repoFilter');
+          if (repoEl) { filterState.repository = repoEl.value; }
+        }
 
         saveWebviewState({ filters: filterState });
       }
@@ -428,16 +438,24 @@ export function generateStatePersistenceScript(): string {
         var startDateEl = document.getElementById('startDate');
         var endDateEl = document.getElementById('endDate');
         var teamEl = document.getElementById('teamFilter');
-        var repoEl = document.getElementById('repoFilter');
         var granularityEl = document.getElementById('granularity');
         var jiraProjectEl = document.getElementById('jiraProjectFilter');
 
         if (startDateEl && f.startDate) { startDateEl.value = f.startDate; }
         if (endDateEl && f.endDate) { endDateEl.value = f.endDate; }
         if (teamEl && f.team) { teamEl.value = f.team; }
-        if (repoEl && f.repository) { repoEl.value = f.repository; }
         if (granularityEl && f.granularity) { granularityEl.value = f.granularity; }
         if (jiraProjectEl && f.jiraProject) { jiraProjectEl.value = f.jiraProject; }
+
+        // Handle multi-select repository filter restoration (GITX-137)
+        // Store for later restoration after populateFilterOptions is called
+        if (f.repositories && f.repositories.length > 0) {
+          window._pendingRepoSelection = f.repositories;
+        } else if (f.repository) {
+          // Backwards compatibility with single-select
+          var repoEl = document.getElementById('repoFilter');
+          if (repoEl) { repoEl.value = f.repository; }
+        }
       }
   `;
 }

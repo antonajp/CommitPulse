@@ -291,7 +291,7 @@ describe('ComplexityDataService', () => {
         const longRepo = 'B'.repeat(201);
         await expect(service.getTopComplexFiles('individual', 20, {
           repository: longRepo,
-        })).rejects.toThrow('Repository filter exceeds maximum length');
+        })).rejects.toThrow('Repository name exceeds maximum length');
         expect(mockDb.query).not.toHaveBeenCalled();
       });
     });

@@ -1156,6 +1156,133 @@ body {
 }
 
 /* ============================================================================
+   Multi-Select Dropdown (GITX-137)
+   ============================================================================ */
+
+.filter-group-multiselect {
+  position: relative;
+}
+
+.multiselect-container {
+  position: relative;
+  min-width: 140px;
+}
+
+.multiselect-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  gap: 8px;
+}
+
+.multiselect-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multiselect-arrow {
+  font-size: 0.7em;
+  color: var(--vscode-descriptionForeground, #888888);
+  flex-shrink: 0;
+}
+
+.multiselect-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  min-width: 180px;
+  max-height: 250px;
+  margin-top: 2px;
+  background-color: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-input-border, #555555);
+  border-radius: 2px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.multiselect-actions {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444444);
+  background-color: var(--vscode-sideBar-background, #252526);
+}
+
+.multiselect-action-btn {
+  flex: 1;
+  padding: 3px 8px;
+  font-size: 0.8em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.multiselect-action-btn:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.multiselect-action-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+.multiselect-options {
+  overflow-y: auto;
+  max-height: 180px;
+  padding: 4px 0;
+}
+
+.multiselect-option {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.multiselect-option:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.multiselect-option input[type="checkbox"] {
+  margin: 0;
+  margin-right: 8px;
+  cursor: pointer;
+  accent-color: var(--vscode-button-background, #0e639c);
+}
+
+.multiselect-option label {
+  flex: 1;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: var(--vscode-foreground, #cccccc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Focus styles for accessibility */
+.multiselect-button:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+.multiselect-dropdown:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+}
+
+/* ============================================================================
    Toast Notifications (GITX-127)
    Used for CSV export success/error feedback.
    ============================================================================ */

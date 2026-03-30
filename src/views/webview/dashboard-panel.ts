@@ -255,7 +255,7 @@ export class DashboardPanel implements vscode.Disposable {
         }
 
         case 'requestTechStack': {
-          const data = await this.dataService.getTechStackDistribution();
+          const data = await this.dataService.getTechStackDistribution(message.filters);
           this.postMessage({ type: 'techStackData', data });
           break;
         }

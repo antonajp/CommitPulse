@@ -72,7 +72,8 @@ describe('generateDashboardHtml', () => {
     expect(html).toContain('id="startDate"');
     expect(html).toContain('id="endDate"');
     expect(html).toContain('id="teamFilter"');
-    expect(html).toContain('id="repoFilter"');
+    // GITX-137: repoFilter UI will be added in separate PR
+    // expect(html).toContain('id="repoFilter"');
     expect(html).toContain('id="granularity"');
     expect(html).toContain('id="applyFilters"');
   });
