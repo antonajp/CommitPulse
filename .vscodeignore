@@ -4,6 +4,7 @@ src/**
 legacy/**
 docs/**
 scripts/**
+!scripts/classify-arc-component.sql
 docker/**
 !docker/migrations/
 !docker/migrations/*.sql
