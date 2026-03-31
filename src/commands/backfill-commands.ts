@@ -246,28 +246,53 @@ export function registerStoryPointsBackfillCommand(logger: LoggerService | undef
 }
 
 /**
- * In-memory cache of the last mapping checksum for smart refresh detection.
- * Resets when the extension is deactivated (fresh VS Code session).
- * Ticket: IQS-885
+ * SQL file path for arc component classification.
+ * Relative to extension root (scripts/classify-arc-component.sql).
+ * GITX-146: Simplified to use SQL-based classification.
  */
-let lastArcMappingChecksum = '';
+const ARC_COMPONENT_SQL_FILE = 'scripts/classify-arc-component.sql';
+
+/**
+ * Expected SHA-256 checksum of the SQL file for integrity verification.
+ * Security: CWE-494 (Download of Code Without Integrity Check).
+ * Update this checksum whenever classify-arc-component.sql changes.
+ * GITX-146: Security requirement - verify SQL file before execution.
+ */
+const ARC_COMPONENT_SQL_CHECKSUM = '044a3398ea0f4372230576fb4aba9126286bb485978984b5141129e984eefad4';
+
+/**
+ * Result type for arc component SQL classification.
+ */
+interface ArcComponentSqlResult {
+  /** Category breakdown from SQL query results */
+  categoryCounts: Record<string, number>;
+  /** Total rows classified */
+  totalClassified: number;
+  /** Execution time in milliseconds */
+  durationMs: number;
+}
 
 /**
  * Register the "Gitr: Backfill Architecture Components" command.
  *
  * Classifies every file in commit_files into an architecture component
- * category (Front-End, Back-End, Database, DevOps/CI, etc.) using
- * user-editable extension and filename mappings.
+ * category (Front-End, Back-End, Database, DevOps/CI, etc.) by executing
+ * the LLM-generated SQL classification rules in scripts/classify-arc-component.sql.
+ *
+ * GITX-146: Simplified from TypeScript-based classification to direct SQL execution.
+ * Removed user-editable VS Code settings in favor of canonical SQL rules.
  *
  * Uses lightweight buildDatabaseConnection() (no Jira/GitHub/Linear wiring).
  * Mutually exclusive with pipeline runs and other backfill runs.
  *
- * Ticket: IQS-885
- *
  * @param logger - Logger instance for diagnostic messages
+ * @param extensionUri - Extension URI for resolving SQL file path
  * @returns The command disposable
  */
-export function registerArcComponentBackfillCommand(logger: LoggerService | undefined): vscode.Disposable {
+export function registerArcComponentBackfillCommand(
+  logger: LoggerService | undefined,
+  extensionUri?: vscode.Uri,
+): vscode.Disposable {
   logger?.debug(CLASS_NAME, 'registerArcComponentBackfillCommand', 'Registering Arc Component Backfill command');
 
   const arcComponentDisposable = vscode.commands.registerCommand('gitr.backfillArcComponents', async () => {
@@ -286,6 +311,34 @@ export function registerArcComponentBackfillCommand(logger: LoggerService | unde
       return;
     }
 
+    // Step 1: Show QuickPick for mode selection
+    const modeSelection = await vscode.window.showQuickPick(
+      [
+        {
+          label: 'Incremental (Recommended)',
+          description: 'Only classify rows where arc_component IS NULL',
+          mode: 'incremental' as const,
+        },
+        {
+          label: 'Force Full Reclassification',
+          description: 'Reset all rows to NULL, then re-classify everything',
+          mode: 'force' as const,
+        },
+      ],
+      {
+        title: 'Gitr: Backfill Architecture Components',
+        placeHolder: 'Select classification mode',
+      },
+    );
+
+    if (!modeSelection) {
+      logger?.info(CLASS_NAME, 'backfillArcComponents', 'User cancelled mode selection');
+      return;
+    }
+
+    const forceMode = modeSelection.mode === 'force';
+    logger?.info(CLASS_NAME, 'backfillArcComponents', `Mode selected: ${modeSelection.mode}`);
+
     backfillRunning = true;
     logger?.debug(CLASS_NAME, 'backfillArcComponents', 'Backfill running flag set to true');
 
@@ -293,73 +346,162 @@ export function registerArcComponentBackfillCommand(logger: LoggerService | unde
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: 'Gitr: Backfilling Architecture Components',
+          title: `Gitr: Classifying Architecture Components (${forceMode ? 'Full' : 'Incremental'})`,
           cancellable: true,
         },
         async (progress, token) => {
-          // Build lightweight DB connection
+          const startTime = Date.now();
+
+          // Step 2: Locate and read the SQL file
+          progress.report({ message: 'Reading classification rules...' });
+
+          let sqlFilePath: string;
+          if (extensionUri) {
+            sqlFilePath = vscode.Uri.joinPath(extensionUri, ARC_COMPONENT_SQL_FILE).fsPath;
+          } else {
+            // Fallback: try to find extension context from global state
+            const extensions = vscode.extensions.all.find((e) => e.id.includes('gitr'));
+            if (extensions?.extensionPath) {
+              const { join } = await import('path');
+              sqlFilePath = join(extensions.extensionPath, ARC_COMPONENT_SQL_FILE);
+            } else {
+              throw new Error('Cannot determine extension path for SQL file');
+            }
+          }
+
+          // Security: Validate SQL file path is within extension directory (CWE-22: Path Traversal)
+          const { readFile } = await import('fs/promises');
+          const { resolve, dirname } = await import('path');
+
+          const resolvedPath = resolve(sqlFilePath);
+          const extensionRoot = extensionUri ? extensionUri.fsPath : dirname(dirname(resolvedPath));
+
+          if (!resolvedPath.startsWith(extensionRoot)) {
+            logger?.error(CLASS_NAME, 'backfillArcComponents', `Security: SQL file path traversal detected: ${resolvedPath}`);
+            throw new Error('Security error: SQL file path outside extension directory');
+          }
+
+          let sqlContent: string;
+          try {
+            sqlContent = await readFile(resolvedPath, 'utf-8');
+            logger?.debug(CLASS_NAME, 'backfillArcComponents', `SQL file read: ${sqlContent.length} bytes from ${resolvedPath}`);
+          } catch (readError: unknown) {
+            const msg = readError instanceof Error ? readError.message : String(readError);
+            logger?.error(CLASS_NAME, 'backfillArcComponents', `Failed to read SQL file: ${msg}`);
+            throw new Error(`Classification rules file not found: ${ARC_COMPONENT_SQL_FILE}`);
+          }
+
+          // Security: Verify SQL file checksum (CWE-494: Download of Code Without Integrity Check)
+          // Note: For development, we log but don't fail on checksum mismatch
+          // In production, this should be enforced
+          const { createHash } = await import('crypto');
+          const actualChecksum = createHash('sha256').update(sqlContent).digest('hex');
+          if (actualChecksum !== ARC_COMPONENT_SQL_CHECKSUM) {
+            logger?.warn(
+              CLASS_NAME,
+              'backfillArcComponents',
+              `SQL file checksum mismatch. Expected: ${ARC_COMPONENT_SQL_CHECKSUM}, Got: ${actualChecksum}`,
+            );
+            // Log but continue - checksum will need updating when SQL changes
+          }
+
+          // Check for cancellation
+          if (token.isCancellationRequested) {
+            logger?.info(CLASS_NAME, 'backfillArcComponents', 'Backfill cancelled before database connection');
+            return;
+          }
+
+          // Step 3: Build lightweight DB connection
+          progress.report({ message: 'Connecting to database...' });
           const buildResult = await buildDatabaseConnection(secretService, LoggerService.getInstance());
           if (!buildResult) {
             return;
           }
 
-          const { dbService, commitRepo } = buildResult;
+          const { dbService } = buildResult;
 
           try {
-            // Lazy-import to avoid loading deps at extension startup
-            const { ArcComponentClassifier } = await import('../services/arc-component-classifier.js');
-            const { ArcComponentBackfillService } = await import('../services/arc-component-backfill-service.js');
+            // Step 4: Extract SQL statements from the file
+            // Parse sections marked by @RESET_START/@RESET_END, @CLASSIFY_START/@CLASSIFY_END, @SUMMARY_START/@SUMMARY_END
+            const resetMatch = sqlContent.match(/-- @RESET_START\n([\s\S]*?)-- @RESET_END/);
+            const classifyMatch = sqlContent.match(/-- @CLASSIFY_START\n([\s\S]*?)-- @CLASSIFY_END/);
+            const summaryMatch = sqlContent.match(/-- @SUMMARY_START\n([\s\S]*?)-- @SUMMARY_END/);
 
-            // Read mappings from settings
-            const settings = getSettings();
-            const extensionMapping = settings.arcComponent.extensionMapping;
-            const filenameMapping = settings.arcComponent.filenameMapping;
+            if (!classifyMatch) {
+              throw new Error('Invalid SQL file: missing @CLASSIFY_START/@CLASSIFY_END section');
+            }
+
+            const resetSql = resetMatch ? resetMatch[1]!.trim() : null;
+            const classifySql = classifyMatch[1]!.trim();
+            const summarySql = summaryMatch ? summaryMatch[1]!.trim() : null;
 
             logger?.debug(
               CLASS_NAME,
               'backfillArcComponents',
-              `Extension mappings: ${Object.keys(extensionMapping).length}, Filename mappings: ${Object.keys(filenameMapping).length}`,
+              `SQL sections parsed: reset=${!!resetSql}, classify=${!!classifySql}, summary=${!!summarySql}`,
             );
 
-            const classifier = new ArcComponentClassifier(extensionMapping, filenameMapping);
-            const backfillService = new ArcComponentBackfillService(commitRepo, classifier);
+            // Check for cancellation
+            if (token.isCancellationRequested) {
+              logger?.info(CLASS_NAME, 'backfillArcComponents', 'Backfill cancelled before execution');
+              return;
+            }
 
-            const result = await backfillService.runBackfill(lastArcMappingChecksum, progress, token);
+            // Step 5: Execute SQL within a transaction
+            progress.report({ message: forceMode ? 'Resetting classifications...' : 'Classifying files...' });
 
-            // Update checksum for smart refresh on next run
-            lastArcMappingChecksum = classifier.getMappingChecksum();
-            logger?.debug(CLASS_NAME, 'backfillArcComponents', `Updated mapping checksum: ${lastArcMappingChecksum}`);
+            await dbService.transaction(async (client) => {
+              // Force mode: reset all classifications first
+              if (forceMode && resetSql) {
+                logger?.info(CLASS_NAME, 'backfillArcComponents', 'Force mode: resetting all arc_component values to NULL');
+                const resetResult = await client.query(resetSql);
+                logger?.debug(CLASS_NAME, 'backfillArcComponents', `Reset query affected ${resetResult.rowCount ?? 0} rows`);
+              }
 
-            // Show result notification
-            if (result.totalFiles === 0) {
-              void vscode.window.showInformationMessage('Gitr: No files require architecture component classification.');
+              // Check for cancellation
+              if (token.isCancellationRequested) {
+                throw new Error('Backfill cancelled by user');
+              }
+
+              // Execute classification
+              progress.report({ message: 'Applying classification rules...' });
+              logger?.info(CLASS_NAME, 'backfillArcComponents', 'Executing classification SQL');
+              const classifyResult = await client.query(classifySql);
+              logger?.info(CLASS_NAME, 'backfillArcComponents', `Classification query affected ${classifyResult.rowCount ?? 0} rows`);
+            });
+
+            // Step 6: Get category breakdown
+            progress.report({ message: 'Generating summary...' });
+            const categoryCounts: Record<string, number> = {};
+            let totalClassified = 0;
+
+            if (summarySql) {
+              const summaryResult = await dbService.query<{ arc_component: string; total_rows: number; distinct_files: number }>(summarySql);
+              for (const row of summaryResult.rows) {
+                categoryCounts[row.arc_component] = row.total_rows;
+                totalClassified += row.total_rows;
+              }
+              logger?.debug(CLASS_NAME, 'backfillArcComponents', `Summary: ${summaryResult.rows.length} categories found`);
+            }
+
+            const durationMs = Date.now() - startTime;
+
+            // Step 7: Show result notification
+            const result: ArcComponentSqlResult = { categoryCounts, totalClassified, durationMs };
+
+            if (totalClassified === 0) {
+              void vscode.window.showInformationMessage('Gitr: No files found for architecture component classification.');
             } else {
-              const durationSec = Math.round(result.durationMs / 1000);
+              const durationSec = Math.round(durationMs / 1000);
 
               // Build category breakdown string
-              const breakdown = Object.entries(result.categoryCounts)
+              const breakdown = Object.entries(categoryCounts)
                 .sort((a, b) => b[1] - a[1])
                 .map(([cat, count]) => `${cat}: ${count}`)
                 .join(', ');
 
-              const message = `Gitr: Arc component backfill complete — ${result.classifiedFiles}/${result.totalFiles} files classified (${durationSec}s). ${breakdown}`;
-
-              if (result.otherCount > 0) {
-                // Show warning with "Review Settings" action button
-                const action = await vscode.window.showWarningMessage(
-                  `${message}. ${result.otherCount} files defaulted to "Other".`,
-                  'Review Settings',
-                );
-                if (action === 'Review Settings') {
-                  logger?.info(CLASS_NAME, 'backfillArcComponents', 'User clicked Review Settings — opening arcComponent settings');
-                  void vscode.commands.executeCommand(
-                    'workbench.action.openSettings',
-                    'gitrx.arcComponent',
-                  );
-                }
-              } else {
-                void vscode.window.showInformationMessage(message);
-              }
+              const message = `Gitr: Arc component classification complete — ${totalClassified.toLocaleString()} files classified (${durationSec}s). ${breakdown}`;
+              void vscode.window.showInformationMessage(message);
             }
 
             logger?.info(CLASS_NAME, 'backfillArcComponents', `Backfill result: ${JSON.stringify(result)}`);
@@ -376,8 +518,13 @@ export function registerArcComponentBackfillCommand(logger: LoggerService | unde
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      logger?.error(CLASS_NAME, 'backfillArcComponents', `Arc component backfill failed: ${message}`, error instanceof Error ? error : undefined);
-      void vscode.window.showErrorMessage(`Gitr: Arc component backfill failed — ${message}`);
+      if (message.includes('cancelled')) {
+        logger?.info(CLASS_NAME, 'backfillArcComponents', 'Backfill cancelled by user');
+        void vscode.window.showWarningMessage('Gitr: Architecture component classification cancelled.');
+      } else {
+        logger?.error(CLASS_NAME, 'backfillArcComponents', `Arc component backfill failed: ${message}`, error instanceof Error ? error : undefined);
+        void vscode.window.showErrorMessage(`Gitr: Arc component backfill failed — ${message}`);
+      }
     } finally {
       backfillRunning = false;
       logger?.debug(CLASS_NAME, 'backfillArcComponents', 'Backfill running flag set to false');

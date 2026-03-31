@@ -20,6 +20,10 @@ export const SecretKeys = {
   LINEAR_TOKEN: 'gitrx.linear.token',
   /** Bitbucket Repository/Workspace Access Token (GITX-2) */
   BITBUCKET_TOKEN: 'gitrx.bitbucket.token',
+  /** Pro edition tech stack refresh usage counter (GITX-140) */
+  TECH_STACK_REFRESH_COUNT: 'gitrx.pro.techStackRefreshCount',
+  /** Pro edition license key (GITX-140) */
+  PRO_LICENSE_KEY: 'gitrx.pro.licenseKey',
 } as const;
 
 /**
@@ -37,6 +41,8 @@ const SecretLabels: Record<SecretKey, string> = {
   [SecretKeys.GITHUB_TOKEN]: 'GitHub Personal Access Token',
   [SecretKeys.LINEAR_TOKEN]: 'Linear API Token',
   [SecretKeys.BITBUCKET_TOKEN]: 'Bitbucket Access Token',
+  [SecretKeys.TECH_STACK_REFRESH_COUNT]: 'Tech Stack Refresh Counter',
+  [SecretKeys.PRO_LICENSE_KEY]: 'Pro License Key',
 };
 
 /**
@@ -49,6 +55,8 @@ const SecretPrompts: Record<SecretKey, string> = {
   [SecretKeys.GITHUB_TOKEN]: 'Enter your GitHub personal access token',
   [SecretKeys.LINEAR_TOKEN]: 'Enter your Linear API key (starts with lin_api_)',
   [SecretKeys.BITBUCKET_TOKEN]: 'Enter your Bitbucket Repository or Workspace Access Token',
+  [SecretKeys.TECH_STACK_REFRESH_COUNT]: 'Tech Stack Refresh Counter (internal)',
+  [SecretKeys.PRO_LICENSE_KEY]: 'Enter your Pro license key',
 };
 
 /**
@@ -227,6 +235,32 @@ export class SecretStorageService implements vscode.Disposable {
     const exists = value !== undefined;
     this.logger.trace(CLASS_NAME, 'hasSecret', `Key '${key}' exists=${exists}`);
     return exists;
+  }
+
+  /**
+   * Retrieve a secret value directly from secure storage.
+   * Does NOT prompt the user if the secret is not set.
+   *
+   * GITX-140: Used by ProEditionService for counter and license key access.
+   *
+   * @param key - The secret key identifier
+   * @returns The secret value, or undefined if not set
+   */
+  async getSecret(key: SecretKey): Promise<string | undefined> {
+    this.logger.trace(CLASS_NAME, 'getSecret', `Retrieving secret for key '${key}'`);
+    try {
+      const value = await this.secretStorage.get(key);
+      if (value !== undefined) {
+        this.logger.trace(CLASS_NAME, 'getSecret', `Secret found for key '${key}'`);
+      } else {
+        this.logger.trace(CLASS_NAME, 'getSecret', `No secret found for key '${key}'`);
+      }
+      return value;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(CLASS_NAME, 'getSecret', `Error retrieving secret for key '${key}': ${message}`);
+      return undefined;
+    }
   }
 
   /**

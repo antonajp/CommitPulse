@@ -5,6 +5,28 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+[0;34m[INFO][0m Generating changelog from commits since v0.1.26...
+## [0.1.27] - 2026-03-30
+
+### Added
+
+- Simplify arc component backfill to SQL-based classification
+- Configure custom domain api.commitpulse.dev for GCP Cloud Function
+- Deploy GCP API Gateway and Cloud Function for Claude AI integration
+- Add Refresh Tech Stack Baseline command with Claude AI integration
+
+### Changed
+
+- Now covers all 9 repos with support for Java/Gradle, Python/Django, Salesforce Apex, Rust, Ruby/Rails, PHP/WordPress, TypeScript/React, Swift, and Kotlin frameworks
+- Sql to update arc tech stack based on analysis of 4 agentic and non agentic repos
+
+### Fixed
+
+- Fix Cloud Function deployment issues
+- Add Cloud Build service account permissions for Cloud Functions Gen 2
+- Fix Cloud Function CPU requirement and API Keys quota project
+- Use Internet NEG for API Gateway load balancing
+
 [0;34m[INFO][0m Generating changelog from commits since v0.1.25...
 ## [0.1.26] - 2026-03-30
 

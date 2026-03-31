@@ -130,10 +130,10 @@ export function activate(context: vscode.ExtensionContext): void {
   initializeLinkageCommand(context);
 
   // Register SCC Backfill command (IQS-882), Story Points Backfill command (IQS-884),
-  // Arc Component Backfill command (IQS-885), and Jira Backfill command (IQS-933)
+  // Arc Component Backfill command (GITX-146: simplified to SQL-based), and Jira Backfill command (IQS-933)
   disposables.push(registerSccBackfillCommand(logger));
   disposables.push(registerStoryPointsBackfillCommand(logger));
-  disposables.push(registerArcComponentBackfillCommand(logger));
+  disposables.push(registerArcComponentBackfillCommand(logger, context.extensionUri));
   disposables.push(registerJiraBackfillCommand(logger));
 
   // Register Charts TreeView and Architecture Chart command (IQS-886)

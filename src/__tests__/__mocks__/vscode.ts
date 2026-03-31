@@ -255,6 +255,13 @@ export class TreeItem {
 }
 
 /**
+ * Mock for vscode.env (GITX-140)
+ */
+export const env = {
+  openExternal: async (_uri: any): Promise<boolean> => true,
+};
+
+/**
  * Helper for tests to set mock configuration values.
  */
 export function _setMockConfig(key: string, value: any): void {

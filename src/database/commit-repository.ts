@@ -15,7 +15,6 @@ import type {
   FileMetricsDelta,
 } from './commit-types.js';
 import type { SccFileMetrics } from '../services/scc-metrics-service.js';
-import type { ArcComponentFileRow } from '../services/arc-component-backfill-service.js';
 
 // Re-export types so consumers can import from commit-repository directly
 export type {
@@ -219,22 +218,33 @@ const SQL_UPDATE_COMMIT_FILE_SCC_METRICS = `
   WHERE sha = $6 AND filename = $7
 `;
 
-const SQL_GET_FILES_FOR_ARC_COMPONENT_NULL = `
-  SELECT sha, filename, file_extension, arc_component
+/**
+ * Query to get unique filenames for tech stack analysis.
+ * Filters out dependency directories and limits to a configurable number.
+ * Orders by occurrence count to prioritize frequently-changed files.
+ *
+ * GITX-138: Tech Stack Refresh feature
+ */
+const SQL_GET_UNIQUE_FILENAMES_FOR_TECH_STACK = `
+  SELECT filename, COUNT(*)::int AS occurrence_count
   FROM commit_files
-  WHERE arc_component IS NULL
-  ORDER BY sha, filename
-`;
-
-const SQL_GET_FILES_FOR_ARC_COMPONENT_ALL = `
-  SELECT sha, filename, file_extension, arc_component
-  FROM commit_files
-  ORDER BY sha, filename
-`;
-
-const SQL_UPDATE_ARC_COMPONENT = `
-  UPDATE commit_files SET arc_component = $1
-  WHERE sha = $2 AND filename = $3
+  WHERE filename NOT LIKE 'node_modules/%'
+    AND filename NOT LIKE '%/node_modules/%'
+    AND filename NOT LIKE 'vendor/%'
+    AND filename NOT LIKE '%/vendor/%'
+    AND filename NOT LIKE '__pycache__/%'
+    AND filename NOT LIKE '%/__pycache__/%'
+    AND filename NOT LIKE '.git/%'
+    AND filename NOT LIKE '%/.git/%'
+    AND filename NOT LIKE 'dist/%'
+    AND filename NOT LIKE '%/dist/%'
+    AND filename NOT LIKE 'build/%'
+    AND filename NOT LIKE '%/build/%'
+    AND filename NOT LIKE 'target/%'
+    AND filename NOT LIKE '%/target/%'
+  GROUP BY filename
+  ORDER BY occurrence_count DESC
+  LIMIT $1
 `;
 
 // ============================================================================
@@ -808,68 +818,26 @@ export class CommitRepository {
   }
 
   /**
-   * Get commit_files rows needing arc_component classification.
+   * Get unique filenames from commit_files for tech stack analysis.
    *
-   * When includeAll is false (first run / no mapping change):
-   *   Returns only rows where arc_component IS NULL.
+   * Filters out dependency directories (node_modules, vendor, etc.) at the
+   * SQL level for efficiency. Orders by occurrence count to prioritize
+   * frequently-changed files in the analysis.
    *
-   * When includeAll is true (mapping changed):
-   *   Returns ALL rows for re-classification.
+   * GITX-138: Tech Stack Refresh feature
    *
-   * Ticket: IQS-885
-   *
-   * @param includeAll - If true, return all rows; if false, only NULL arc_component rows
-   * @returns Array of file rows for classification
+   * @param limit - Maximum number of filenames to return (default: 10000)
+   * @returns Array of unique filenames
    */
-  async getFilesForArcComponentBackfill(includeAll: boolean): Promise<ArcComponentFileRow[]> {
-    const methodName = 'getFilesForArcComponentBackfill';
-    this.logger.debug(CLASS_NAME, methodName, `Querying files for arc component backfill (includeAll=${includeAll})`);
+  async getUniqueFilenamesForTechStack(limit = 10000): Promise<string[]> {
+    this.logger.debug(CLASS_NAME, 'getUniqueFilenamesForTechStack', `Querying unique filenames (limit: ${limit})`);
 
-    const sql = includeAll ? SQL_GET_FILES_FOR_ARC_COMPONENT_ALL : SQL_GET_FILES_FOR_ARC_COMPONENT_NULL;
-    const result: DatabaseQueryResult<ArcComponentFileRow> = await this.db.query(sql);
+    const result: DatabaseQueryResult<{ filename: string; occurrence_count: number }> =
+      await this.db.query(SQL_GET_UNIQUE_FILENAMES_FOR_TECH_STACK, [limit]);
 
-    this.logger.debug(CLASS_NAME, methodName, `Found ${result.rows.length} files for arc component backfill`);
-    return result.rows;
-  }
+    const filenames = result.rows.map((row) => row.filename);
 
-  /**
-   * Batch update arc_component for commit_files rows within a transaction.
-   * Uses parameterized queries ($1, $2, $3) — zero string interpolation.
-   * Returns the number of rows updated.
-   *
-   * Ticket: IQS-885
-   *
-   * @param updates - Array of { sha, filename, arcComponent } to update
-   * @returns Number of rows updated
-   */
-  async batchUpdateArcComponent(
-    updates: ReadonlyArray<{ sha: string; filename: string; arcComponent: string }>,
-  ): Promise<number> {
-    if (updates.length === 0) {
-      this.logger.debug(CLASS_NAME, 'batchUpdateArcComponent', 'No updates to apply');
-      return 0;
-    }
-
-    this.logger.debug(CLASS_NAME, 'batchUpdateArcComponent', `Batch updating ${updates.length} arc_component values`);
-
-    let updatedCount = 0;
-    await this.db.transaction(async (client: PoolClient) => {
-      for (const update of updates) {
-        const result = await client.query(SQL_UPDATE_ARC_COMPONENT, [
-          update.arcComponent,
-          update.sha,
-          update.filename,
-        ]);
-        updatedCount += result.rowCount ?? 0;
-        this.logger.trace(
-          CLASS_NAME,
-          'batchUpdateArcComponent',
-          `Updated: sha=${update.sha.substring(0, 8)} file=${update.filename} -> ${update.arcComponent}`,
-        );
-      }
-    });
-
-    this.logger.debug(CLASS_NAME, 'batchUpdateArcComponent', `Updated ${updatedCount} rows`);
-    return updatedCount;
+    this.logger.debug(CLASS_NAME, 'getUniqueFilenamesForTechStack', `Found ${filenames.length} unique filenames`);
+    return filenames;
   }
 }
