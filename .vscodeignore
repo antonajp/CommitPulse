@@ -28,3 +28,5 @@ CLAUDE.md
 docker-compose.yml
 .env*
 .lintstagedrc*
+terraform/**
+cloud-function/**

@@ -213,18 +213,6 @@ export type LogLevelString = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'CR
  * interface — they are managed by SecretStorageService via VS Code's encrypted
  * SecretStorage API.
  */
-/**
- * Architecture component mapping settings.
- * Drives the file-to-category classification for the arc component backfill.
- * Ticket: IQS-885
- */
-export interface ArcComponentSettings {
-  /** Maps file extensions (e.g., ".ts") to architecture component categories (e.g., "Back-End"). */
-  readonly extensionMapping: Readonly<Record<string, string>>;
-  /** Maps filenames (e.g., "Dockerfile") to architecture component categories (e.g., "DevOps/CI"). */
-  readonly filenameMapping: Readonly<Record<string, string>>;
-}
-
 export interface GitrxConfiguration {
   /** Repositories to analyze. */
   readonly repositories: readonly RepositoryEntry[];
@@ -244,8 +232,6 @@ export interface GitrxConfiguration {
   readonly logLevel: LogLevelString;
   /** Docker configuration. */
   readonly docker: DockerSettings;
-  /** Architecture component mapping settings. Ticket: IQS-885. */
-  readonly arcComponent: ArcComponentSettings;
   /** Git extraction settings. Ticket: IQS-936. */
   readonly git: GitSettings;
 }
@@ -353,16 +339,6 @@ export function getSettings(): GitrxConfiguration {
     postgresVersion: config.get<string>('docker.postgresVersion', '16'),
   });
 
-  // Read arc component mapping settings (IQS-885)
-  const arcComponent: ArcComponentSettings = Object.freeze({
-    extensionMapping: Object.freeze(
-      validateArcMappings(config.get<Record<string, string>>('arcComponent.extensionMapping', {}), 'extensionMapping', logger),
-    ),
-    filenameMapping: Object.freeze(
-      validateArcMappings(config.get<Record<string, string>>('arcComponent.filenameMapping', {}), 'filenameMapping', logger),
-    ),
-  });
-
   // Read Git extraction settings (IQS-936)
   const git: GitSettings = Object.freeze({
     debugLogging: config.get<boolean>('git.debugLogging', false),
@@ -378,7 +354,6 @@ export function getSettings(): GitrxConfiguration {
     pipeline,
     logLevel,
     docker,
-    arcComponent,
     git,
   };
 
@@ -613,13 +588,6 @@ function validateIsoDate(
 }
 
 /**
- * Regex for validating arc component category names (CWE-20: Input Validation).
- * Must match ^[a-zA-Z0-9 /-]+$ to prevent XSS in webview rendering.
- * Ticket: IQS-885
- */
-const ARC_CATEGORY_REGEX = /^[a-zA-Z0-9 /-]+$/;
-
-/**
  * Normalize a URL prefix by stripping trailing slashes.
  * Returns empty string for invalid/empty input.
  *
@@ -634,41 +602,6 @@ function normalizeUrlPrefix(url: string): string {
   }
   // Trim whitespace and strip trailing slashes
   return url.trim().replace(/\/+$/, '');
-}
-
-/**
- * Validate arc component mapping values. Removes entries with invalid category
- * names and logs warnings. Returns the validated mapping.
- *
- * @param raw - Raw mapping from VS Code configuration
- * @param settingName - Setting name for log context
- * @param logger - Logger instance for reporting issues
- * @returns Validated mapping with invalid entries removed
- */
-function validateArcMappings(
-  raw: Record<string, string>,
-  settingName: string,
-  logger: LoggerService,
-): Record<string, string> {
-  if (!raw || typeof raw !== 'object') {
-    logger.warn(CLASS_NAME, 'validateArcMappings', `Invalid ${settingName} value, falling back to empty object`);
-    return {};
-  }
-
-  const validated: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (typeof value !== 'string' || !ARC_CATEGORY_REGEX.test(value)) {
-      logger.warn(
-        CLASS_NAME,
-        'validateArcMappings',
-        `Invalid category "${String(value)}" for key "${key}" in ${settingName}, skipping`,
-      );
-      continue;
-    }
-    validated[key] = value;
-  }
-
-  return validated;
 }
 
 /**
