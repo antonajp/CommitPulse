@@ -606,6 +606,33 @@ body {
 }
 
 /* ============================================================================
+   Arc Chart Percentage Labels (GITX-148)
+   ============================================================================ */
+
+.arc-labels {
+  pointer-events: none;
+}
+
+.arc-label {
+  pointer-events: none;
+  user-select: none;
+}
+
+.arc-label-inner {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.arc-label-outer {
+  font-weight: 500;
+  font-size: 11px;
+}
+
+.arc-label-line {
+  pointer-events: none;
+}
+
+/* ============================================================================
    Chart Controls (Tab Group, Metric Toggle, Date Controls) -- IQS-889
    ============================================================================ */
 

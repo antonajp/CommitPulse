@@ -478,4 +478,30 @@ describe('generateDashboardHtml', () => {
     expect(html).toContain('aria-label=');
     expect(html).toContain('profile');
   });
+
+  // ===========================================================================
+  // GITX-148: Arc Chart Percentage Labels
+  // ===========================================================================
+  it('should include arc chart percentage label functions', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('function getContrastColor(');
+    expect(html).toContain('function getLabelPlacement(');
+    expect(html).toContain('function formatPercentageLabel(');
+  });
+
+  it('should include arc-label CSS classes in rendered script', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('arc-label');
+    expect(html).toContain('arc-label-inner');
+    expect(html).toContain('arc-label-outer');
+  });
+
+  it('should include aria-hidden on arc percentage labels for accessibility', () => {
+    const html = generateDashboardHtml(config);
+
+    // Labels should be aria-hidden to avoid double-announcement with arc path aria-label
+    expect(html).toContain("attr('aria-hidden', 'true')");
+  });
 });
