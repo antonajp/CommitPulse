@@ -262,13 +262,54 @@ export function generateVelocityChartScript(): string {
  * Generate the JavaScript source for an arc/pie (doughnut) chart renderer.
  * Used by both Tech Stack Distribution and Jira Project Distribution.
  *
+ * GITX-148: Added percentage labels on dominant segments:
+ * - Large segments (≥15%): Bold label centered inside the arc
+ * - Medium segments (5-14%): Label outside with polyline connector
+ * - Small segments (<5%): No label to avoid clutter
+ *
  * @returns JavaScript source string for embedding in a <script> block
  */
 export function generateArcChartScript(): string {
   return `
       // ======================================================================
-      // Arc/Pie (Doughnut) Chart Helper (D3.js) (IQS-887)
+      // Arc/Pie (Doughnut) Chart Helper (D3.js) (IQS-887, GITX-148)
       // ======================================================================
+
+      /**
+       * Calculate contrast color (black or white) based on background luminance.
+       * Uses WCAG relative luminance formula for accessibility.
+       * @param {string} hexColor - Hex color string (e.g., '#4dc9f6')
+       * @returns {string} '#000000' for light backgrounds, '#ffffff' for dark
+       */
+      function getContrastColor(hexColor) {
+        if (!hexColor || hexColor.length < 7) { return '#ffffff'; }
+        var r = parseInt(hexColor.slice(1, 3), 16);
+        var g = parseInt(hexColor.slice(3, 5), 16);
+        var b = parseInt(hexColor.slice(5, 7), 16);
+        var luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+        return luminance > 0.5 ? '#000000' : '#ffffff';
+      }
+
+      /**
+       * Determine if a segment should show a percentage label.
+       * @param {number} percentage - The segment percentage (0-100)
+       * @returns {string} 'inner' for ≥15%, 'outer' for 5-14%, 'none' for <5%
+       */
+      function getLabelPlacement(percentage) {
+        if (percentage >= 15) { return 'inner'; }
+        if (percentage >= 5) { return 'outer'; }
+        return 'none';
+      }
+
+      /**
+       * Format percentage as integer with % suffix.
+       * @param {number} percentage - The percentage value
+       * @returns {string} Formatted string (e.g., '42%')
+       */
+      function formatPercentageLabel(percentage) {
+        return Math.round(percentage) + '%';
+      }
+
       function renderArcChart(container, entries, labelFn, valueFn, emptyMsg) {
         if (!entries || entries.length === 0) {
           container.style.display = 'none';
@@ -283,6 +324,8 @@ export function generateArcChartScript(): string {
         var chartWidth = Math.min(containerWidth * 0.6, 240);
         var totalHeight = Math.max(250, entries.length * 22);
         var radius = Math.min(chartWidth, totalHeight) / 2 - 10;
+        var centerX = chartWidth / 2;
+        var centerY = totalHeight / 2;
 
         var svg = d3.select(container).append('svg').attr('width', containerWidth).attr('height', totalHeight);
 
@@ -293,11 +336,18 @@ export function generateArcChartScript(): string {
         var pie = d3.pie().value(valueFn).sort(null);
         var arcGen = d3.arc().innerRadius(radius * 0.5).outerRadius(radius);
         var arcHover = d3.arc().innerRadius(radius * 0.5).outerRadius(radius + 6);
+        // Arc generator for inner label positioning (midpoint of donut ring)
+        var arcLabel = d3.arc().innerRadius(radius * 0.65).outerRadius(radius * 0.85);
+        // Arc generator for outer label anchor point (outside the arc)
+        var arcOuter = d3.arc().innerRadius(radius * 1.1).outerRadius(radius * 1.1);
 
-        var chartG = svg.append('g').attr('transform', 'translate(' + (chartWidth / 2) + ',' + (totalHeight / 2) + ')');
+        var chartG = svg.append('g').attr('transform', 'translate(' + centerX + ',' + centerY + ')');
         var total = entries.reduce(function(s, e) { return s + valueFn(e); }, 0);
 
-        chartG.selectAll('path').data(pie(entries)).enter().append('path')
+        var pieData = pie(entries);
+
+        // Draw arc paths
+        chartG.selectAll('path').data(pieData).enter().append('path')
           .attr('d', arcGen)
           .attr('fill', function(d) { return color(labelFn(d.data)); })
           .attr('stroke', chartDefaults.backgroundColor).attr('stroke-width', 2)
@@ -312,6 +362,74 @@ export function generateArcChartScript(): string {
           })
           .on('mousemove', moveTooltip)
           .on('mouseout', function() { d3.select(this).attr('d', arcGen); hideTooltip(); });
+
+        // GITX-148: Add percentage labels on dominant segments
+        var labelG = chartG.append('g').attr('class', 'arc-labels');
+
+        pieData.forEach(function(d) {
+          if (total <= 0) { return; }
+          var pct = (valueFn(d.data) / total) * 100;
+          var placement = getLabelPlacement(pct);
+          if (placement === 'none') { return; }
+
+          var segmentColor = color(labelFn(d.data));
+          var labelText = formatPercentageLabel(pct);
+
+          if (placement === 'inner') {
+            // Large segment: centered label inside the arc
+            var centroid = arcLabel.centroid(d);
+            var textColor = getContrastColor(segmentColor);
+            // Halo uses contrasting color for readability (opposite of text color)
+            var haloColor = textColor === '#000000' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.7)';
+
+            // Text with contrasting halo for readability
+            labelG.append('text')
+              .attr('class', 'arc-label arc-label-inner')
+              .attr('transform', 'translate(' + centroid[0] + ',' + centroid[1] + ')')
+              .attr('text-anchor', 'middle')
+              .attr('dominant-baseline', 'central')
+              .attr('fill', textColor)
+              .attr('font-size', '14px')
+              .attr('font-weight', '700')
+              .attr('pointer-events', 'none')
+              .attr('aria-hidden', 'true')
+              .style('paint-order', 'stroke fill')
+              .style('stroke', haloColor)
+              .style('stroke-width', '3px')
+              .style('stroke-linejoin', 'round')
+              .text(labelText);
+          } else {
+            // Medium segment: outer label with polyline connector
+            var innerPoint = arcGen.centroid(d);
+            var outerPoint = arcOuter.centroid(d);
+            var midAngle = (d.startAngle + d.endAngle) / 2;
+            var textX = outerPoint[0] + (midAngle < Math.PI ? 8 : -8);
+            var textAnchor = midAngle < Math.PI ? 'start' : 'end';
+
+            // Polyline connector
+            labelG.append('polyline')
+              .attr('class', 'arc-label-line')
+              .attr('points', [innerPoint, outerPoint, [textX - (midAngle < Math.PI ? 4 : -4), outerPoint[1]]])
+              .attr('fill', 'none')
+              .attr('stroke', chartDefaults.color)
+              .attr('stroke-width', 1)
+              .attr('opacity', 0.6)
+              .attr('pointer-events', 'none');
+
+            // Outer label
+            labelG.append('text')
+              .attr('class', 'arc-label arc-label-outer')
+              .attr('transform', 'translate(' + textX + ',' + outerPoint[1] + ')')
+              .attr('text-anchor', textAnchor)
+              .attr('dominant-baseline', 'central')
+              .attr('fill', chartDefaults.color)
+              .attr('font-size', '11px')
+              .attr('font-weight', '500')
+              .attr('pointer-events', 'none')
+              .attr('aria-hidden', 'true')
+              .text(labelText);
+          }
+        });
 
         // Legend (right side)
         var legendG = svg.append('g').attr('transform', 'translate(' + (chartWidth + 10) + ',10)');
