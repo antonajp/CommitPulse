@@ -504,4 +504,70 @@ describe('generateDashboardHtml', () => {
     // Labels should be aria-hidden to avoid double-announcement with arc path aria-label
     expect(html).toContain("attr('aria-hidden', 'true')");
   });
+
+  // ===========================================================================
+  // GITX-154: Collapsible Team Scorecard
+  // ===========================================================================
+  it('should render Team Scorecard as collapsible details element', () => {
+    const html = generateDashboardHtml(config);
+
+    // Scorecard should be wrapped in details element with collapsible class
+    expect(html).toContain('<details class="card card-wide card-collapsible" id="scorecardCard"');
+    expect(html).toContain('</details>');
+  });
+
+  it('should include collapsible header with chevron', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('<summary class="card-collapsible-header"');
+    expect(html).toContain('class="card-chevron"');
+    expect(html).toContain('<h2>Team Scorecard</h2>');
+  });
+
+  it('should include card-collapsible-content wrapper', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('<div class="card-collapsible-content">');
+    expect(html).toContain('class="chart-explanation-inline"');
+  });
+
+  it('should initialize collapsible card state persistence', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('function initCardCollapsibles(');
+    expect(html).toContain('initCardCollapsibles()');
+    expect(html).toContain('cardCollapseState');
+  });
+
+  it('should update aria-expanded on toggle', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain("setAttribute('aria-expanded'");
+  });
+
+  it('should stop propagation on action buttons in collapsible header', () => {
+    const html = generateDashboardHtml(config);
+
+    expect(html).toContain('e.stopPropagation()');
+    expect(html).toContain("summary.querySelectorAll('.action-btn')");
+  });
+
+  it('should position Team Scorecard after Top Files by Churn', () => {
+    const html = generateDashboardHtml(config);
+
+    // Find the positions of key sections
+    const fileChurnIndex = html.indexOf('id="fileChurnCard"');
+    const scorecardIndex = html.indexOf('id="scorecardCard"');
+
+    // Scorecard should come after fileChurn in the HTML
+    expect(fileChurnIndex).toBeGreaterThan(0);
+    expect(scorecardIndex).toBeGreaterThan(fileChurnIndex);
+  });
+
+  it('should have scorecard open by default', () => {
+    const html = generateDashboardHtml(config);
+
+    // The details element should have 'open' attribute
+    expect(html).toContain('id="scorecardCard" aria-label="Team Scorecard" open>');
+  });
 });

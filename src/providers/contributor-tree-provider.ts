@@ -440,11 +440,11 @@ export class ContributorTreeProvider
     const isCompany = contributor.vendor?.toLowerCase() === 'company';
     node.iconPath = isCompany ? ICONS.contributorCompany : ICONS.contributor;
 
-    // Set command for click-to-show-detail
+    // Set command for click to open Developer Profile dashboard (GITX-155)
     node.command = {
-      command: 'gitrx.showContributorDetail',
-      title: 'Show Contributor Details',
-      arguments: [contributor],
+      command: 'gitrx.openDeveloperProfile',
+      title: 'Open Developer Profile',
+      arguments: [contributor.login],
     };
 
     return node;

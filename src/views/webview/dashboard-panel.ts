@@ -20,8 +20,11 @@ import { LocDataService } from '../../services/loc-data-service.js';
 import { ComplexityDataService } from '../../services/complexity-data-service.js';
 import { FileChurnDataService } from '../../services/file-churn-data-service.js';
 import { DevPipelineDataService } from '../../services/dev-pipeline-data-service.js';
+import { VelocityDataService } from '../../services/velocity-data-service.js';
 import { generateDashboardHtml } from './dashboard-html.js';
 import { getSettings } from '../../config/settings.js';
+import { isValidRepositoryName } from '../../utils/repository-validation.js';
+import { isValidDateString } from '../../utils/date-validation.js';
 import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
 import {
   handleCsvExport,
@@ -64,6 +67,7 @@ export class DashboardPanel implements vscode.Disposable {
   private complexityDataService: ComplexityDataService | undefined;
   private fileChurnDataService: FileChurnDataService | undefined;
   private devPipelineDataService: DevPipelineDataService | undefined;
+  private velocityDataService: VelocityDataService | undefined;
 
   /**
    * Create or reveal the Metrics Dashboard panel.
@@ -223,6 +227,19 @@ export class DashboardPanel implements vscode.Disposable {
             this.logger.warn(CLASS_NAME, 'handleMessage', `Blocked non-HTTPS URL: ${message.url}`);
             return;
           }
+
+          // GITX-158: Defense-in-depth - validate domain in extension host
+          // (mirrors webview validation in velocity-chart-drill-down.ts)
+          const TRUSTED_DOMAINS = ['github.com', 'gitlab.com', 'bitbucket.org'];
+          const hostname = url.hostname.toLowerCase();
+          const isTrusted = TRUSTED_DOMAINS.some(
+            domain => hostname === domain || hostname.endsWith('.' + domain)
+          );
+          if (!isTrusted) {
+            this.logger.warn(CLASS_NAME, 'handleMessage', `Blocked URL from untrusted domain: ${hostname}`);
+            return;
+          }
+
           await vscode.env.openExternal(vscode.Uri.parse(message.url));
         } catch (error: unknown) {
           const errorMsg = error instanceof Error ? error.message : String(error);
@@ -463,6 +480,82 @@ export class DashboardPanel implements vscode.Disposable {
           break;
         }
 
+        case 'requestLocWeekDrillDown': {
+          // GITX-158: Handle LOC week drill-down request
+          if (!this.velocityDataService) {
+            this.logger.error(CLASS_NAME, 'handleMessage', 'Velocity data service not available after DB init');
+            this.postError('Velocity data service unavailable', message.type);
+            return;
+          }
+
+          // GITX-158: Defense-in-depth input validation (same as VelocityDataService)
+          if (!isValidDateString(message.weekStart)) {
+            this.logger.warn(CLASS_NAME, 'handleMessage', `Invalid weekStart date rejected: ${message.weekStart}`);
+            this.postMessage({
+              type: 'locWeekDrillDownError',
+              message: 'Invalid week start date format',
+              weekStart: message.weekStart,
+            });
+            return;
+          }
+          if (message.repository && !isValidRepositoryName(message.repository)) {
+            this.logger.warn(CLASS_NAME, 'handleMessage', `Invalid repository name rejected: ${message.repository}`);
+            this.postMessage({
+              type: 'locWeekDrillDownError',
+              message: 'Invalid repository name format',
+              weekStart: message.weekStart,
+            });
+            return;
+          }
+
+          this.logger.debug(CLASS_NAME, 'handleMessage',
+            `LOC drill-down requested: week=${message.weekStart}, repo=${message.repository || 'all'}`);
+
+          try {
+            const drillDownData = await this.velocityDataService.getWeekCommitDetails(
+              message.weekStart,
+              message.repository
+            );
+
+            // Look up repository URL from settings for SHA navigation
+            let repoUrl: string | null = null;
+            if (drillDownData.repository) {
+              const settings = getSettings();
+              const repoEntry = settings.repositories.find(
+                r => r.name === drillDownData.repository
+              );
+              if (repoEntry?.repoUrl) {
+                repoUrl = repoEntry.repoUrl;
+                this.logger.debug(CLASS_NAME, 'handleMessage',
+                  `Repository URL resolved for ${drillDownData.repository}: ${repoUrl}`);
+              } else {
+                this.logger.debug(CLASS_NAME, 'handleMessage',
+                  `No repoUrl configured for ${drillDownData.repository}`);
+              }
+            }
+
+            this.postMessage({
+              type: 'locWeekDrillDown',
+              weekStart: drillDownData.weekStart,
+              repository: drillDownData.repository,
+              repoUrl,
+              totalLoc: drillDownData.totalLoc,
+              commitCount: drillDownData.commitCount,
+              commits: drillDownData.commits,
+            });
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            this.logger.error(CLASS_NAME, 'handleMessage',
+              `LOC drill-down error: ${errorMsg}`);
+            this.postMessage({
+              type: 'locWeekDrillDownError',
+              message: errorMsg,
+              weekStart: message.weekStart,
+            });
+          }
+          break;
+        }
+
         default: {
           // Exhaustiveness check: TypeScript will error if a message type is unhandled
           const _exhaustive: never = message;
@@ -507,6 +600,7 @@ export class DashboardPanel implements vscode.Disposable {
     this.complexityDataService = new ComplexityDataService(this.db);
     this.fileChurnDataService = new FileChurnDataService(this.db);
     this.devPipelineDataService = new DevPipelineDataService(this.db);
+    this.velocityDataService = new VelocityDataService(this.db);
     this.logger.info(CLASS_NAME, 'ensureDbConnection', 'Database connection established for dashboard');
   }
 
@@ -565,6 +659,7 @@ export class DashboardPanel implements vscode.Disposable {
       this.complexityDataService = undefined;
       this.fileChurnDataService = undefined;
       this.devPipelineDataService = undefined;
+      this.velocityDataService = undefined;
     }
 
     // Dispose the webview panel

@@ -327,7 +327,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER = `
     v.total_lines_deleted,
     v.commit_count
   FROM vw_sprint_velocity_vs_loc v
-  INNER JOIN commit_history ch ON v.repository = ch.repo
+  INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE cc.login = $1
@@ -362,7 +362,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_COMBINED = `
     v.total_lines_deleted,
     v.commit_count
   FROM vw_sprint_velocity_vs_loc v
-  INNER JOIN commit_history ch ON v.repository = ch.repo
+  INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE v.team = $1 AND cc.login = $2
@@ -397,7 +397,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_REPOSITORY = `
     v.total_lines_deleted,
     v.commit_count
   FROM vw_sprint_velocity_vs_loc v
-  INNER JOIN commit_history ch ON v.repository = ch.repo
+  INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE cc.login = $1 AND v.repository = $2
@@ -433,7 +433,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_ALL_FILTERS = `
     v.total_lines_deleted,
     v.commit_count
   FROM vw_sprint_velocity_vs_loc v
-  INNER JOIN commit_history ch ON v.repository = ch.repo
+  INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE v.team = $1 AND cc.login = $2 AND v.repository = $3
@@ -469,7 +469,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER = `
     v.total_lines_deleted,
     v.commit_count
   FROM vw_sprint_velocity_vs_loc v
-  INNER JOIN commit_history ch ON v.repository = ch.repo
+  INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE v.week_start >= $1 AND v.week_start <= $2 AND cc.login = $3
@@ -506,7 +506,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_COMBINED = `
     v.total_lines_deleted,
     v.commit_count
   FROM vw_sprint_velocity_vs_loc v
-  INNER JOIN commit_history ch ON v.repository = ch.repo
+  INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE v.week_start >= $1 AND v.week_start <= $2 AND v.team = $3 AND cc.login = $4
@@ -543,7 +543,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_REPOSITORY = `
     v.total_lines_deleted,
     v.commit_count
   FROM vw_sprint_velocity_vs_loc v
-  INNER JOIN commit_history ch ON v.repository = ch.repo
+  INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE v.week_start >= $1 AND v.week_start <= $2 AND cc.login = $3 AND v.repository = $4
@@ -581,7 +581,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_ALL_FILTERS = `
     v.total_lines_deleted,
     v.commit_count
   FROM vw_sprint_velocity_vs_loc v
-  INNER JOIN commit_history ch ON v.repository = ch.repo
+  INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE v.week_start >= $1 AND v.week_start <= $2
@@ -592,4 +592,80 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_ALL_FILTERS = `
     v.total_lines_deleted, v.commit_count
   ORDER BY v.week_start ASC
   LIMIT 200
+`;
+
+// ============================================================================
+// Drill-Down Queries (GITX-149)
+// ============================================================================
+
+/**
+ * Query to fetch commit details for a specific week's LOC drill-down.
+ * Joins commit_history with commit_files and commit_branch_relationship.
+ * Returns commits sorted by total LOC changed descending.
+ *
+ * Parameters:
+ *   $1 - week_start (DATE) - first day of the week
+ *   $2 - week_end (DATE) - last day of the week (week_start + 6 days)
+ *
+ * Performance note: Composite index on (commit_date, repository) is recommended.
+ * Limit 500 commits per request to prevent memory issues.
+ * Truncates commit message to 1000 characters server-side.
+ *
+ * Ticket: GITX-149
+ */
+export const QUERY_LOC_WEEK_DRILL_DOWN = `
+  SELECT
+    ch.sha,
+    ch.commit_date,
+    ch.author,
+    COALESCE(
+      (SELECT branch FROM commit_branch_relationship cbr
+       WHERE cbr.sha = ch.sha
+       ORDER BY CASE WHEN branch = 'main' THEN 0 WHEN branch = 'master' THEN 1 ELSE 2 END
+       LIMIT 1),
+      'unknown'
+    ) AS branch,
+    LEFT(ch.commit_message, 1000) AS message,
+    COALESCE(ch.lines_added, 0) AS lines_added,
+    COALESCE(ch.lines_removed, 0) AS lines_deleted,
+    COALESCE(ch.lines_added, 0) + COALESCE(ch.lines_removed, 0) AS total_loc
+  FROM commit_history ch
+  WHERE ch.commit_date >= $1
+    AND ch.commit_date < $2
+  ORDER BY total_loc DESC, ch.commit_date DESC
+  LIMIT 500
+`;
+
+/**
+ * Query to fetch commit details for a specific week's LOC drill-down with repository filter.
+ *
+ * Parameters:
+ *   $1 - week_start (DATE) - first day of the week
+ *   $2 - week_end (DATE) - last day of the week (week_start + 6 days)
+ *   $3 - repository (TEXT) - repository name to filter by
+ *
+ * Ticket: GITX-149
+ */
+export const QUERY_LOC_WEEK_DRILL_DOWN_REPOSITORY = `
+  SELECT
+    ch.sha,
+    ch.commit_date,
+    ch.author,
+    COALESCE(
+      (SELECT branch FROM commit_branch_relationship cbr
+       WHERE cbr.sha = ch.sha
+       ORDER BY CASE WHEN branch = 'main' THEN 0 WHEN branch = 'master' THEN 1 ELSE 2 END
+       LIMIT 1),
+      'unknown'
+    ) AS branch,
+    LEFT(ch.commit_message, 1000) AS message,
+    COALESCE(ch.lines_added, 0) AS lines_added,
+    COALESCE(ch.lines_removed, 0) AS lines_deleted,
+    COALESCE(ch.lines_added, 0) + COALESCE(ch.lines_removed, 0) AS total_loc
+  FROM commit_history ch
+  WHERE ch.commit_date >= $1
+    AND ch.commit_date < $2
+    AND ch.repository = $3
+  ORDER BY total_loc DESC, ch.commit_date DESC
+  LIMIT 500
 `;

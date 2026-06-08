@@ -1,0 +1,592 @@
+/**
+ * HTML content generator for the Developer Profile Dashboard webview.
+ * Produces the full HTML document with:
+ * - Content Security Policy (nonce-based, no inline scripts)
+ * - VS Code theme integration via CSS variables
+ * - D3.js v7 loaded from local bundled resource
+ * - Developer selector dropdown
+ * - Timeframe selector
+ * - Summary cards
+ * - LOC per week stacked bar chart
+ * - Top complex files table
+ * - Top frequent files table
+ * - Technology stack doughnut chart (GITX-156)
+ * - Comments per week line chart (GITX-156)
+ * - Tests per week line chart (GITX-156)
+ * - Commit hygiene score gauge (GITX-156)
+ * - Loading and error states
+ * - Keyboard accessibility
+ *
+ * Ticket: GITX-155, GITX-156
+ */
+
+import * as vscode from 'vscode';
+import { generateLocWeekChartScript, generateTableRenderingScripts, generateGitx156ChartScripts, generateVelocityChartScript } from './dev-profile-charts.js';
+import { generateGitx156HtmlSections } from './dev-profile-html-sections.js';
+
+/**
+ * Configuration for generating the developer profile HTML.
+ */
+export interface DevProfileHtmlConfig {
+  /** CSP nonce for script/style authorization */
+  readonly nonce: string;
+  /** URI for the D3.js v7 library bundled in the extension */
+  readonly d3Uri: vscode.Uri;
+  /** URI for the developer profile CSS stylesheet */
+  readonly styleUri: vscode.Uri;
+  /** The CSP source string for the webview */
+  readonly cspSource: string;
+}
+
+/**
+ * Generate the full HTML document for the Developer Profile Dashboard webview.
+ *
+ * @param config - HTML generation configuration with nonces and URIs
+ * @returns Complete HTML string for the webview
+ */
+export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
+  const { nonce, d3Uri, styleUri, cspSource } = config;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none';
+             style-src ${cspSource} 'nonce-${nonce}';
+             script-src 'nonce-${nonce}';
+             font-src ${cspSource};
+             img-src ${cspSource} data:;
+             connect-src 'none';
+             form-action 'none';
+             frame-ancestors 'none';
+             base-uri 'none';">
+  <link rel="stylesheet" href="${styleUri.toString()}">
+  <title>Developer Profile</title>
+</head>
+<body>
+  <div class="devprofile-container">
+    <header class="devprofile-header">
+      <h1>Developer Profile</h1>
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label for="developerSelect">Developer:</label>
+          <select id="developerSelect" class="filter-input" aria-label="Select developer">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="timeframeSelect">Timeframe:</label>
+          <select id="timeframeSelect" class="filter-input" aria-label="Select timeframe">
+            <option value="30">Last 30 days</option>
+            <option value="60">Last 60 days</option>
+            <option value="90" selected>Last 90 days</option>
+            <option value="180">Last 6 months</option>
+            <option value="365">Last year</option>
+          </select>
+        </div>
+      </div>
+    </header>
+
+    <!-- Summary Cards -->
+    <section class="summary-cards" id="summaryCards" aria-label="Developer Summary Statistics">
+      <div class="summary-card" id="summaryCommits">
+        <div class="summary-card-skeleton" aria-hidden="true"></div>
+        <div class="summary-card-content" style="display:none;">
+          <span class="summary-label">Total Commits</span>
+          <span class="summary-value" id="summaryCommitsValue">0</span>
+        </div>
+      </div>
+      <div class="summary-card" id="summaryLoc">
+        <div class="summary-card-skeleton" aria-hidden="true"></div>
+        <div class="summary-card-content" style="display:none;">
+          <span class="summary-label">Total LOC</span>
+          <span class="summary-value" id="summaryLocValue">0</span>
+        </div>
+      </div>
+      <div class="summary-card" id="summaryComplexity">
+        <div class="summary-card-skeleton" aria-hidden="true"></div>
+        <div class="summary-card-content" style="display:none;">
+          <span class="summary-label">Avg Complexity</span>
+          <span class="summary-value" id="summaryComplexityValue">0</span>
+        </div>
+      </div>
+      <div class="summary-card" id="summaryRepos">
+        <div class="summary-card-skeleton" aria-hidden="true"></div>
+        <div class="summary-card-content" style="display:none;">
+          <span class="summary-label">Repositories</span>
+          <span class="summary-value" id="summaryReposValue">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Empty State -->
+    <section class="empty-state" id="emptyState" style="display:none;" aria-live="polite">
+      <div class="empty-state-content">
+        <span class="empty-state-icon" aria-hidden="true">📊</span>
+        <h2 id="emptyStateTitle">No commits found</h2>
+        <p id="emptyStateMessage">Try expanding the date range or selecting a different developer.</p>
+        <button class="retry-btn" id="retryBtn" style="display:none;">Retry</button>
+      </div>
+    </section>
+
+    <!-- Error Banner -->
+    <section class="error-banner" id="errorBanner" style="display:none;" role="alert" aria-live="assertive">
+      <span class="error-icon" aria-hidden="true">⚠️</span>
+      <span class="error-message" id="errorMessage">An error occurred.</span>
+      <button class="error-retry-btn" id="errorRetryBtn">Retry</button>
+    </section>
+
+    <main class="devprofile-grid" id="mainContent">
+      <!-- LOC per Week Chart -->
+      <section class="card card-wide" id="locWeekCard" aria-label="LOC per Week Chart">
+        <h2>Lines of Code per Week</h2>
+        <div class="chart-container">
+          <div class="chart-skeleton" id="locWeekSkeleton" aria-hidden="true"></div>
+          <div id="locWeekChart" class="d3-chart" style="display:none;" role="img" aria-label="Stacked bar chart showing lines of code per week by repository"></div>
+        </div>
+        <p class="card-empty" id="locWeekEmpty" style="display:none;">No LOC data available for the selected timeframe.</p>
+      </section>
+
+      <!-- Top Complex Files Table -->
+      <section class="card" id="complexFilesCard" aria-label="Top Complex Files">
+        <h2>Top 15 Complex Files</h2>
+        <div class="table-container">
+          <div class="table-skeleton" id="complexFilesSkeleton" aria-hidden="true"></div>
+          <table class="data-table" id="complexFilesTable" style="display:none;" aria-label="Complex files table with sortable columns">
+            <thead>
+              <tr>
+                <th class="sortable-header" data-sort-key="filePath" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                  <span class="header-text">File Path</span>
+                  <span class="sort-indicator" aria-hidden="true">⇅</span>
+                </th>
+                <th class="sortable-header" data-sort-key="complexityScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="descending">
+                  <span class="header-text">Complexity</span>
+                  <span class="sort-indicator" aria-hidden="true">▼</span>
+                </th>
+                <th class="sortable-header" data-sort-key="repository" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                  <span class="header-text">Repository</span>
+                  <span class="sort-indicator" aria-hidden="true">⇅</span>
+                </th>
+                <th class="sortable-header" data-sort-key="lastModified" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                  <span class="header-text">Last Modified</span>
+                  <span class="sort-indicator" aria-hidden="true">⇅</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="complexFilesBody"></tbody>
+          </table>
+        </div>
+        <p class="card-empty" id="complexFilesEmpty" style="display:none;">No complex files found for the selected timeframe.</p>
+      </section>
+
+      <!-- Top Frequent Files Table -->
+      <section class="card" id="frequentFilesCard" aria-label="Top Frequent Files">
+        <h2>Top 20 Frequently Modified Files</h2>
+        <div class="table-container">
+          <div class="table-skeleton" id="frequentFilesSkeleton" aria-hidden="true"></div>
+          <table class="data-table" id="frequentFilesTable" style="display:none;" aria-label="Frequent files table with sortable columns">
+            <thead>
+              <tr>
+                <th class="sortable-header" data-sort-key="filePath" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                  <span class="header-text">File Path</span>
+                  <span class="sort-indicator" aria-hidden="true">⇅</span>
+                </th>
+                <th class="sortable-header" data-sort-key="modificationCount" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="descending">
+                  <span class="header-text">Modifications</span>
+                  <span class="sort-indicator" aria-hidden="true">▼</span>
+                </th>
+                <th class="sortable-header" data-sort-key="totalLocChanged" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
+                  <span class="header-text">Total LOC Changed</span>
+                  <span class="sort-indicator" aria-hidden="true">⇅</span>
+                </th>
+                <th class="sortable-header" data-sort-key="repository" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                  <span class="header-text">Repository</span>
+                  <span class="sort-indicator" aria-hidden="true">⇅</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="frequentFilesBody"></tbody>
+          </table>
+        </div>
+        <p class="card-empty" id="frequentFilesEmpty" style="display:none;">No frequently modified files found for the selected timeframe.</p>
+      </section>
+${generateGitx156HtmlSections()}
+    </main>
+  </div>
+
+  <script nonce="${nonce}" src="${d3Uri.toString()}"></script>
+  <script nonce="${nonce}">
+    (function() {
+      const vscode = acquireVsCodeApi();
+
+      // ======================================================================
+      // State
+      // ======================================================================
+      let currentDeveloper = null;
+      let currentTimeframe = '90';
+      let cachedDevelopers = [];
+      let cachedLocData = [];
+      let cachedComplexFiles = [];
+      let cachedFrequentFiles = [];
+      let cachedTechStack = [];
+      let cachedCommentsWeek = [];
+      let cachedTestsWeek = [];
+      let cachedHygieneScore = null;
+      let cachedVelocityData = [];
+      let velocityDataAvailable = false;
+      let complexFilesSortKey = 'complexityScore';
+      let complexFilesSortDir = 'desc';
+      let frequentFilesSortKey = 'modificationCount';
+      let frequentFilesSortDir = 'desc';
+      let initialStateReceived = false;
+
+      // Okabe-Ito colorblind-safe palette for charts (GITX-156)
+      var CHART_COLORS = ['#E69F00', '#56B4E9', '#009E73', '#D4C800', '#0072B2', '#D55E00', '#CC79A7', '#999999'];
+
+      // ======================================================================
+      // Utility Functions
+      // ======================================================================
+      function escapeHtml(str) {
+        if (str === null || str === undefined) { return ''; }
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function formatNumber(num) {
+        if (num === null || num === undefined) { return '0'; }
+        return Number(num).toLocaleString();
+      }
+
+      function truncatePath(path, maxLen) {
+        if (!path || path.length <= maxLen) { return path; }
+        return '...' + path.slice(-(maxLen - 3));
+      }
+
+      // ======================================================================
+      // Loading/Error States
+      // ======================================================================
+      function showSkeleton(id) {
+        var skeleton = document.getElementById(id);
+        if (skeleton) { skeleton.style.display = 'block'; }
+      }
+
+      function hideSkeleton(id) {
+        var skeleton = document.getElementById(id);
+        if (skeleton) { skeleton.style.display = 'none'; }
+      }
+
+      function showSummarySkeleton() {
+        document.querySelectorAll('.summary-card-skeleton').forEach(function(el) {
+          el.style.display = 'block';
+        });
+        document.querySelectorAll('.summary-card-content').forEach(function(el) {
+          el.style.display = 'none';
+        });
+      }
+
+      function hideSummarySkeleton() {
+        document.querySelectorAll('.summary-card-skeleton').forEach(function(el) {
+          el.style.display = 'none';
+        });
+        document.querySelectorAll('.summary-card-content').forEach(function(el) {
+          el.style.display = 'flex';
+        });
+      }
+
+      function showEmptyState(title, message) {
+        document.getElementById('emptyStateTitle').textContent = title;
+        document.getElementById('emptyStateMessage').textContent = message;
+        document.getElementById('emptyState').style.display = 'flex';
+        document.getElementById('mainContent').style.display = 'none';
+      }
+
+      function hideEmptyState() {
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('mainContent').style.display = 'grid';
+      }
+
+      function showError(message) {
+        document.getElementById('errorMessage').textContent = message;
+        document.getElementById('errorBanner').style.display = 'flex';
+      }
+
+      function hideError() {
+        document.getElementById('errorBanner').style.display = 'none';
+      }
+
+      // ======================================================================
+      // Data Requests
+      // ======================================================================
+      function requestDevelopers() {
+        vscode.postMessage({ type: 'requestDevelopers' });
+      }
+
+      function requestAllData() {
+        if (!currentDeveloper) { return; }
+        hideError();
+        showSummarySkeleton();
+        showSkeleton('locWeekSkeleton');
+        showSkeleton('complexFilesSkeleton');
+        showSkeleton('frequentFilesSkeleton');
+        showSkeleton('techStackSkeleton');
+        showSkeleton('hygieneSkeleton');
+        showSkeleton('commentsWeekSkeleton');
+        showSkeleton('testsWeekSkeleton');
+        showSkeleton('velocitySkeleton');
+        document.getElementById('locWeekChart').style.display = 'none';
+        document.getElementById('complexFilesTable').style.display = 'none';
+        document.getElementById('frequentFilesTable').style.display = 'none';
+        document.getElementById('techStackChart').style.display = 'none';
+        document.getElementById('hygieneGauge').style.display = 'none';
+        document.getElementById('hygieneBreakdown').style.display = 'none';
+        document.getElementById('commentsWeekChart').style.display = 'none';
+        document.getElementById('testsWeekChart').style.display = 'none';
+        document.getElementById('velocityChart').style.display = 'none';
+        document.getElementById('locWeekEmpty').style.display = 'none';
+        document.getElementById('complexFilesEmpty').style.display = 'none';
+        document.getElementById('frequentFilesEmpty').style.display = 'none';
+        document.getElementById('techStackEmpty').style.display = 'none';
+        document.getElementById('hygieneEmpty').style.display = 'none';
+        document.getElementById('commentsWeekEmpty').style.display = 'none';
+        document.getElementById('testsWeekEmpty').style.display = 'none';
+        document.getElementById('velocityEmpty').style.display = 'none';
+        document.getElementById('velocityHint').style.display = 'none';
+        hideEmptyState();
+        vscode.postMessage({
+          type: 'requestAllData',
+          developer: currentDeveloper,
+          timeframeDays: currentTimeframe
+        });
+      }
+
+      // ======================================================================
+      // Rendering
+      // ======================================================================
+      function populateDevelopers(developers) {
+        cachedDevelopers = developers;
+        var select = document.getElementById('developerSelect');
+        select.innerHTML = '<option value="">Select a developer</option>';
+        developers.forEach(function(dev) {
+          var opt = document.createElement('option');
+          opt.value = dev.login;
+          opt.textContent = dev.fullName ? dev.login + ' (' + dev.fullName + ')' : dev.login;
+          opt.textContent += ' - ' + formatNumber(dev.commitCount) + ' commits';
+          select.appendChild(opt);
+        });
+        // If currentDeveloper is set (from initial state), select it
+        if (currentDeveloper) {
+          select.value = currentDeveloper;
+        }
+      }
+
+      function renderSummary(summary) {
+        hideSummarySkeleton();
+        document.getElementById('summaryCommitsValue').textContent = formatNumber(summary.totalCommits);
+        document.getElementById('summaryLocValue').textContent = formatNumber(summary.totalLoc);
+        document.getElementById('summaryComplexityValue').textContent = summary.avgComplexity.toFixed(2);
+        document.getElementById('summaryReposValue').textContent = formatNumber(summary.repositoriesWorkedOn);
+
+        if (summary.totalCommits === 0) {
+          var dev = cachedDevelopers.find(function(d) { return d.login === currentDeveloper; });
+          var devName = dev ? (dev.fullName || dev.login) : currentDeveloper;
+          showEmptyState(
+            'No commits found for ' + devName,
+            'Try expanding the date range or selecting a different developer.'
+          );
+        }
+      }
+
+${generateLocWeekChartScript()}
+${generateTableRenderingScripts()}
+${generateGitx156ChartScripts()}
+${generateVelocityChartScript()}
+
+      // ======================================================================
+      // Message Handler
+      // ======================================================================
+      window.addEventListener('message', function(event) {
+        var msg = event.data;
+        switch (msg.type) {
+          case 'initialState':
+            // Track if developer changed to trigger data refresh
+            var developerChanged = msg.developer && msg.developer !== currentDeveloper;
+            if (msg.developer) {
+              currentDeveloper = msg.developer;
+            }
+            if (msg.timeframeDays) {
+              currentTimeframe = msg.timeframeDays;
+              document.getElementById('timeframeSelect').value = msg.timeframeDays;
+            }
+            // Always mark as received
+            initialStateReceived = true;
+            if (developerChanged) {
+              // Developer specified or changed: update dropdown and load data
+              var select = document.getElementById('developerSelect');
+              if (select && select.options.length > 1) {
+                // Dropdown already populated, select developer and load data
+                select.value = currentDeveloper;
+                requestAllData();
+              }
+              // If dropdown not yet populated, developersData handler will load data
+            }
+            break;
+          case 'developersData':
+            populateDevelopers(msg.data);
+            if (currentDeveloper) {
+              document.getElementById('developerSelect').value = currentDeveloper;
+              requestAllData();
+            }
+            break;
+          case 'summaryData':
+            renderSummary(msg.data);
+            break;
+          case 'locPerWeekData':
+            renderLocWeekChart(msg.data);
+            break;
+          case 'topComplexFilesData':
+            renderComplexFilesTable(msg.data);
+            break;
+          case 'topFrequentFilesData':
+            renderFrequentFilesTable(msg.data);
+            break;
+          case 'techStackData':
+            renderTechStackChart(msg.data);
+            break;
+          case 'hygieneScoreData':
+            renderHygieneScore(msg.data);
+            break;
+          case 'commentsPerWeekData':
+            renderCommentsWeekChart(msg.data);
+            break;
+          case 'testsPerWeekData':
+            renderTestsWeekChart(msg.data);
+            break;
+          case 'velocityVsLocData':
+            cachedVelocityData = msg.data;
+            renderVelocityChart(msg.data);
+            break;
+          case 'hasVelocityData':
+            velocityDataAvailable = msg.hasData;
+            // Re-render velocity chart now that we know data availability
+            if (cachedVelocityData.length > 0) {
+              renderVelocityChart(cachedVelocityData);
+            }
+            break;
+          case 'error':
+            hideEmptyState();
+            showError(msg.message);
+            hideSummarySkeleton();
+            hideSkeleton('locWeekSkeleton');
+            hideSkeleton('complexFilesSkeleton');
+            hideSkeleton('frequentFilesSkeleton');
+            hideSkeleton('techStackSkeleton');
+            hideSkeleton('hygieneSkeleton');
+            hideSkeleton('commentsWeekSkeleton');
+            hideSkeleton('testsWeekSkeleton');
+            hideSkeleton('velocitySkeleton');
+            break;
+        }
+      });
+
+      // ======================================================================
+      // Event Listeners
+      // ======================================================================
+      document.getElementById('developerSelect').addEventListener('change', function(e) {
+        currentDeveloper = e.target.value;
+        if (currentDeveloper) {
+          hideEmptyState();
+          requestAllData();
+        }
+      });
+
+      document.getElementById('timeframeSelect').addEventListener('change', function(e) {
+        currentTimeframe = e.target.value;
+        if (currentDeveloper) {
+          requestAllData();
+        }
+      });
+
+      document.getElementById('errorRetryBtn').addEventListener('click', function() {
+        hideError();
+        if (currentDeveloper) {
+          requestAllData();
+        }
+      });
+
+      document.getElementById('retryBtn').addEventListener('click', function() {
+        hideEmptyState();
+        if (currentDeveloper) {
+          requestAllData();
+        }
+      });
+
+      // Complex Files Sort Headers
+      document.querySelectorAll('#complexFilesTable .sortable-header').forEach(function(header) {
+        header.addEventListener('click', function() {
+          var key = header.getAttribute('data-sort-key');
+          if (complexFilesSortKey === key) {
+            complexFilesSortDir = complexFilesSortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            complexFilesSortKey = key;
+            complexFilesSortDir = 'asc';
+          }
+          renderComplexFilesRows();
+        });
+        header.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            header.click();
+          }
+        });
+      });
+
+      // Frequent Files Sort Headers
+      document.querySelectorAll('#frequentFilesTable .sortable-header').forEach(function(header) {
+        header.addEventListener('click', function() {
+          var key = header.getAttribute('data-sort-key');
+          if (frequentFilesSortKey === key) {
+            frequentFilesSortDir = frequentFilesSortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            frequentFilesSortKey = key;
+            frequentFilesSortDir = 'asc';
+          }
+          renderFrequentFilesRows();
+        });
+        header.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            header.click();
+          }
+        });
+      });
+
+      // ======================================================================
+      // Initialization - Request data immediately on load
+      // ======================================================================
+      showSummarySkeleton();
+      showSkeleton('locWeekSkeleton');
+      showSkeleton('complexFilesSkeleton');
+      showSkeleton('frequentFilesSkeleton');
+      showSkeleton('techStackSkeleton');
+      showSkeleton('hygieneSkeleton');
+      showSkeleton('commentsWeekSkeleton');
+      showSkeleton('testsWeekSkeleton');
+      showSkeleton('velocitySkeleton');
+
+      // GITX-157: Initialize lazy loading for charts
+      initLazyLoading();
+
+      // Request developers list immediately on webview load
+      // This ensures data loads even if initialState message is delayed
+      requestDevelopers();
+    })();
+  </script>
+</body>
+</html>`;
+}

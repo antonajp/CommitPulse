@@ -184,7 +184,7 @@ export function generateD3ChartScript(): string {
           .attr('stroke-width', 2.5)
           .attr('d', locLine);
 
-        // Triangle markers for LOC
+        // Triangle markers for LOC (GITX-149: Added click handlers)
         var triangleSymbol = d3.symbol().type(d3.symbolTriangle).size(60);
         data.forEach(function(d) {
           g.append('path')
@@ -193,10 +193,23 @@ export function generateD3ChartScript(): string {
             .attr('fill', SERIES_CONFIG.locChanged.color)
             .attr('stroke', 'var(--vscode-editor-background, #1e1e1e)')
             .attr('stroke-width', 1.5)
-            .attr('aria-label', 'Period ' + escapeHtml(d.weekStart) + ': ' + d.totalLocChanged.toLocaleString() + ' LOC changed')
-            .on('mouseover', function(event) { showTooltip(event, d); })
+            .attr('class', 'loc-marker-clickable')
+            .attr('tabindex', '0')
+            .attr('role', 'button')
+            .attr('aria-label', 'Period ' + escapeHtml(d.weekStart) + ': ' + d.totalLocChanged.toLocaleString() + ' LOC changed. Click to see commits.')
+            .on('mouseover', function(event) { showLocTooltip(event, d); })
             .on('mousemove', function(event) { moveTooltip(event); })
-            .on('mouseout', hideTooltip);
+            .on('mouseout', hideTooltip)
+            .on('click', function(event) {
+              event.stopPropagation();
+              requestLocDrillDown(d.weekStart);
+            })
+            .on('keydown', function(event) {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                requestLocDrillDown(d.weekStart);
+              }
+            });
         });
 
         // Announce update to screen readers
@@ -315,8 +328,28 @@ export function generateLegendScript(): string {
 export function generateTooltipScript(): string {
   return `
       // ======================================================================
-      // Tooltip Functions (IQS-944)
+      // Tooltip Functions (IQS-944, GITX-149)
       // ======================================================================
+
+      /**
+       * Show tooltip for LOC data point with drill-down hint.
+       * @param {Event} event - Mouse event
+       * @param {Object} d - Data point
+       */
+      function showLocTooltip(event, d) {
+        var periodLabel = currentAggregation === 'day' ? 'Day' : currentAggregation === 'biweekly' ? 'Bi-week of' : 'Week of';
+
+        tooltip.innerHTML =
+          '<div class="tt-component"><strong>' + periodLabel + ' ' + escapeHtml(d.weekStart) + '</strong></div>' +
+          '<div class="tt-value" style="color:' + SERIES_CONFIG.locChanged.color + '">' +
+            escapeHtml(d.totalLocChanged.toLocaleString()) + ' LOC changed</div>' +
+          '<div class="tt-team">+' + escapeHtml(d.totalLinesAdded.toLocaleString()) + ' / -' +
+            escapeHtml(d.totalLinesDeleted.toLocaleString()) + '</div>' +
+          '<div class="tt-team" style="margin-top:4px;font-style:italic;opacity:0.8;">Click to see commits</div>';
+        tooltip.classList.add('visible');
+        tooltip.setAttribute('aria-hidden', 'false');
+        moveTooltip(event);
+      }
 
       /**
        * Show tooltip with variance calculation for a data point.

@@ -32,6 +32,7 @@ import {
   generateCsvExportHandlerScript,
   generateChartExplanationScript,
 } from './velocity-chart-handlers.js';
+import { generateLocDrillDownScript } from './velocity-chart-drill-down.js';
 
 /**
  * Configuration for generating the velocity chart HTML.
@@ -170,6 +171,45 @@ function generateHtmlStructure(
           </thead>
           <tbody id="dataTableBody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- LOC Week Drill-Down Modal (GITX-149) -->
+    <div id="locDrillDownModal" class="drill-down-modal" role="dialog" aria-modal="true" aria-labelledby="locDrillDownTitle" aria-hidden="true" style="display:none;">
+      <div class="drill-down-modal-content">
+        <div class="drill-down-modal-header">
+          <h2 id="locDrillDownTitle">Commits for Week of...</h2>
+          <button id="locDrillDownClose" class="drill-down-close-btn" aria-label="Close drill-down modal" tabindex="0">&times;</button>
+        </div>
+        <div id="locDrillDownSummary" class="drill-down-summary"></div>
+        <div id="locDrillDownLoading" class="drill-down-loading" style="display:none;">
+          <div class="loading-spinner"></div>
+          <span>Loading commits for week...</span>
+        </div>
+        <div id="locDrillDownError" class="drill-down-error" style="display:none;"></div>
+        <div id="locDrillDownEmpty" class="drill-down-empty" style="display:none;">
+          No commits found for this week.
+        </div>
+        <div class="drill-down-table-wrapper">
+          <table class="drill-down-table" id="locDrillDownTable">
+            <thead>
+              <tr>
+                <th scope="col">SHA</th>
+                <th scope="col">Date</th>
+                <th scope="col">Author</th>
+                <th scope="col">Branch</th>
+                <th scope="col">Message</th>
+                <th scope="col">+Lines</th>
+                <th scope="col">-Lines</th>
+                <th scope="col">Total</th>
+              </tr>
+            </thead>
+            <tbody id="locDrillDownBody"></tbody>
+          </table>
+        </div>
+        <div class="drill-down-footer">
+          <button id="locDrillDownRetry" class="drill-down-retry-btn" style="display:none;" tabindex="0">Retry</button>
+        </div>
       </div>
     </div>
   </div>`;
@@ -337,7 +377,7 @@ function generateEventListenersScript(): string {
         dataTableWrapper.style.display = isExpanded ? 'none' : 'block';
       });
 
-      // Message Handling (GITX-121: Added filterOptions handler)
+      // Message Handling (GITX-121: Added filterOptions handler; GITX-149: Added drill-down handlers)
       window.addEventListener('message', function(event) {
         var message = event.data;
         switch (message.type) {
@@ -349,6 +389,12 @@ function generateEventListenersScript(): string {
             break;
           case 'filterOptions':
             handleFilterOptions(message);
+            break;
+          case 'locWeekDrillDown':
+            handleLocDrillDownData(message);
+            break;
+          case 'locWeekDrillDownError':
+            handleLocDrillDownError(message);
             break;
         }
       });
@@ -362,9 +408,10 @@ function generateEventListenersScript(): string {
 function generateInitScript(): string {
   return `
       // ======================================================================
-      // Initialization (GITX-121: Request filter options on init)
+      // Initialization (GITX-121: Request filter options on init; GITX-149: Init drill-down)
       // ======================================================================
       initChartExplanations();
+      initLocDrillDown();
 
       // Initial Load
       restoreFilterState();
@@ -434,6 +481,7 @@ export function generateVelocityChartHtml(config: VelocityChartHtmlConfig): stri
     generateDataTableScript(),
     generateDataHandlerScript(),
     generateChartExplanationScript(),
+    generateLocDrillDownScript(),
     generateEventListenersScript(),
     generateInitScript(),
     '})();',

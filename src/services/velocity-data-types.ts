@@ -123,3 +123,55 @@ export interface VelocityFilterOptions {
   /** Distinct repository names from commit_history */
   readonly repositories: readonly string[];
 }
+
+// ============================================================================
+// LOC Drill-Down Types (GITX-149)
+// ============================================================================
+
+/**
+ * Commit detail for week LOC drill-down modal.
+ * Contains commit metadata and LOC impact sorted by total LOC descending.
+ * Ticket: GITX-149
+ */
+export interface LocWeekCommitDetail {
+  /** Short commit SHA (first 7 characters) */
+  readonly sha: string;
+  /** Commit timestamp as ISO string */
+  readonly commitDate: string;
+  /** Git author name */
+  readonly author: string;
+  /** Branch name (prioritizes main/master, falls back to 'unknown') */
+  readonly branch: string;
+  /** Commit message truncated to 1000 characters */
+  readonly message: string;
+  /** Lines added in this commit */
+  readonly linesAdded: number;
+  /** Lines deleted in this commit */
+  readonly linesDeleted: number;
+  /** Total LOC changed (linesAdded + linesDeleted) */
+  readonly totalLoc: number;
+}
+
+/**
+ * Complete result for week LOC drill-down query.
+ * Includes aggregate summary and detailed commit list.
+ * Ticket: GITX-149, GITX-150
+ */
+export interface LocWeekDrillDownResult {
+  /** Week start date (YYYY-MM-DD) */
+  readonly weekStart: string;
+  /** Optional repository filter applied (null if all repos) */
+  readonly repository: string | null;
+  /**
+   * Repository base URL for constructing commit links (e.g., https://github.com/owner/repo).
+   * Null if repository URL is not configured in settings or multiple repos are aggregated.
+   * Ticket: GITX-150
+   */
+  readonly repoUrl: string | null;
+  /** Total LOC changed across all commits this week */
+  readonly totalLoc: number;
+  /** Number of commits returned */
+  readonly commitCount: number;
+  /** Commit details sorted by total LOC descending */
+  readonly commits: readonly LocWeekCommitDetail[];
+}
