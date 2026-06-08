@@ -521,6 +521,213 @@ body {
 }
 
 /* ============================================================================
+   LOC Drill-Down Modal (GITX-149)
+   ============================================================================ */
+
+.drill-down-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.drill-down-modal-content {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #444);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 900px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.drill-down-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+}
+
+.drill-down-modal-header h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.drill-down-close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5em;
+  color: var(--vscode-foreground, #cccccc);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.drill-down-close-btn:hover {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.drill-down-close-btn:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
+.drill-down-summary {
+  padding: 12px 16px;
+  background: var(--vscode-textCodeBlock-background, #1e1e1e);
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+  font-size: 0.9em;
+}
+
+.drill-down-summary-stats {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.drill-down-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.drill-down-stat-value {
+  font-size: 1.4em;
+  font-weight: 700;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.drill-down-stat-label {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.drill-down-loading,
+.drill-down-empty,
+.drill-down-error {
+  padding: 32px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+.drill-down-error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.drill-down-table-wrapper {
+  flex: 1;
+  overflow: auto;
+  padding: 0 16px;
+}
+
+.drill-down-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+
+.drill-down-table th,
+.drill-down-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+}
+
+.drill-down-table th {
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  background: var(--vscode-editor-background, #1e1e1e);
+  position: sticky;
+  top: 0;
+  white-space: nowrap;
+}
+
+.drill-down-table td {
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.drill-down-table tr:hover td {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.drill-down-table .sha-cell {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-textLink-foreground, #3794ff);
+  cursor: pointer;
+}
+
+.drill-down-table .sha-cell:hover {
+  text-decoration: underline;
+}
+
+.drill-down-table .message-cell {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drill-down-table .loc-cell-positive {
+  color: #4ec9b0; /* Green for additions */
+}
+
+.drill-down-table .loc-cell-negative {
+  color: #f14c4c; /* Red for deletions */
+}
+
+.drill-down-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--vscode-panel-border, #444);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.drill-down-retry-btn {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  padding: 6px 16px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.drill-down-retry-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.drill-down-retry-btn:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+}
+
+/* LOC marker hover indicator (GITX-149) */
+.loc-marker-clickable {
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.loc-marker-clickable:hover {
+  transform: scale(1.3);
+}
+
+.loc-marker-clickable:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
    Responsive
    ============================================================================ */
 
@@ -552,5 +759,20 @@ body {
 
   .summary-stats {
     flex-direction: column;
+  }
+
+  /* GITX-149: Responsive drill-down modal */
+  .drill-down-modal-content {
+    width: 95%;
+    max-height: 90vh;
+  }
+
+  .drill-down-summary-stats {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .drill-down-table .message-cell {
+    max-width: 150px;
   }
 }

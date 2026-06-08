@@ -36,12 +36,16 @@ import {
   QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_COMBINED,
   QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_REPOSITORY,
   QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_ALL_FILTERS,
+  QUERY_LOC_WEEK_DRILL_DOWN,
+  QUERY_LOC_WEEK_DRILL_DOWN_REPOSITORY,
 } from '../database/queries/velocity-queries.js';
 import type {
   SprintVelocityVsLocPoint,
   VelocityChartData,
   VelocityFilters,
   VelocityFilterOptions,
+  LocWeekDrillDownResult,
+  LocWeekCommitDetail,
 } from './velocity-data-types.js';
 
 /**
@@ -317,6 +321,95 @@ export class VelocityDataService {
     return {
       rows,
       hasData: rows.length > 0,
+    };
+  }
+
+  /**
+   * Get commit details for a specific week's LOC drill-down.
+   *
+   * @param weekStart - Week start date (YYYY-MM-DD)
+   * @param repository - Optional repository filter
+   * @returns Array of commit details sorted by LOC impact descending
+   *
+   * Ticket: GITX-149
+   */
+  async getWeekCommitDetails(
+    weekStart: string,
+    repository?: string
+  ): Promise<LocWeekDrillDownResult> {
+    this.logger.debug(
+      CLASS_NAME,
+      'getWeekCommitDetails',
+      `Fetching commits for week ${weekStart}, repo=${repository || 'all'}`
+    );
+
+    // Validate inputs
+    if (!isValidDateString(weekStart)) {
+      this.logger.warn(CLASS_NAME, 'getWeekCommitDetails', `Invalid week start date rejected: ${weekStart}`);
+      throw new Error(`Invalid week start date: ${weekStart}. Expected YYYY-MM-DD.`);
+    }
+    if (repository && !isValidRepositoryName(repository)) {
+      this.logger.warn(CLASS_NAME, 'getWeekCommitDetails', `Invalid repository name rejected: ${repository}`);
+      throw new Error(
+        `Invalid repository name: ${repository}. Must be 1-100 alphanumeric characters, dots, hyphens, or underscores.`
+      );
+    }
+
+    // Calculate week end as next Monday (weekStart + 7 days) for exclusive upper bound.
+    // This gives us Monday-Sunday inclusive when using >= start AND < end.
+    const weekStartDate = new Date(weekStart);
+    weekStartDate.setDate(weekStartDate.getDate() + 7);
+    const weekEnd = weekStartDate.toISOString().split('T')[0];
+
+    // Select query and params
+    const sql = repository ? QUERY_LOC_WEEK_DRILL_DOWN_REPOSITORY : QUERY_LOC_WEEK_DRILL_DOWN;
+    const params = repository ? [weekStart, weekEnd, repository] : [weekStart, weekEnd];
+
+    this.logger.trace(CLASS_NAME, 'getWeekCommitDetails', `Query params: ${JSON.stringify(params)}`);
+
+    const result = await this.db.query<{
+      sha: string;
+      commit_date: Date | string | null;
+      author: string | null;
+      branch: string;
+      message: string | null;
+      lines_added: number;
+      lines_deleted: number;
+      total_loc: number;
+    }>(sql, params);
+
+    this.logger.debug(CLASS_NAME, 'getWeekCommitDetails', `Query returned ${result.rows.length} commits`);
+
+    // Map to typed objects with null safety
+    const commits: LocWeekCommitDetail[] = result.rows.map(row => ({
+      sha: row.sha ? row.sha.slice(0, 7) : '', // Short SHA
+      commitDate: row.commit_date instanceof Date
+        ? row.commit_date.toISOString()
+        : (row.commit_date ? String(row.commit_date) : new Date().toISOString()),
+      author: row.author || 'unknown',
+      branch: row.branch || 'unknown',
+      message: row.message || '',
+      linesAdded: Number(row.lines_added) || 0,
+      linesDeleted: Number(row.lines_deleted) || 0,
+      totalLoc: Number(row.total_loc) || 0,
+    }));
+
+    // Calculate totals
+    const totalLoc = commits.reduce((sum, c) => sum + c.totalLoc, 0);
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getWeekCommitDetails',
+      `Found ${commits.length} commits, ${totalLoc} total LOC`
+    );
+
+    return {
+      weekStart,
+      repository: repository || null,
+      repoUrl: null, // Populated by caller (VelocityChartPanel) from settings - GITX-150
+      totalLoc,
+      commitCount: commits.length,
+      commits,
     };
   }
 }

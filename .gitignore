@@ -27,3 +27,4 @@ coverage/
 # SQL artifacts
 postgres_output.sql
 url_updates.sql
+docs/test-plans/

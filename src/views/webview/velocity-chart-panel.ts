@@ -22,7 +22,12 @@ import { getSettings } from '../../config/settings.js';
 import { MessageRateLimiter, DEFAULT_RATE_LIMIT_INTERVAL_MS } from './message-rate-limiter.js';
 import { handleSharedMessage } from './shared-message-handlers.js';
 import type { SecretStorageService } from '../../config/secret-storage.js';
-import type { VelocityWebviewToHost, VelocityHostToWebview } from './velocity-chart-protocol.js';
+import type {
+  VelocityWebviewToHost,
+  VelocityHostToWebview,
+  ResponseLocWeekDrillDown,
+  ResponseLocWeekDrillDownError,
+} from './velocity-chart-protocol.js';
 
 /**
  * Class name constant for structured logging context.
@@ -284,6 +289,57 @@ export class VelocityChartPanel implements vscode.Disposable {
             teamMembers: filterOptions.teamMembers,
             repositories: filterOptions.repositories,
           });
+          break;
+        }
+
+        case 'requestLocWeekDrillDown': {
+          // GITX-149: Handle LOC week drill-down request
+          // GITX-150: Add repoUrl for SHA navigation
+          this.logger.debug(CLASS_NAME, 'handleMessage',
+            `LOC drill-down requested: week=${message.weekStart}, repo=${message.repository || 'all'}`);
+
+          try {
+            const drillDownData = await this.dataService.getWeekCommitDetails(
+              message.weekStart,
+              message.repository
+            );
+
+            // GITX-150: Look up repository URL from settings for SHA navigation
+            let repoUrl: string | null = null;
+            if (drillDownData.repository) {
+              const settings = getSettings();
+              const repoEntry = settings.repositories.find(
+                r => r.name === drillDownData.repository
+              );
+              if (repoEntry?.repoUrl) {
+                repoUrl = repoEntry.repoUrl;
+                this.logger.debug(CLASS_NAME, 'handleMessage',
+                  `Repository URL resolved for ${drillDownData.repository}: ${repoUrl}`);
+              } else {
+                this.logger.debug(CLASS_NAME, 'handleMessage',
+                  `No repoUrl configured for ${drillDownData.repository}`);
+              }
+            }
+
+            this.postMessage({
+              type: 'locWeekDrillDown',
+              weekStart: drillDownData.weekStart,
+              repository: drillDownData.repository,
+              repoUrl,
+              totalLoc: drillDownData.totalLoc,
+              commitCount: drillDownData.commitCount,
+              commits: drillDownData.commits,
+            } as ResponseLocWeekDrillDown);
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            this.logger.error(CLASS_NAME, 'handleMessage',
+              `LOC drill-down error: ${errorMsg}`);
+            this.postMessage({
+              type: 'locWeekDrillDownError',
+              message: errorMsg,
+              weekStart: message.weekStart,
+            } as ResponseLocWeekDrillDownError);
+          }
           break;
         }
 

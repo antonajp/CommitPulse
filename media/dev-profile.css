@@ -1,0 +1,751 @@
+/**
+ * Developer Profile Dashboard stylesheet.
+ * Uses VS Code CSS variables for theme integration.
+ * Responsive grid layout for dashboard cards.
+ *
+ * Ticket: GITX-155
+ */
+
+/* ============================================================================
+   Reset & Base
+   ============================================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--vscode-foreground, #cccccc);
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  line-height: 1.5;
+  padding: 0;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* ============================================================================
+   Container
+   ============================================================================ */
+
+.devprofile-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* ============================================================================
+   Header & Filters
+   ============================================================================ */
+
+.devprofile-header {
+  margin-bottom: 16px;
+}
+
+.devprofile-header h1 {
+  font-size: 1.4em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  margin-bottom: 12px;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 12px 14px;
+  background-color: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 4px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-group label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.filter-input {
+  padding: 6px 10px;
+  font-size: var(--vscode-font-size, 13px);
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-input-foreground, #cccccc);
+  background-color: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-input-border, #555555);
+  border-radius: 2px;
+  outline: none;
+  min-width: 180px;
+}
+
+.filter-input:focus {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+#developerSelect {
+  min-width: 280px;
+}
+
+/* ============================================================================
+   Summary Cards
+   ============================================================================ */
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .summary-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 500px) {
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.summary-card {
+  background-color: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.summary-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.summary-value {
+  font-size: 1.8em;
+  font-weight: 700;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-card-skeleton {
+  width: 80%;
+  height: 40px;
+  background: linear-gradient(90deg, var(--vscode-editor-background) 25%, var(--vscode-panel-border) 50%, var(--vscode-editor-background) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ============================================================================
+   Empty State
+   ============================================================================ */
+
+.empty-state {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  background-color: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 6px;
+  padding: 40px;
+  margin-bottom: 16px;
+}
+
+.empty-state-content {
+  text-align: center;
+}
+
+.empty-state-icon {
+  font-size: 3em;
+  margin-bottom: 16px;
+  display: block;
+}
+
+.empty-state h2 {
+  font-size: 1.2em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  color: var(--vscode-descriptionForeground, #888888);
+  margin-bottom: 16px;
+}
+
+.retry-btn {
+  padding: 8px 20px;
+  font-size: var(--vscode-font-size, 13px);
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-button-foreground, #ffffff);
+  background-color: var(--vscode-button-background, #0e639c);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.retry-btn:hover {
+  background-color: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.retry-btn:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   Error Banner
+   ============================================================================ */
+
+.error-banner {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background-color: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  border-radius: 6px;
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.error-icon {
+  font-size: 1.2em;
+}
+
+.error-message {
+  flex: 1;
+}
+
+.error-retry-btn {
+  padding: 6px 14px;
+  font-size: 0.9em;
+  font-family: var(--vscode-font-family, inherit);
+  color: var(--vscode-button-foreground, #ffffff);
+  background-color: var(--vscode-button-background, #0e639c);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.error-retry-btn:hover {
+  background-color: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.error-retry-btn:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   Grid Layout
+   ============================================================================ */
+
+.devprofile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .devprofile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================================
+   Cards
+   ============================================================================ */
+
+.card {
+  background-color: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 6px;
+  padding: 16px;
+  overflow: hidden;
+  position: relative;
+}
+
+.card h2 {
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--vscode-panel-border, #444444);
+  padding-bottom: 8px;
+}
+
+.card-wide {
+  grid-column: 1 / -1;
+}
+
+.card-empty {
+  font-style: italic;
+  color: var(--vscode-descriptionForeground, #888888);
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* ============================================================================
+   Chart Container
+   ============================================================================ */
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  min-height: 300px;
+}
+
+.chart-skeleton {
+  width: 100%;
+  height: 300px;
+  background: linear-gradient(90deg, var(--vscode-editor-background) 25%, var(--vscode-panel-border) 50%, var(--vscode-editor-background) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 4px;
+}
+
+.d3-chart {
+  width: 100%;
+  min-height: 300px;
+  overflow: hidden;
+}
+
+.d3-chart svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* ============================================================================
+   Data Tables
+   ============================================================================ */
+
+.table-container {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.table-skeleton {
+  width: 100%;
+  height: 200px;
+  background: linear-gradient(90deg, var(--vscode-editor-background) 25%, var(--vscode-panel-border) 50%, var(--vscode-editor-background) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 4px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333333);
+}
+
+.data-table th {
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  position: sticky;
+  top: 0;
+  background-color: var(--vscode-sideBar-background, #252526);
+  z-index: 1;
+}
+
+.data-table td {
+  color: var(--vscode-editor-foreground, #cccccc);
+}
+
+.data-table td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table tr:hover td {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+/* Sortable Headers */
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+
+.sortable-header:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.sortable-header:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+.sortable-header .header-text {
+  margin-right: 4px;
+}
+
+.sortable-header .sort-indicator {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.sortable-header[aria-sort="ascending"] .sort-indicator,
+.sortable-header[aria-sort="descending"] .sort-indicator {
+  color: var(--vscode-foreground, #cccccc);
+}
+
+/* ============================================================================
+   Scrollbar Styling
+   ============================================================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--vscode-scrollbarSlider-background, #424242);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--vscode-scrollbarSlider-hoverBackground, #555555);
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+/* ============================================================================
+   Doughnut Chart (GITX-156)
+   ============================================================================ */
+
+.d3-doughnut {
+  min-height: 280px;
+}
+
+/* ============================================================================
+   Hygiene Score Gauge (GITX-156)
+   ============================================================================ */
+
+.hygiene-container {
+  position: relative;
+  min-height: 200px;
+}
+
+.hygiene-gauge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 16px 0;
+}
+
+.hygiene-score-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.hygiene-score-value {
+  font-size: 3em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.hygiene-score-label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.hygiene-tier-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.9em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hygiene-tier-badge.tier-excellent {
+  background-color: rgba(78, 201, 176, 0.2);
+  color: var(--vscode-testing-iconPassed, #4ec9b0);
+  border: 1px solid var(--vscode-testing-iconPassed, #4ec9b0);
+}
+
+.hygiene-tier-badge.tier-good {
+  background-color: rgba(70, 153, 204, 0.2);
+  color: var(--vscode-textLink-foreground, #3794ff);
+  border: 1px solid var(--vscode-textLink-foreground, #3794ff);
+}
+
+.hygiene-tier-badge.tier-fair {
+  background-color: rgba(204, 167, 0, 0.2);
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  border: 1px solid var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.hygiene-tier-badge.tier-poor {
+  background-color: rgba(244, 135, 113, 0.2);
+  color: var(--vscode-testing-iconFailed, #f48771);
+  border: 1px solid var(--vscode-testing-iconFailed, #f48771);
+}
+
+.hygiene-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 16px;
+  margin-top: 8px;
+}
+
+.hygiene-breakdown-item {
+  display: grid;
+  grid-template-columns: 140px 1fr 50px;
+  gap: 10px;
+  align-items: center;
+}
+
+.breakdown-label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.breakdown-bar-container {
+  height: 8px;
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.breakdown-bar {
+  height: 100%;
+  background-color: var(--vscode-textLink-foreground, #3794ff);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.breakdown-value {
+  font-size: 0.85em;
+  color: var(--vscode-foreground, #cccccc);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hygiene-total-commits {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground, #888888);
+  text-align: center;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+/* ============================================================================
+   Focus & Accessibility
+   ============================================================================ */
+
+:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================================
+   Dual-Axis Chart (GITX-157)
+   ============================================================================ */
+
+.d3-dual-axis {
+  min-height: 320px;
+}
+
+.velocity-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  border-radius: 4px;
+}
+
+.hint-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: var(--vscode-textLink-foreground, #3794ff);
+  color: var(--vscode-editor-background, #1e1e1e);
+  font-size: 0.75em;
+  font-weight: 700;
+}
+
+/* ============================================================================
+   Lazy Loading Placeholder (GITX-157)
+   ============================================================================ */
+
+.chart-lazy {
+  position: relative;
+}
+
+.chart-lazy::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.chart-lazy.loading::before {
+  opacity: 1;
+  background: linear-gradient(90deg, transparent 0%, var(--vscode-panel-border) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+/* ============================================================================
+   Keyboard Navigation Enhancements (GITX-157)
+   ============================================================================ */
+
+/* Number keys 1-8 jump to chart sections */
+[data-keyboard-shortcut]::after {
+  content: attr(data-keyboard-shortcut);
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75em;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #888888);
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.card:focus-within [data-keyboard-shortcut]::after,
+.card:hover [data-keyboard-shortcut]::after {
+  opacity: 1;
+}
+
+/* Skip link for screen readers */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  padding: 8px 16px;
+  background-color: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+  text-decoration: none;
+  border-radius: 0 0 4px 0;
+  z-index: 100;
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* High Contrast Mode (GITX-157) */
+@media (prefers-contrast: more) {
+  .card {
+    border-width: 2px;
+  }
+
+  .summary-value {
+    font-weight: 800;
+  }
+
+  .hygiene-tier-badge {
+    border-width: 2px;
+  }
+
+  .breakdown-bar {
+    border: 1px solid currentColor;
+  }
+}
+
+/* ============================================================================
+   Reduced Motion Support
+   ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .summary-card-skeleton,
+  .chart-skeleton,
+  .table-skeleton {
+    animation: none;
+    background: var(--vscode-panel-border, #444444);
+  }
+
+  .chart-lazy.loading::before {
+    animation: none;
+  }
+}

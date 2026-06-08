@@ -192,7 +192,7 @@ export function generateVelocityChartScript(): string {
           .selectAll('text').attr('fill', chartDefaults.color).attr('font-size', '10px');
 
         if (granularity === 'day') {
-          // Grouped bar chart
+          // Grouped bar chart (GITX-158: Added drill-down click handlers)
           var x1 = d3.scaleBand().domain(repos).range([0, x.bandwidth()]).padding(0.05);
           dates.forEach(function(date) {
             repos.forEach(function(repo) {
@@ -207,14 +207,30 @@ export function generateVelocityChartScript(): string {
                 .attr('fill', color(repo) + '88')
                 .attr('stroke', color(repo))
                 .attr('stroke-width', 1)
-                .attr('aria-label', escapeHtml(repo) + ' on ' + escapeHtml(date) + ': ' + formatLocTooltip(val))
+                .attr('cursor', 'pointer')
+                .attr('tabindex', '0')
+                .attr('role', 'button')
+                .attr('aria-label', escapeHtml(repo) + ' on ' + escapeHtml(date) + ': ' + formatLocTooltip(val) + ' - Click to view commit details')
                 .on('mouseover', function(event) { showTooltip(event, '<strong>' + escapeHtml(repo) + '</strong><br>' + escapeHtml(date) + '<br>' + formatLocTooltip(val)); })
                 .on('mousemove', moveTooltip)
-                .on('mouseout', hideTooltip);
+                .on('mouseout', hideTooltip)
+                .on('click', function() {
+                  if (typeof requestLocDrillDown === 'function') {
+                    requestLocDrillDown(date);
+                  }
+                })
+                .on('keydown', function(event) {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    if (typeof requestLocDrillDown === 'function') {
+                      requestLocDrillDown(date);
+                    }
+                  }
+                });
             });
           });
         } else {
-          // Line chart
+          // Line chart (GITX-158: Added drill-down click handlers)
           repos.forEach(function(repo) {
             var lineData = dates.map(function(date) {
               var pt = dataPoints.find(function(d) { return d.date === date && d.repository === repo; });
@@ -231,9 +247,26 @@ export function generateVelocityChartScript(): string {
             lineData.forEach(function(d) {
               g.append('circle')
                 .attr('cx', x(d.date) + x.bandwidth() / 2).attr('cy', y(d.value)).attr('r', 3).attr('fill', color(repo))
-                .attr('aria-label', escapeHtml(repo) + ' on ' + escapeHtml(d.date) + ': ' + formatLocTooltip(d.value))
+                .attr('cursor', 'pointer')
+                .attr('tabindex', '0')
+                .attr('role', 'button')
+                .attr('aria-label', escapeHtml(repo) + ' on ' + escapeHtml(d.date) + ': ' + formatLocTooltip(d.value) + ' - Click to view commit details')
                 .on('mouseover', function(event) { showTooltip(event, '<strong>' + escapeHtml(repo) + '</strong><br>' + escapeHtml(d.date) + '<br>' + formatLocTooltip(d.value)); })
-                .on('mousemove', moveTooltip).on('mouseout', hideTooltip);
+                .on('mousemove', moveTooltip)
+                .on('mouseout', hideTooltip)
+                .on('click', function() {
+                  if (typeof requestLocDrillDown === 'function') {
+                    requestLocDrillDown(d.date);
+                  }
+                })
+                .on('keydown', function(event) {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    if (typeof requestLocDrillDown === 'function') {
+                      requestLocDrillDown(d.date);
+                    }
+                  }
+                });
             });
           });
         }

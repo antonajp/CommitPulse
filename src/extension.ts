@@ -28,6 +28,7 @@ import { DriftPanel } from './views/webview/drift-panel.js';
 import { StoryPointsTrendPanel } from './views/webview/story-points-trend-panel.js';
 import { FileAuthorLocPanel } from './views/webview/file-author-loc-panel.js';
 import { ComplexityTrendPanel } from './views/webview/complexity-trend-panel.js';
+import { DevProfilePanel } from './views/webview/dev-profile-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 
 /**
@@ -780,6 +781,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     ComplexityTrendPanel.createOrShow(context.extensionUri, secretService);
   });
   disposables.push(openComplexityTrendDisposable);
+
+  // gitrx.openDeveloperProfile - Open the Developer Profile dashboard (GITX-155)
+  const openDevProfileDisposable = vscode.commands.registerCommand('gitrx.openDeveloperProfile', (developer?: string) => {
+    logger?.info(CLASS_NAME, 'openDeveloperProfile', `Command executed: gitrx.openDeveloperProfile${developer ? ` for ${developer}` : ''}`);
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'openDeveloperProfile', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    DevProfilePanel.createOrShow(context.extensionUri, secretService, developer);
+  });
+  disposables.push(openDevProfileDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }

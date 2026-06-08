@@ -25,6 +25,7 @@ import {
   generateFileChurnEventListeners,
   generateFileChurnStateRestoration,
 } from './file-churn-helpers.js';
+import { generateLocDrillDownScript } from './velocity-chart-drill-down.js';
 
 /**
  * Configuration for generating the dashboard HTML.
@@ -192,68 +193,6 @@ export function generateDashboardHtml(config: DashboardHtmlConfig): string {
         <p class="card-empty" id="techStackEmpty" style="display:none;">No technology stack data available.</p>
       </section>
 
-      <!-- Team Scorecard (IQS-892: Enhanced with sortable columns) -->
-      <section class="card card-wide" id="scorecardCard" aria-label="Team Scorecard">
-        <h2>
-          <span>Team Scorecard</span>
-          <span class="card-actions">
-            <button class="action-btn copy-btn" id="copyScorecard" aria-label="Copy scorecard table to clipboard" tabindex="0">Copy</button>
-            <button class="action-btn export-btn" id="exportScorecard" aria-label="Export scorecard data as CSV" tabindex="0">CSV</button>
-          </span>
-        </h2>
-        <details class="chart-explanation" open>
-          <summary class="explanation-toggle">
-            <svg class="chevron" aria-hidden="true" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>What does this chart show?</span>
-          </summary>
-          <div class="explanation-content">
-            <p>This table ranks contributors by a weighted quality score combining Release Assist (10%), Test Coverage (35%), Complexity Management (45%), and Code Comments (10%). Click column headers to sort. Higher scores indicate contributors who balance code quality practices alongside feature delivery.</p>
-          </div>
-        </details>
-        <div class="table-container" id="scorecardTableContainer">
-          <table class="scorecard-table scorecard-table-detailed" id="scorecardTable" aria-label="Team scorecard table with sortable columns">
-            <thead>
-              <tr>
-                <th class="sortable-header" data-sort-key="fullName" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Contributor</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="profile" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Profile</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="team" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Team</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="releaseAssistScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Release Assist (10%)</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="testScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Test (35%)</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="complexityScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Complexity (45%)</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="commentsScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Comments (10%)</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header score-total-header" data-sort-key="totalScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="descending">
-                  <span class="header-text">Total Score</span>
-                  <span class="sort-indicator" aria-hidden="true">▼</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody id="scorecardBody"></tbody>
-          </table>
-        </div>
-        <p class="card-empty" id="scorecardEmpty" style="display:none;">No scorecard data available.</p>
-      </section>
-
       <!-- LOC Committed (IQS-889) -->
       <section class="card card-wide" id="locCommittedCard" aria-label="LOC Committed Chart">
         <h2>
@@ -364,6 +303,65 @@ export function generateDashboardHtml(config: DashboardHtmlConfig): string {
         </div>
         <p class="card-empty" id="fileChurnEmpty" style="display:none;">No file churn data available for the selected filters.</p>
       </section>
+
+      <!-- Team Scorecard (IQS-892, GITX-154: Moved to bottom, collapsible) -->
+      <details class="card card-wide card-collapsible" id="scorecardCard" aria-label="Team Scorecard" open>
+        <summary class="card-collapsible-header" tabindex="0">
+          <svg class="card-chevron" aria-hidden="true" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h2>Team Scorecard</h2>
+          <span class="card-actions">
+            <button class="action-btn copy-btn" id="copyScorecard" aria-label="Copy scorecard table to clipboard" tabindex="0">Copy</button>
+            <button class="action-btn export-btn" id="exportScorecard" aria-label="Export scorecard data as CSV" tabindex="0">CSV</button>
+          </span>
+        </summary>
+        <div class="card-collapsible-content">
+          <div class="chart-explanation-inline">
+            <p>This table ranks contributors by a weighted quality score combining Release Assist (10%), Test Coverage (35%), Complexity Management (45%), and Code Comments (10%). Click column headers to sort. Higher scores indicate contributors who balance code quality practices alongside feature delivery.</p>
+          </div>
+          <div class="table-container" id="scorecardTableContainer">
+            <table class="scorecard-table scorecard-table-detailed" id="scorecardTable" aria-label="Team scorecard table with sortable columns">
+              <thead>
+                <tr>
+                  <th class="sortable-header" data-sort-key="fullName" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                    <span class="header-text">Contributor</span>
+                    <span class="sort-indicator" aria-hidden="true">⇅</span>
+                  </th>
+                  <th class="sortable-header" data-sort-key="profile" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                    <span class="header-text">Profile</span>
+                    <span class="sort-indicator" aria-hidden="true">⇅</span>
+                  </th>
+                  <th class="sortable-header" data-sort-key="team" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                    <span class="header-text">Team</span>
+                    <span class="sort-indicator" aria-hidden="true">⇅</span>
+                  </th>
+                  <th class="sortable-header" data-sort-key="releaseAssistScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
+                    <span class="header-text">Release Assist (10%)</span>
+                    <span class="sort-indicator" aria-hidden="true">⇅</span>
+                  </th>
+                  <th class="sortable-header" data-sort-key="testScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
+                    <span class="header-text">Test (35%)</span>
+                    <span class="sort-indicator" aria-hidden="true">⇅</span>
+                  </th>
+                  <th class="sortable-header" data-sort-key="complexityScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
+                    <span class="header-text">Complexity (45%)</span>
+                    <span class="sort-indicator" aria-hidden="true">⇅</span>
+                  </th>
+                  <th class="sortable-header" data-sort-key="commentsScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
+                    <span class="header-text">Comments (10%)</span>
+                    <span class="sort-indicator" aria-hidden="true">⇅</span>
+                  </th>
+                  <th class="sortable-header score-total-header" data-sort-key="totalScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="descending">
+                    <span class="header-text">Total Score</span>
+                    <span class="sort-indicator" aria-hidden="true">▼</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="scorecardBody"></tbody>
+            </table>
+          </div>
+          <p class="card-empty" id="scorecardEmpty" style="display:none;">No scorecard data available.</p>
+        </div>
+      </details>
     </main>
 
     <!-- File Churn Drill-Down Modal (IQS-895) -->
@@ -392,6 +390,45 @@ export function generateDashboardHtml(config: DashboardHtmlConfig): string {
         </div>
       </div>
     </div>
+
+    <!-- LOC Week Drill-Down Modal (GITX-158) -->
+    <div id="locDrillDownModal" class="drill-down-modal" role="dialog" aria-modal="true" aria-labelledby="locDrillDownTitle" aria-hidden="true" style="display:none;">
+      <div class="drill-down-modal-content">
+        <div class="drill-down-modal-header">
+          <h2 id="locDrillDownTitle">Commits for Week of...</h2>
+          <button id="locDrillDownClose" class="drill-down-close-btn" aria-label="Close drill-down modal" tabindex="0">&times;</button>
+        </div>
+        <div id="locDrillDownSummary" class="drill-down-summary"></div>
+        <div id="locDrillDownLoading" class="drill-down-loading" style="display:none;">
+          <div class="loading-spinner"></div>
+          <span>Loading commits for week...</span>
+        </div>
+        <div id="locDrillDownError" class="drill-down-error" style="display:none;"></div>
+        <div id="locDrillDownEmpty" class="drill-down-empty" style="display:none;">
+          No commits found for this week.
+        </div>
+        <div class="drill-down-table-wrapper">
+          <table class="drill-down-table" id="locDrillDownTable">
+            <thead>
+              <tr>
+                <th scope="col">SHA</th>
+                <th scope="col">Date</th>
+                <th scope="col">Author</th>
+                <th scope="col">Branch</th>
+                <th scope="col">Message</th>
+                <th scope="col">+Lines</th>
+                <th scope="col">-Lines</th>
+                <th scope="col">Total</th>
+              </tr>
+            </thead>
+            <tbody id="locDrillDownBody"></tbody>
+          </table>
+        </div>
+        <div class="drill-down-footer">
+          <button id="locDrillDownRetry" class="drill-down-retry-btn" style="display:none;" tabindex="0">Retry</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script nonce="${nonce}" src="${d3Uri.toString()}"></script>
@@ -408,6 +445,11 @@ ${generateAllWebviewUtilityScripts()}
       // D3.js Chart Infrastructure and Renderers (IQS-887)
       // ======================================================================
 ${generateAllD3ChartScripts()}
+
+      // ======================================================================
+      // LOC Week Drill-Down (GITX-158)
+      // ======================================================================
+${generateLocDrillDownScript()}
 
       // ======================================================================
       // Cached data for CSV export (IQS-871)
@@ -433,6 +475,9 @@ ${generateAllD3ChartScripts()}
       let cachedTopComplexFilesData = null;
       let complexityCurrentGroupBy = 'individual';
       var COMPLEXITY_DEFAULT_TOP_N = 20;
+
+      // Dashboard repository filter tracking (GITX-158)
+      var currentRepository = '';
 
 ${generateFileChurnStateScript()}
 
@@ -938,6 +983,12 @@ ${generateFileChurnHelperFunctions()}
           case 'fileChurnDrillDownData':
             handleFileChurnDrillDownData(msg.data, msg.filename, msg.contributor);
             break;
+          case 'locWeekDrillDown':
+            handleLocDrillDownData(msg);
+            break;
+          case 'locWeekDrillDownError':
+            handleLocDrillDownError(msg);
+            break;
           case 'exportCsvSuccess':
             // CSV export succeeded (GITX-127)
             showExportSuccess(msg.filename);
@@ -1147,6 +1198,58 @@ ${generateFileChurnEventListeners()}
         });
       }
       initChartExplanations();
+
+      // ======================================================================
+      // Collapsible Card State Persistence (GITX-154)
+      // ======================================================================
+      function initCardCollapsibles() {
+        var savedState = loadWebviewState() || {};
+        var cardCollapseState = savedState.cardCollapseState || {};
+
+        document.querySelectorAll('.card-collapsible').forEach(function(details) {
+          var cardId = details.id;
+          if (!cardId) { return; }
+
+          // Restore state (default to open if not set)
+          if (cardCollapseState[cardId] !== undefined) {
+            details.open = cardCollapseState[cardId];
+          }
+
+          // Update aria-expanded attribute on summary
+          var summary = details.querySelector('summary');
+          if (summary) {
+            summary.setAttribute('aria-expanded', details.open ? 'true' : 'false');
+
+            // Stop propagation on action buttons within summary to prevent toggle
+            var actionButtons = summary.querySelectorAll('.action-btn');
+            actionButtons.forEach(function(btn) {
+              btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+              });
+            });
+          }
+
+          // Save state on toggle
+          details.addEventListener('toggle', function() {
+            var currentState = loadWebviewState() || {};
+            var collapseState = currentState.cardCollapseState || {};
+            collapseState[cardId] = details.open;
+            saveWebviewState({ cardCollapseState: collapseState });
+
+            // Update aria-expanded
+            var summaryEl = details.querySelector('summary');
+            if (summaryEl) {
+              summaryEl.setAttribute('aria-expanded', details.open ? 'true' : 'false');
+            }
+          });
+        });
+      }
+      initCardCollapsibles();
+
+      // ======================================================================
+      // LOC Drill-Down Modal Initialization (GITX-158)
+      // ======================================================================
+      initLocDrillDown();
 
       // ======================================================================
       // Keyboard accessibility setup (IQS-871)

@@ -61,9 +61,25 @@ export interface RequestFilterOptions {
 }
 
 /**
+ * Request to drill down into commits for a specific week's LOC data.
+ * Ticket: GITX-149
+ */
+export interface RequestLocWeekDrillDown {
+  readonly type: 'requestLocWeekDrillDown';
+  /** The week start date (YYYY-MM-DD) */
+  readonly weekStart: string;
+  /** Optional repository filter */
+  readonly repository?: string;
+}
+
+/**
  * Union type of all messages sent from the webview to the extension host.
  */
-export type VelocityWebviewToHost = RequestVelocityData | RequestFilterOptions | SharedWebviewToHost;
+export type VelocityWebviewToHost =
+  | RequestVelocityData
+  | RequestFilterOptions
+  | RequestLocWeekDrillDown
+  | SharedWebviewToHost;
 
 // ============================================================================
 // Extension -> Webview (Responses)
@@ -103,10 +119,69 @@ export interface ResponseFilterOptions {
 }
 
 /**
+ * Commit detail for drill-down display.
+ * Ticket: GITX-149
+ */
+export interface LocWeekCommitDetail {
+  /** Short SHA (7 characters) */
+  readonly sha: string;
+  /** Commit date (ISO string) */
+  readonly commitDate: string;
+  /** Author name or login */
+  readonly author: string;
+  /** Primary branch name (or "main" if multiple) */
+  readonly branch: string;
+  /** Commit message (truncated to 1000 chars) */
+  readonly message: string;
+  /** Lines added in this commit */
+  readonly linesAdded: number;
+  /** Lines deleted in this commit */
+  readonly linesDeleted: number;
+  /** Total LOC changed (added + deleted) */
+  readonly totalLoc: number;
+}
+
+/**
+ * Response with commit details for a week's LOC drill-down.
+ * Ticket: GITX-149, GITX-150
+ */
+export interface ResponseLocWeekDrillDown {
+  readonly type: 'locWeekDrillDown';
+  /** The week start date that was requested */
+  readonly weekStart: string;
+  /** Repository filter that was applied, if any */
+  readonly repository: string | null;
+  /**
+   * Repository base URL for constructing commit links (e.g., https://github.com/owner/repo).
+   * Null if repository URL is not configured or multiple repos are aggregated.
+   * Ticket: GITX-150
+   */
+  readonly repoUrl: string | null;
+  /** Total LOC for this week */
+  readonly totalLoc: number;
+  /** Number of commits in this week */
+  readonly commitCount: number;
+  /** Commit details, sorted by LOC impact descending */
+  readonly commits: readonly LocWeekCommitDetail[];
+}
+
+/**
+ * Error response for drill-down request.
+ * Ticket: GITX-149
+ */
+export interface ResponseLocWeekDrillDownError {
+  readonly type: 'locWeekDrillDownError';
+  readonly message: string;
+  readonly weekStart: string;
+}
+
+/**
  * Union type of all messages sent from the extension host to the webview.
  */
 export type VelocityHostToWebview =
   | ResponseVelocityData
   | VelocityResponseError
   | ResponseFilterOptions
+  | ResponseLocWeekDrillDown
+  | ResponseLocWeekDrillDownError
   | SharedHostToWebview;

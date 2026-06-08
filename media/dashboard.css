@@ -1310,6 +1310,128 @@ body {
 }
 
 /* ============================================================================
+   Collapsible Card Sections (GITX-154)
+   Used for Team Scorecard collapse/expand functionality.
+   Uses native <details>/<summary> elements for accessibility.
+   ============================================================================ */
+
+.card-collapsible {
+  /* Inherit from .card but as <details> element */
+  background-color: var(--vscode-sideBar-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444444);
+  border-radius: 4px;
+  padding: 0; /* Remove default padding - header/content handle it */
+  overflow: hidden;
+  position: relative;
+}
+
+.card-collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none; /* Remove default marker */
+  transition: background-color 0.15s;
+}
+
+.card-collapsible-header::-webkit-details-marker {
+  display: none;
+}
+
+.card-collapsible-header:hover {
+  background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.card-collapsible-header:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+.card-collapsible-header:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -2px;
+}
+
+.card-collapsible-header h2 {
+  flex: 1;
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+  margin: 0;
+  padding: 0;
+  border: none; /* Remove border from .card h2 */
+}
+
+.card-collapsible-header .card-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.card-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--vscode-foreground, #cccccc);
+  transition: transform 0.2s ease;
+}
+
+.card-collapsible[open] .card-chevron {
+  transform: rotate(90deg);
+}
+
+.card-collapsible-content {
+  padding: 0 14px 14px 14px;
+  border-top: 1px solid var(--vscode-panel-border, #444444);
+}
+
+/* Chart explanation inline (non-collapsible, used inside collapsible card) */
+.chart-explanation-inline {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
+  background: var(--vscode-textCodeBlock-background, #1e1e1e);
+  border-radius: 4px;
+  font-size: 0.88em;
+  line-height: 1.6;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.chart-explanation-inline p {
+  margin: 0;
+}
+
+/* Accessibility: Support for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .card-chevron {
+    transition: none;
+  }
+
+  .card-collapsible-header {
+    transition: none;
+  }
+}
+
+/* High contrast theme support */
+@media (forced-colors: active) {
+  .card-collapsible {
+    border: 2px solid CanvasText;
+  }
+
+  .card-collapsible-header:focus {
+    outline: 3px solid Highlight;
+  }
+
+  .card-chevron {
+    stroke: CanvasText;
+  }
+}
+
+/* ============================================================================
    Toast Notifications (GITX-127)
    Used for CSV export success/error feedback.
    ============================================================================ */

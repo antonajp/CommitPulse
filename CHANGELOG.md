@@ -5,6 +5,33 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+[0;34m[INFO][0m Generating changelog from commits since v0.1.29...
+## [0.1.30] - 2026-06-08
+
+### Added
+
+- Add LOC drill-down to main dashboard chart
+- Add Sprint Velocity vs LOC chart and performance enhancements
+- Add Part 2 charts to Developer Profile Dashboard
+- Add Developer Profile Dashboard MVP
+- Move Team Scorecard to bottom of dashboard and make collapsible
+- Add focus trap to LOC drill-down modal for WCAG 2.1 compliance
+- Implement SHA navigation in LOC drill-down modal
+
+### Changed
+
+- Document classify-arc-component.sql and add WSO2 patterns
+
+### Fixed
+
+- Fix Developer Profile Dashboard data loading
+- Correct team member JOIN queries column name
+
+### Technical
+
+- Add integration tests for LOC drill-down flow
+- Add docs/test-plans/ to .gitignore
+
 [0;34m[INFO][0m Generating changelog from commits since v0.1.28...
 ## [0.1.29] - 2026-04-01
 
