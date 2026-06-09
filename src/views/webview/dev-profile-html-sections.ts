@@ -15,10 +15,10 @@ export function generateGitx156HtmlSections(): string {
         <h2>Sprint Velocity vs Lines of Code</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="velocitySkeleton" aria-hidden="true"></div>
-          <div id="velocityChart" class="d3-chart d3-dual-axis" style="display:none;" role="img" aria-label="Dual-axis chart showing story points and lines of code per week"></div>
+          <div id="velocityChart" class="d3-chart d3-dual-axis hidden" role="img" aria-label="Dual-axis chart showing story points and lines of code per week"></div>
         </div>
-        <p class="card-empty" id="velocityEmpty" style="display:none;">Sprint velocity data requires Linear/Jira issue assignment to this developer.</p>
-        <p class="velocity-hint" id="velocityHint" style="display:none;">
+        <p class="card-empty hidden" id="velocityEmpty">Sprint velocity data requires Linear/Jira issue assignment to this developer.</p>
+        <p class="velocity-hint hidden" id="velocityHint">
           <span class="hint-icon" aria-hidden="true">i</span>
           <span class="hint-text">Click on data points to view sprint/week details.</span>
         </p>
@@ -29,9 +29,9 @@ export function generateGitx156HtmlSections(): string {
         <h2>Technology Stack</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="techStackSkeleton" aria-hidden="true"></div>
-          <div id="techStackChart" class="d3-chart d3-doughnut" style="display:none;" role="img" aria-label="Doughnut chart showing technology stack contributions"></div>
+          <div id="techStackChart" class="d3-chart d3-doughnut hidden" role="img" aria-label="Doughnut chart showing technology stack contributions"></div>
         </div>
-        <p class="card-empty" id="techStackEmpty" style="display:none;">No technology stack data available for the selected timeframe.</p>
+        <p class="card-empty hidden" id="techStackEmpty">No technology stack data available for the selected timeframe.</p>
       </section>
 
       <!-- Commit Hygiene Score Gauge (GITX-156) -->
@@ -39,39 +39,39 @@ export function generateGitx156HtmlSections(): string {
         <h2>Commit Hygiene Score</h2>
         <div class="hygiene-container">
           <div class="chart-skeleton" id="hygieneSkeleton" aria-hidden="true"></div>
-          <div id="hygieneGauge" class="hygiene-gauge" style="display:none;" role="img" aria-label="Gauge showing commit hygiene score">
+          <div id="hygieneGauge" class="hygiene-gauge hidden" role="img" aria-label="Gauge showing commit hygiene score">
             <div class="hygiene-score-display">
               <span class="hygiene-score-value" id="hygieneScoreValue">0</span>
               <span class="hygiene-score-label">Hygiene Score</span>
             </div>
             <div class="hygiene-tier-badge" id="hygieneTierBadge">-</div>
           </div>
-          <div id="hygieneBreakdown" class="hygiene-breakdown" style="display:none;">
+          <div id="hygieneBreakdown" class="hygiene-breakdown hidden">
             <div class="hygiene-breakdown-item">
               <span class="breakdown-label">Jira Reference</span>
               <div class="breakdown-bar-container">
-                <div class="breakdown-bar" id="jiraRefBar" style="width:0%;"></div>
+                <div class="breakdown-bar" id="jiraRefBar" ></div>
               </div>
               <span class="breakdown-value" id="jiraRefValue">0%</span>
             </div>
             <div class="hygiene-breakdown-item">
               <span class="breakdown-label">Meaningful Message</span>
               <div class="breakdown-bar-container">
-                <div class="breakdown-bar" id="meaningfulMsgBar" style="width:0%;"></div>
+                <div class="breakdown-bar" id="meaningfulMsgBar" ></div>
               </div>
               <span class="breakdown-value" id="meaningfulMsgValue">0%</span>
             </div>
             <div class="hygiene-breakdown-item">
               <span class="breakdown-label">Non-Merge Commits</span>
               <div class="breakdown-bar-container">
-                <div class="breakdown-bar" id="nonMergeBar" style="width:0%;"></div>
+                <div class="breakdown-bar" id="nonMergeBar" ></div>
               </div>
               <span class="breakdown-value" id="nonMergeValue">0%</span>
             </div>
             <div class="hygiene-total-commits" id="hygieneTotalCommits">Based on 0 commits</div>
           </div>
         </div>
-        <p class="card-empty" id="hygieneEmpty" style="display:none;">No hygiene data available for the selected timeframe.</p>
+        <p class="card-empty hidden" id="hygieneEmpty">No hygiene data available for the selected timeframe.</p>
       </section>
 
       <!-- Comments Per Week Line Chart (GITX-156) -->
@@ -79,9 +79,9 @@ export function generateGitx156HtmlSections(): string {
         <h2>Comments Added per Week</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="commentsWeekSkeleton" aria-hidden="true"></div>
-          <div id="commentsWeekChart" class="d3-chart" style="display:none;" role="img" aria-label="Line chart showing comments added per week"></div>
+          <div id="commentsWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing comments added per week"></div>
         </div>
-        <p class="card-empty" id="commentsWeekEmpty" style="display:none;">No comment data available for the selected timeframe.</p>
+        <p class="card-empty hidden" id="commentsWeekEmpty">No comment data available for the selected timeframe.</p>
       </section>
 
       <!-- Tests Per Week Line Chart (GITX-156) -->
@@ -89,8 +89,8 @@ export function generateGitx156HtmlSections(): string {
         <h2>Test Files Modified per Week</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="testsWeekSkeleton" aria-hidden="true"></div>
-          <div id="testsWeekChart" class="d3-chart" style="display:none;" role="img" aria-label="Line chart showing test files modified per week"></div>
+          <div id="testsWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing test files modified per week"></div>
         </div>
-        <p class="card-empty" id="testsWeekEmpty" style="display:none;">No test data available for the selected timeframe.</p>
+        <p class="card-empty hidden" id="testsWeekEmpty">No test data available for the selected timeframe.</p>
       </section>`;
 }

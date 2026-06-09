@@ -7,8 +7,9 @@
  * - CSP nonce-based script authorization
  * - Rate limiting on message handlers (IQS-947)
  * - Proper disposal and resource cleanup
+ * - Provider-specific commit URL construction (GITX-160)
  *
- * Ticket: IQS-888, IQS-947, GITX-121
+ * Ticket: IQS-888, IQS-947, GITX-121, GITX-160
  */
 
 import * as vscode from 'vscode';
@@ -304,7 +305,8 @@ export class VelocityChartPanel implements vscode.Disposable {
               message.repository
             );
 
-            // GITX-150: Look up repository URL from settings for SHA navigation
+            // GITX-150, GITX-160: Look up repository URL from settings for SHA navigation
+            // GITX-160: repoUrl is used by webview to construct provider-specific commit URLs
             let repoUrl: string | null = null;
             if (drillDownData.repository) {
               const settings = getSettings();

@@ -355,6 +355,22 @@ export class GitAnalysisService {
 
     const durationMs = Date.now() - startTime;
     this.logger.info(CLASS_NAME, 'analyzeRepository', `Repository ${repoName} complete: ${branchesProcessed} branches, ${commitsInserted} commits in ${durationMs}ms`);
+
+    // GITX-160: Post-extraction verification - query database to confirm commits were persisted
+    try {
+      const actualCount = await this.commitRepo.getCommitCountForRepository(repoName);
+      if (commitsInserted > 0 && actualCount === 0) {
+        this.logger.critical(CLASS_NAME, 'analyzeRepository', `[${repoName}] CRITICAL: Extracted ${commitsInserted} commits but database has 0 rows! Silent insert failure detected.`);
+      } else if (commitsInserted > actualCount) {
+        this.logger.warn(CLASS_NAME, 'analyzeRepository', `[${repoName}] WARN: Expected ${commitsInserted} commits but database has ${actualCount}. Some inserts may have been skipped.`);
+      } else {
+        this.logger.info(CLASS_NAME, 'analyzeRepository', `[${repoName}] Verification: Database has ${actualCount} commits (expected to add ${commitsInserted})`);
+      }
+    } catch (verifyError: unknown) {
+      const msg = verifyError instanceof Error ? verifyError.message : String(verifyError);
+      this.logger.error(CLASS_NAME, 'analyzeRepository', `[${repoName}] Failed to verify commit count: ${msg}`);
+    }
+
     return { repoName, branchesProcessed, commitsInserted, branchRelationshipsRecorded, durationMs };
   }
 
@@ -491,7 +507,12 @@ export class GitAnalysisService {
         const primaryBranch = validBranches[0] ?? 'unknown';
         const extracted = extractCommitData(logEntry, primaryBranch);
         const commitHistoryRow = buildCommitHistoryRow(extracted, repoContext);
-        await this.commitRepo.insertCommitHistory(commitHistoryRow);
+        // GITX-160: Track whether insert actually created a row or was skipped
+        const wasInserted = await this.commitRepo.insertCommitHistory(commitHistoryRow);
+        if (!wasInserted) {
+          // Log at INFO level for production visibility - this is a diagnostic signal
+          this.logger.info(CLASS_NAME, 'analyzeRepositoryFast', `[${repoContext.name}] Commit ${sha.substring(0, 8)} insert SKIPPED (SHA already exists under different repository?)`);
+        }
 
         if (debugLogging) {
           this.logger.debug(CLASS_NAME, 'analyzeRepositoryFast', `[GIT DEBUG] Commit: ${sha.substring(0, 8)} | Author: ${logEntry.author_name} | Date: ${logEntry.date}`);
@@ -567,6 +588,21 @@ export class GitAnalysisService {
       `${commitsInserted} new, ${commitsSkipped} existing, ${branchRelationshipsRecorded} relationships, ` +
       `${branchesProcessed} branches touched in ${durationMs}ms`
     );
+
+    // GITX-160: Post-extraction verification - query database to confirm commits were persisted
+    try {
+      const actualCount = await this.commitRepo.getCommitCountForRepository(repoName);
+      if (commitsInserted > 0 && actualCount === 0) {
+        this.logger.critical(CLASS_NAME, 'analyzeRepositoryFast', `[${repoName}] CRITICAL: Extracted ${commitsInserted} commits but database has 0 rows! Silent insert failure detected.`);
+      } else if (commitsInserted > actualCount) {
+        this.logger.warn(CLASS_NAME, 'analyzeRepositoryFast', `[${repoName}] WARN: Expected ${commitsInserted} commits but database has ${actualCount}. Some inserts may have been skipped.`);
+      } else {
+        this.logger.info(CLASS_NAME, 'analyzeRepositoryFast', `[${repoName}] Verification: Database has ${actualCount} commits (expected to add ${commitsInserted})`);
+      }
+    } catch (verifyError: unknown) {
+      const msg = verifyError instanceof Error ? verifyError.message : String(verifyError);
+      this.logger.error(CLASS_NAME, 'analyzeRepositoryFast', `[${repoName}] Failed to verify commit count: ${msg}`);
+    }
 
     return { repoName, branchesProcessed, commitsInserted, branchRelationshipsRecorded, durationMs };
   }
@@ -786,7 +822,12 @@ export class GitAnalysisService {
       this.logger.debug(CLASS_NAME, 'processBranch', `New commit: ${sha.substring(0, 8)} by ${logEntry.author_name}`);
       const extracted = extractCommitData(logEntry, branchName);
       const commitHistoryRow = buildCommitHistoryRow(extracted, repoContext);
-      await this.commitRepo.insertCommitHistory(commitHistoryRow);
+      // GITX-160: Track whether insert actually created a row or was skipped
+      const wasInserted = await this.commitRepo.insertCommitHistory(commitHistoryRow);
+      if (!wasInserted) {
+        // Log at INFO level for production visibility - this is a diagnostic signal
+        this.logger.info(CLASS_NAME, 'processBranch', `[${repoContext.name}] Commit ${sha.substring(0, 8)} insert SKIPPED (SHA already exists under different repository?)`);
+      }
 
       // IQS-936: Debug logging for commit processing
       if (debugLogging) {

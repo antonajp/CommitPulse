@@ -181,6 +181,23 @@ describe('CommitRepository', () => {
       // Should not throw
       await expect(repo.insertCommitHistory(commit)).resolves.not.toThrow();
     });
+
+    // GITX-160: Test return value indicates whether row was actually inserted
+    it('should return true when row is inserted', async () => {
+      const commit = createSampleCommit();
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      const result = await repo.insertCommitHistory(commit);
+      expect(result).toBe(true);
+    });
+
+    it('should return false when insert is skipped due to ON CONFLICT', async () => {
+      const commit = createSampleCommit();
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ON CONFLICT = 0 rows
+
+      const result = await repo.insertCommitHistory(commit);
+      expect(result).toBe(false);
+    });
   });
 
   describe('insertCommitFiles', () => {

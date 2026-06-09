@@ -7,6 +7,14 @@
  */
 
 /* ============================================================================
+   Utility Classes (GITX-161)
+   ============================================================================ */
+
+.hidden {
+  display: none !important;
+}
+
+/* ============================================================================
    Reset & Base
    ============================================================================ */
 
@@ -565,6 +573,7 @@ body {
 
 .breakdown-bar {
   height: 100%;
+  width: 0%; /* GITX-161: Initial width (JS updates dynamically) */
   background-color: var(--vscode-textLink-foreground, #3794ff);
   border-radius: 4px;
   transition: width 0.3s ease;

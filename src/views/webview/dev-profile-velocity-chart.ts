@@ -13,8 +13,8 @@ export function generateVelocityChartScript(): string {
       // ======================================================================
       // GITX-157: Sprint Velocity vs LOC Dual-Axis Chart
       // ======================================================================
-      var cachedVelocityData = [];
-      var velocityDataAvailable = false;
+      // NOTE: cachedVelocityData and velocityDataAvailable are declared in the parent scope
+      // (dev-profile-html.ts) to avoid duplicate declaration errors (GITX-161)
 
       function renderVelocityChart(data) {
         hideSkeleton('velocitySkeleton');

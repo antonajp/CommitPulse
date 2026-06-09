@@ -6,8 +6,10 @@
  * - Loading, error, and empty states
  * - Commit detail display with SHA navigation
  * - Focus trap for WCAG 2.1 compliance
+ * - Disabled state for unconfigured repository URLs
+ * - Provider-specific commit URL construction (GitHub, Bitbucket, GitLab)
  *
- * Ticket: GITX-149, GITX-150, GITX-151
+ * Ticket: GITX-149, GITX-150, GITX-151, GITX-160
  */
 
 /**
@@ -18,6 +20,67 @@
 const TRUSTED_COMMIT_DOMAINS = ['github.com', 'gitlab.com', 'bitbucket.org'];
 
 /**
+ * Git provider type for URL construction.
+ * Ticket: GITX-160
+ */
+type GitProviderType = 'github' | 'bitbucket' | 'gitlab' | 'unknown';
+
+/**
+ * Provider-specific commit URL path segments.
+ * - GitHub: /commit/{sha}
+ * - Bitbucket: /commits/{sha}
+ * - GitLab: /-/commit/{sha}
+ * Ticket: GITX-160
+ */
+const COMMIT_PATH_SEGMENTS: Record<GitProviderType, string> = {
+  github: '/commit/',
+  bitbucket: '/commits/',
+  gitlab: '/-/commit/',
+  unknown: '/commit/', // Default to GitHub pattern
+};
+
+/**
+ * Detect git provider from repository URL.
+ * Supports GitHub, Bitbucket, and GitLab (including Enterprise/self-hosted).
+ * Ticket: GITX-160
+ *
+ * @param repoUrl - Repository URL
+ * @returns Detected provider type
+ */
+function detectProviderFromUrl(repoUrl: string): GitProviderType {
+  if (!repoUrl) {
+    return 'unknown';
+  }
+  const lower = repoUrl.toLowerCase();
+  if (lower.includes('bitbucket.')) {
+    return 'bitbucket';
+  }
+  if (lower.includes('gitlab.')) {
+    return 'gitlab';
+  }
+  if (lower.includes('github.')) {
+    return 'github';
+  }
+  return 'unknown';
+}
+
+/**
+ * Build provider-specific commit URL.
+ * Ticket: GITX-160
+ *
+ * @param repoUrl - Repository base URL
+ * @param sha - Commit SHA
+ * @returns Provider-appropriate commit URL
+ */
+export function buildProviderCommitUrl(repoUrl: string, sha: string): string {
+  const provider = detectProviderFromUrl(repoUrl);
+  const pathSegment = COMMIT_PATH_SEGMENTS[provider];
+  // Clean trailing slashes and .git suffix
+  const baseUrl = repoUrl.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
+  return `${baseUrl}${pathSegment}${encodeURIComponent(sha)}`;
+}
+
+/**
  * Generate the JavaScript source for LOC drill-down functionality.
  * Returns a string to be embedded in a <script> block.
  *
@@ -25,18 +88,20 @@ const TRUSTED_COMMIT_DOMAINS = ['github.com', 'gitlab.com', 'bitbucket.org'];
  * Ticket: GITX-149, GITX-150, GITX-151
  */
 export function generateLocDrillDownScript(): string {
-  // Export trusted domains to webview script
+  // Export trusted domains and provider path segments to webview script
   const trustedDomainsJson = JSON.stringify(TRUSTED_COMMIT_DOMAINS);
+  const commitPathSegmentsJson = JSON.stringify(COMMIT_PATH_SEGMENTS);
 
   return `
       // ======================================================================
-      // LOC Week Drill-Down (GITX-149, GITX-150, GITX-151)
+      // LOC Week Drill-Down (GITX-149, GITX-150, GITX-151, GITX-160)
       // ======================================================================
 
       var locDrillDownPending = null; // Track pending drill-down request
       var locDrillDownRepoUrl = null; // Repository URL for SHA navigation (GITX-150)
       var locDrillDownPreviousFocus = null; // Element focused before modal opened (GITX-151)
       var TRUSTED_COMMIT_DOMAINS = ${trustedDomainsJson}; // Trusted domains for URL validation
+      var COMMIT_PATH_SEGMENTS = ${commitPathSegmentsJson}; // Provider-specific path segments (GITX-160)
 
       // GITX-151: Selector for focusable elements within a container
       var FOCUSABLE_SELECTORS = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -152,6 +217,7 @@ export function generateLocDrillDownScript(): string {
       /**
        * Handle successful drill-down response.
        * GITX-150: Stores repoUrl for SHA navigation.
+       * GITX-160: Renders disabled state when repoUrl is not configured.
        */
       function handleLocDrillDownData(message) {
         var loading = document.getElementById('locDrillDownLoading');
@@ -165,8 +231,16 @@ export function generateLocDrillDownScript(): string {
         // GITX-150: Store repository URL for SHA navigation
         locDrillDownRepoUrl = message.repoUrl || null;
 
+        // GITX-160: Determine if SHA cells should be disabled
+        var shaDisabled = !locDrillDownRepoUrl;
+
         if (!message.commits || message.commits.length === 0) {
           empty.style.display = 'block';
+          // GITX-160: Hide footer hint when no commits
+          var emptyFooterHint = document.getElementById('locDrillDownFooterHint');
+          if (emptyFooterHint) {
+            emptyFooterHint.innerHTML = '';
+          }
           return;
         }
 
@@ -185,12 +259,17 @@ export function generateLocDrillDownScript(): string {
             '<span class="drill-down-stat-label">Repository</span></div>' : '') +
           '</div>';
 
-        // Render commit rows
+        // GITX-160: Render commit rows with disabled state when repoUrl not configured
         tbody.innerHTML = message.commits.map(function(c) {
           var msgTrunc = c.message.length > 80 ? c.message.slice(0, 77) + '...' : c.message;
           var dateStr = c.commitDate.split('T')[0];
+          // GITX-160: Apply disabled styling when no repoUrl
+          var shaCellClass = shaDisabled ? 'sha-cell sha-cell-disabled' : 'sha-cell';
+          var shaCellAttrs = shaDisabled
+            ? 'aria-disabled="true"'
+            : 'tabindex="0" role="button"';
           return '<tr>' +
-            '<td class="sha-cell" data-sha="' + escapeHtml(c.sha) + '" tabindex="0" role="button">' +
+            '<td class="' + shaCellClass + '" data-sha="' + escapeHtml(c.sha) + '" ' + shaCellAttrs + '>' +
               escapeHtml(c.sha) + '</td>' +
             '<td>' + escapeHtml(dateStr) + '</td>' +
             '<td>' + escapeHtml(c.author) + '</td>' +
@@ -205,6 +284,30 @@ export function generateLocDrillDownScript(): string {
 
         table.style.display = 'table';
         empty.style.display = 'none';
+
+        // GITX-160: Show/hide footer hint based on repoUrl availability
+        var footerHint = document.getElementById('locDrillDownFooterHint');
+        if (footerHint) {
+          if (shaDisabled) {
+            footerHint.innerHTML = '<span class="drill-down-footer-hint">' +
+              'Commit links unavailable. ' +
+              '<a href="#" id="configureRepoUrlLink" class="drill-down-configure-link">' +
+              'Configure repository URL</a></span>';
+            // Add click handler for configure link
+            var configLink = document.getElementById('configureRepoUrlLink');
+            if (configLink) {
+              configLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                vscode.postMessage({
+                  type: 'openSettings',
+                  query: 'gitr.repositories'
+                });
+              });
+            }
+          } else {
+            footerHint.innerHTML = '';
+          }
+        }
       }
 
       /**
@@ -273,23 +376,106 @@ export function generateLocDrillDownScript(): string {
       }
 
       /**
+       * Detect git provider from repository URL.
+       * Ticket: GITX-160
+       *
+       * @param {string} repoUrl - Repository URL
+       * @returns {string} - Detected provider type
+       */
+      function detectProvider(repoUrl) {
+        if (!repoUrl) {
+          return 'unknown';
+        }
+        var lower = repoUrl.toLowerCase();
+        if (lower.indexOf('bitbucket.') !== -1) {
+          return 'bitbucket';
+        }
+        if (lower.indexOf('gitlab.') !== -1) {
+          return 'gitlab';
+        }
+        if (lower.indexOf('github.') !== -1) {
+          return 'github';
+        }
+        return 'unknown';
+      }
+
+      /**
+       * Build provider-specific commit URL.
+       * Ticket: GITX-160
+       *
+       * @param {string} repoUrl - Repository base URL
+       * @param {string} sha - Commit SHA
+       * @returns {string} - Provider-appropriate commit URL
+       */
+      function buildCommitUrl(repoUrl, sha) {
+        var provider = detectProvider(repoUrl);
+        var pathSegment = COMMIT_PATH_SEGMENTS[provider] || '/commit/';
+        // Clean trailing slashes and .git suffix
+        var baseUrl = repoUrl.trim().replace(/\\/+$/, '').replace(/\\.git$/i, '');
+        return baseUrl + pathSegment + encodeURIComponent(sha);
+      }
+
+      /**
+       * Show a toast notification for user feedback.
+       * Ticket: GITX-160
+       *
+       * @param {string} message - The message to display
+       * @param {string} type - Toast type ('error', 'warning', 'info')
+       */
+      function showDrillDownToast(message, type) {
+        var toastContainer = document.getElementById('drillDownToastContainer');
+        if (!toastContainer) {
+          // Create toast container if it doesn't exist
+          toastContainer = document.createElement('div');
+          toastContainer.id = 'drillDownToastContainer';
+          toastContainer.className = 'toast-container';
+          toastContainer.setAttribute('role', 'alert');
+          toastContainer.setAttribute('aria-live', 'polite');
+          document.body.appendChild(toastContainer);
+        }
+
+        var toast = document.createElement('div');
+        toast.className = 'toast toast-' + (type || 'info');
+        toast.textContent = message;
+
+        toastContainer.appendChild(toast);
+
+        // Trigger reflow for animation
+        void toast.offsetWidth;
+        toast.classList.add('toast-visible');
+
+        // Auto-dismiss after 4 seconds
+        setTimeout(function() {
+          toast.classList.remove('toast-visible');
+          setTimeout(function() {
+            if (toast.parentNode) {
+              toast.parentNode.removeChild(toast);
+            }
+          }, 300);
+        }, 4000);
+      }
+
+      /**
        * Open a commit in the browser via the extension host.
        * Validates URL before sending to ensure it points to a trusted domain.
-       * Ticket: GITX-150
+       * Shows toast notification when repoUrl is not configured.
+       * Ticket: GITX-150, GITX-160
        *
        * @param {string} sha - The commit SHA to open
        */
       function openCommitInBrowser(sha) {
         if (!locDrillDownRepoUrl) {
           console.warn('Cannot open commit: no repository URL configured');
+          // GITX-160: Show toast notification for missing repoUrl
+          showDrillDownToast('Cannot open commit: repository URL not configured', 'warning');
           return;
         }
         if (!sha) {
           console.warn('Cannot open commit: no SHA provided');
           return;
         }
-        // Construct the commit URL: {repoUrl}/commit/{sha}
-        var commitUrl = locDrillDownRepoUrl + '/commit/' + encodeURIComponent(sha);
+        // GITX-160: Build provider-specific commit URL
+        var commitUrl = buildCommitUrl(locDrillDownRepoUrl, sha);
 
         // Validate URL before opening
         if (!isValidCommitUrl(commitUrl)) {

@@ -154,6 +154,14 @@ const SQL_HAS_ANY_COMMITS = `
   SELECT EXISTS (SELECT 1 FROM commit_history LIMIT 1) AS has_commits
 `;
 
+/**
+ * Query to get the commit count for a specific repository.
+ * GITX-160: Used for post-extraction verification to detect silent insert failures.
+ */
+const SQL_GET_COMMIT_COUNT_FOR_REPO = `
+  SELECT COUNT(*)::int AS commit_count FROM commit_history WHERE repository = $1
+`;
+
 const SQL_GET_COMMIT_FILE_BASE_METRICS = `
   SELECT cf.sha, ch.commit_date, cf.filename, cf.complexity,
          cf.total_comment_lines, cf.total_code_lines
@@ -270,12 +278,16 @@ export class CommitRepository {
    * Maps from Python GitCommitHistorySql.write_commit_to_file().
    * Uses ON CONFLICT DO NOTHING for idempotency.
    *
+   * GITX-160: Returns whether the insert created a new row (true) or was skipped due to conflict (false).
+   * This enables callers to track actual vs attempted inserts for diagnostic purposes.
+   *
    * @param commit - The commit data to insert
+   * @returns true if a new row was inserted, false if skipped due to ON CONFLICT
    */
-  async insertCommitHistory(commit: CommitHistoryRow): Promise<void> {
-    this.logger.debug(CLASS_NAME, 'insertCommitHistory', `Inserting commit: ${commit.sha.substring(0, 8)}`);
+  async insertCommitHistory(commit: CommitHistoryRow): Promise<boolean> {
+    this.logger.debug(CLASS_NAME, 'insertCommitHistory', `[${commit.repository}] Inserting commit: ${commit.sha.substring(0, 8)}`);
 
-    await this.db.query(SQL_INSERT_COMMIT_HISTORY, [
+    const result = await this.db.query(SQL_INSERT_COMMIT_HISTORY, [
       commit.sha,
       commit.url,
       commit.branch,
@@ -292,7 +304,16 @@ export class CommitRepository {
       commit.organization,
     ]);
 
-    this.logger.trace(CLASS_NAME, 'insertCommitHistory', `Commit ${commit.sha.substring(0, 8)} inserted`);
+    const wasInserted = result.rowCount > 0;
+
+    if (wasInserted) {
+      this.logger.trace(CLASS_NAME, 'insertCommitHistory', `[${commit.repository}] Commit ${commit.sha.substring(0, 8)} inserted (rowCount=${result.rowCount})`);
+    } else {
+      // GITX-160: Log at INFO level when insert is skipped - this is diagnostic for silent failures
+      this.logger.info(CLASS_NAME, 'insertCommitHistory', `[${commit.repository}] Commit ${commit.sha.substring(0, 8)} SKIPPED (ON CONFLICT) - SHA already exists in database`);
+    }
+
+    return wasInserted;
   }
 
   /**
@@ -706,6 +727,30 @@ export class CommitRepository {
     );
 
     return hasCommits;
+  }
+
+  /**
+   * Get the commit count for a specific repository.
+   * GITX-160: Used for post-extraction verification to detect silent insert failures.
+   *
+   * @param repository - The repository name to count commits for
+   * @returns The number of commits in the database for this repository
+   */
+  async getCommitCountForRepository(repository: string): Promise<number> {
+    this.logger.debug(CLASS_NAME, 'getCommitCountForRepository', `[${repository}] Querying commit count`);
+
+    const result: DatabaseQueryResult<{ commit_count: number }> =
+      await this.db.query(SQL_GET_COMMIT_COUNT_FOR_REPO, [repository]);
+
+    const count = result.rows[0]?.commit_count ?? 0;
+
+    this.logger.info(
+      CLASS_NAME,
+      'getCommitCountForRepository',
+      `[${repository}] Database contains ${count} commits`,
+    );
+
+    return count;
   }
 
   /**

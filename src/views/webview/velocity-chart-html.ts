@@ -174,7 +174,7 @@ function generateHtmlStructure(
       </div>
     </div>
 
-    <!-- LOC Week Drill-Down Modal (GITX-149) -->
+    <!-- LOC Week Drill-Down Modal (GITX-149, GITX-160) -->
     <div id="locDrillDownModal" class="drill-down-modal" role="dialog" aria-modal="true" aria-labelledby="locDrillDownTitle" aria-hidden="true" style="display:none;">
       <div class="drill-down-modal-content">
         <div class="drill-down-modal-header">
@@ -207,7 +207,8 @@ function generateHtmlStructure(
             <tbody id="locDrillDownBody"></tbody>
           </table>
         </div>
-        <div class="drill-down-footer">
+        <div id="locDrillDownFooter" class="drill-down-footer">
+          <div id="locDrillDownFooterHint" style="flex:1;"></div>
           <button id="locDrillDownRetry" class="drill-down-retry-btn" style="display:none;" tabindex="0">Retry</button>
         </div>
       </div>

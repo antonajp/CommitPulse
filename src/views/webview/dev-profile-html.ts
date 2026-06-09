@@ -93,28 +93,28 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
     <section class="summary-cards" id="summaryCards" aria-label="Developer Summary Statistics">
       <div class="summary-card" id="summaryCommits">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
-        <div class="summary-card-content" style="display:none;">
+        <div class="summary-card-content hidden">
           <span class="summary-label">Total Commits</span>
           <span class="summary-value" id="summaryCommitsValue">0</span>
         </div>
       </div>
       <div class="summary-card" id="summaryLoc">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
-        <div class="summary-card-content" style="display:none;">
+        <div class="summary-card-content hidden">
           <span class="summary-label">Total LOC</span>
           <span class="summary-value" id="summaryLocValue">0</span>
         </div>
       </div>
       <div class="summary-card" id="summaryComplexity">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
-        <div class="summary-card-content" style="display:none;">
+        <div class="summary-card-content hidden">
           <span class="summary-label">Avg Complexity</span>
           <span class="summary-value" id="summaryComplexityValue">0</span>
         </div>
       </div>
       <div class="summary-card" id="summaryRepos">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
-        <div class="summary-card-content" style="display:none;">
+        <div class="summary-card-content hidden">
           <span class="summary-label">Repositories</span>
           <span class="summary-value" id="summaryReposValue">0</span>
         </div>
@@ -122,17 +122,17 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
     </section>
 
     <!-- Empty State -->
-    <section class="empty-state" id="emptyState" style="display:none;" aria-live="polite">
+    <section class="empty-state hidden" id="emptyState" aria-live="polite">
       <div class="empty-state-content">
         <span class="empty-state-icon" aria-hidden="true">📊</span>
         <h2 id="emptyStateTitle">No commits found</h2>
         <p id="emptyStateMessage">Try expanding the date range or selecting a different developer.</p>
-        <button class="retry-btn" id="retryBtn" style="display:none;">Retry</button>
+        <button class="retry-btn hidden" id="retryBtn">Retry</button>
       </div>
     </section>
 
     <!-- Error Banner -->
-    <section class="error-banner" id="errorBanner" style="display:none;" role="alert" aria-live="assertive">
+    <section class="error-banner hidden" id="errorBanner" role="alert" aria-live="assertive">
       <span class="error-icon" aria-hidden="true">⚠️</span>
       <span class="error-message" id="errorMessage">An error occurred.</span>
       <button class="error-retry-btn" id="errorRetryBtn">Retry</button>
@@ -144,9 +144,9 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
         <h2>Lines of Code per Week</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="locWeekSkeleton" aria-hidden="true"></div>
-          <div id="locWeekChart" class="d3-chart" style="display:none;" role="img" aria-label="Stacked bar chart showing lines of code per week by repository"></div>
+          <div id="locWeekChart" class="d3-chart hidden" role="img" aria-label="Stacked bar chart showing lines of code per week by repository"></div>
         </div>
-        <p class="card-empty" id="locWeekEmpty" style="display:none;">No LOC data available for the selected timeframe.</p>
+        <p class="card-empty hidden" id="locWeekEmpty">No LOC data available for the selected timeframe.</p>
       </section>
 
       <!-- Top Complex Files Table -->
@@ -154,7 +154,7 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
         <h2>Top 15 Complex Files</h2>
         <div class="table-container">
           <div class="table-skeleton" id="complexFilesSkeleton" aria-hidden="true"></div>
-          <table class="data-table" id="complexFilesTable" style="display:none;" aria-label="Complex files table with sortable columns">
+          <table class="data-table hidden" id="complexFilesTable" aria-label="Complex files table with sortable columns">
             <thead>
               <tr>
                 <th class="sortable-header" data-sort-key="filePath" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
@@ -178,7 +178,7 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
             <tbody id="complexFilesBody"></tbody>
           </table>
         </div>
-        <p class="card-empty" id="complexFilesEmpty" style="display:none;">No complex files found for the selected timeframe.</p>
+        <p class="card-empty hidden" id="complexFilesEmpty">No complex files found for the selected timeframe.</p>
       </section>
 
       <!-- Top Frequent Files Table -->
@@ -186,7 +186,7 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
         <h2>Top 20 Frequently Modified Files</h2>
         <div class="table-container">
           <div class="table-skeleton" id="frequentFilesSkeleton" aria-hidden="true"></div>
-          <table class="data-table" id="frequentFilesTable" style="display:none;" aria-label="Frequent files table with sortable columns">
+          <table class="data-table hidden" id="frequentFilesTable" aria-label="Frequent files table with sortable columns">
             <thead>
               <tr>
                 <th class="sortable-header" data-sort-key="filePath" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
@@ -210,7 +210,7 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
             <tbody id="frequentFilesBody"></tbody>
           </table>
         </div>
-        <p class="card-empty" id="frequentFilesEmpty" style="display:none;">No frequently modified files found for the selected timeframe.</p>
+        <p class="card-empty hidden" id="frequentFilesEmpty">No frequently modified files found for the selected timeframe.</p>
       </section>
 ${generateGitx156HtmlSections()}
     </main>
