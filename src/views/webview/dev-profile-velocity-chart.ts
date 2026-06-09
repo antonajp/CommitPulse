@@ -21,15 +21,15 @@ export function generateVelocityChartScript(): string {
         cachedVelocityData = data;
 
         if (!data || data.length === 0 || !velocityDataAvailable) {
-          document.getElementById('velocityChart').style.display = 'none';
-          document.getElementById('velocityEmpty').style.display = 'block';
-          document.getElementById('velocityHint').style.display = 'none';
+          document.getElementById('velocityChart').classList.add('hidden');
+          document.getElementById('velocityEmpty').classList.remove('hidden');
+          document.getElementById('velocityHint').classList.add('hidden');
           return;
         }
 
-        document.getElementById('velocityChart').style.display = 'block';
-        document.getElementById('velocityEmpty').style.display = 'none';
-        document.getElementById('velocityHint').style.display = 'block';
+        document.getElementById('velocityChart').classList.remove('hidden');
+        document.getElementById('velocityEmpty').classList.add('hidden');
+        document.getElementById('velocityHint').classList.remove('hidden');
 
         var container = document.getElementById('velocityChart');
         container.innerHTML = '';

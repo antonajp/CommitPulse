@@ -15,13 +15,13 @@ export function generateLocWeekChartScript(): string {
         cachedLocData = data;
 
         if (!data || data.length === 0) {
-          document.getElementById('locWeekChart').style.display = 'none';
-          document.getElementById('locWeekEmpty').style.display = 'block';
+          document.getElementById('locWeekChart').classList.add('hidden');
+          document.getElementById('locWeekEmpty').classList.remove('hidden');
           return;
         }
 
-        document.getElementById('locWeekChart').style.display = 'block';
-        document.getElementById('locWeekEmpty').style.display = 'none';
+        document.getElementById('locWeekChart').classList.remove('hidden');
+        document.getElementById('locWeekEmpty').classList.add('hidden');
 
         // Get unique weeks and repos
         var weeks = Array.from(new Set(data.map(function(d) { return d.weekStart; }))).sort();
@@ -164,12 +164,12 @@ export function generateTableRenderingScripts(): string {
         hideSkeleton('complexFilesSkeleton');
         cachedComplexFiles = data;
         if (!data || data.length === 0) {
-          document.getElementById('complexFilesTable').style.display = 'none';
-          document.getElementById('complexFilesEmpty').style.display = 'block';
+          document.getElementById('complexFilesTable').classList.add('hidden');
+          document.getElementById('complexFilesEmpty').classList.remove('hidden');
           return;
         }
-        document.getElementById('complexFilesTable').style.display = 'table';
-        document.getElementById('complexFilesEmpty').style.display = 'none';
+        document.getElementById('complexFilesTable').classList.remove('hidden');
+        document.getElementById('complexFilesEmpty').classList.add('hidden');
         renderComplexFilesRows();
       }
 
@@ -192,12 +192,12 @@ export function generateTableRenderingScripts(): string {
         hideSkeleton('frequentFilesSkeleton');
         cachedFrequentFiles = data;
         if (!data || data.length === 0) {
-          document.getElementById('frequentFilesTable').style.display = 'none';
-          document.getElementById('frequentFilesEmpty').style.display = 'block';
+          document.getElementById('frequentFilesTable').classList.add('hidden');
+          document.getElementById('frequentFilesEmpty').classList.remove('hidden');
           return;
         }
-        document.getElementById('frequentFilesTable').style.display = 'table';
-        document.getElementById('frequentFilesEmpty').style.display = 'none';
+        document.getElementById('frequentFilesTable').classList.remove('hidden');
+        document.getElementById('frequentFilesEmpty').classList.add('hidden');
         renderFrequentFilesRows();
       }
 
@@ -266,13 +266,13 @@ export function generateGitx156ChartScripts(): string {
         cachedTechStack = data;
 
         if (!data || data.length === 0) {
-          document.getElementById('techStackChart').style.display = 'none';
-          document.getElementById('techStackEmpty').style.display = 'block';
+          document.getElementById('techStackChart').classList.add('hidden');
+          document.getElementById('techStackEmpty').classList.remove('hidden');
           return;
         }
 
-        document.getElementById('techStackChart').style.display = 'block';
-        document.getElementById('techStackEmpty').style.display = 'none';
+        document.getElementById('techStackChart').classList.remove('hidden');
+        document.getElementById('techStackEmpty').classList.add('hidden');
 
         // Aggregate by category (sum across repositories)
         var categoryMap = {};
@@ -366,15 +366,15 @@ export function generateGitx156ChartScripts(): string {
         cachedHygieneScore = data;
 
         if (!data || data.totalCommits === 0) {
-          document.getElementById('hygieneGauge').style.display = 'none';
-          document.getElementById('hygieneBreakdown').style.display = 'none';
-          document.getElementById('hygieneEmpty').style.display = 'block';
+          document.getElementById('hygieneGauge').classList.add('hidden');
+          document.getElementById('hygieneBreakdown').classList.add('hidden');
+          document.getElementById('hygieneEmpty').classList.remove('hidden');
           return;
         }
 
-        document.getElementById('hygieneGauge').style.display = 'flex';
-        document.getElementById('hygieneBreakdown').style.display = 'block';
-        document.getElementById('hygieneEmpty').style.display = 'none';
+        document.getElementById('hygieneGauge').classList.remove('hidden');
+        document.getElementById('hygieneBreakdown').classList.remove('hidden');
+        document.getElementById('hygieneEmpty').classList.add('hidden');
 
         // Update score display
         var scoreValue = document.getElementById('hygieneScoreValue');
@@ -415,13 +415,13 @@ export function generateGitx156ChartScripts(): string {
         cachedCommentsWeek = data;
 
         if (!data || data.length === 0) {
-          document.getElementById('commentsWeekChart').style.display = 'none';
-          document.getElementById('commentsWeekEmpty').style.display = 'block';
+          document.getElementById('commentsWeekChart').classList.add('hidden');
+          document.getElementById('commentsWeekEmpty').classList.remove('hidden');
           return;
         }
 
-        document.getElementById('commentsWeekChart').style.display = 'block';
-        document.getElementById('commentsWeekEmpty').style.display = 'none';
+        document.getElementById('commentsWeekChart').classList.remove('hidden');
+        document.getElementById('commentsWeekEmpty').classList.add('hidden');
 
         var container = document.getElementById('commentsWeekChart');
         container.innerHTML = '';
@@ -505,13 +505,13 @@ export function generateGitx156ChartScripts(): string {
         cachedTestsWeek = data;
 
         if (!data || data.length === 0) {
-          document.getElementById('testsWeekChart').style.display = 'none';
-          document.getElementById('testsWeekEmpty').style.display = 'block';
+          document.getElementById('testsWeekChart').classList.add('hidden');
+          document.getElementById('testsWeekEmpty').classList.remove('hidden');
           return;
         }
 
-        document.getElementById('testsWeekChart').style.display = 'block';
-        document.getElementById('testsWeekEmpty').style.display = 'none';
+        document.getElementById('testsWeekChart').classList.remove('hidden');
+        document.getElementById('testsWeekEmpty').classList.add('hidden');
 
         var container = document.getElementById('testsWeekChart');
         container.innerHTML = '';

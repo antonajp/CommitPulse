@@ -9,7 +9,7 @@
  * - Proper disposal and resource cleanup
  * - Provider-specific commit URL construction (GITX-160)
  *
- * Ticket: IQS-888, IQS-947, GITX-121, GITX-160
+ * Ticket: IQS-888, IQS-947, GITX-121, GITX-160, GITX-163
  */
 
 import * as vscode from 'vscode';
@@ -264,13 +264,12 @@ export class VelocityChartPanel implements vscode.Disposable {
             break;
           }
 
-          // Pass all filters including repository (IQS-920) and teamMember (GITX-121)
+          // Pass team and teamMember filters (GITX-121); repository filter removed (GITX-163)
           const data = await this.dataService.getChartData({
             startDate: message.startDate,
             endDate: message.endDate,
             team: message.team,
             teamMember: message.teamMember,
-            repository: message.repository,
           });
           this.postMessage({
             type: 'velocityData',
@@ -307,9 +306,19 @@ export class VelocityChartPanel implements vscode.Disposable {
 
             // GITX-150, GITX-160: Look up repository URL from settings for SHA navigation
             // GITX-160: repoUrl is used by webview to construct provider-specific commit URLs
+            const settings = getSettings();
             let repoUrl: string | null = null;
+
+            // Build repoUrlMap for all configured repositories (needed for multi-repo drill-down)
+            const repoUrlMap: Record<string, string> = {};
+            for (const repo of settings.repositories) {
+              if (repo.repoUrl) {
+                repoUrlMap[repo.name] = repo.repoUrl;
+              }
+            }
+
+            // For single-repo filter, also set repoUrl for backwards compatibility
             if (drillDownData.repository) {
-              const settings = getSettings();
               const repoEntry = settings.repositories.find(
                 r => r.name === drillDownData.repository
               );
@@ -323,11 +332,15 @@ export class VelocityChartPanel implements vscode.Disposable {
               }
             }
 
+            this.logger.debug(CLASS_NAME, 'handleMessage',
+              `Built repoUrlMap with ${Object.keys(repoUrlMap).length} entries`);
+
             this.postMessage({
               type: 'locWeekDrillDown',
               weekStart: drillDownData.weekStart,
               repository: drillDownData.repository,
               repoUrl,
+              repoUrlMap: Object.keys(repoUrlMap).length > 0 ? repoUrlMap : null,
               totalLoc: drillDownData.totalLoc,
               commitCount: drillDownData.commitCount,
               commits: drillDownData.commits,

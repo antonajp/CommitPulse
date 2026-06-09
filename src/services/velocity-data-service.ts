@@ -2,11 +2,14 @@
  * Data service for the Sprint Velocity vs LOC chart.
  * Provides methods to fetch velocity and LOC data from the
  * vw_sprint_velocity_vs_loc database view, with optional filtering
- * by date range, team, team member, and repository.
+ * by date range, team, and team member.
+ *
+ * GITX-163: Repository filter removed from velocity chart UI to simplify UX.
+ * Repository filtering is still available internally for drill-down features.
  *
  * All queries use parameterized SQL ($1, $2 placeholders).
  *
- * Ticket: IQS-888, IQS-944, GITX-121
+ * Ticket: IQS-888, IQS-944, GITX-121, GITX-163
  */
 
 import { DatabaseService } from '../database/database-service.js';
@@ -371,6 +374,7 @@ export class VelocityDataService {
       sha: string;
       commit_date: Date | string | null;
       author: string | null;
+      repository: string | null;
       branch: string;
       message: string | null;
       lines_added: number;
@@ -382,11 +386,13 @@ export class VelocityDataService {
 
     // Map to typed objects with null safety
     const commits: LocWeekCommitDetail[] = result.rows.map(row => ({
-      sha: row.sha ? row.sha.slice(0, 7) : '', // Short SHA
+      sha: row.sha ? row.sha.slice(0, 7) : '', // Short SHA for display
+      fullSha: row.sha || '', // Full SHA for URL construction
       commitDate: row.commit_date instanceof Date
         ? row.commit_date.toISOString()
         : (row.commit_date ? String(row.commit_date) : new Date().toISOString()),
       author: row.author || 'unknown',
+      repository: row.repository || 'unknown',
       branch: row.branch || 'unknown',
       message: row.message || '',
       linesAdded: Number(row.lines_added) || 0,
@@ -407,6 +413,7 @@ export class VelocityDataService {
       weekStart,
       repository: repository || null,
       repoUrl: null, // Populated by caller (VelocityChartPanel) from settings - GITX-150
+      repoUrlMap: null, // Populated by caller from settings for multi-repo drill-down
       totalLoc,
       commitCount: commits.length,
       commits,

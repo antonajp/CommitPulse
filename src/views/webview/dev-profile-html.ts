@@ -273,51 +273,51 @@ ${generateGitx156HtmlSections()}
       // ======================================================================
       function showSkeleton(id) {
         var skeleton = document.getElementById(id);
-        if (skeleton) { skeleton.style.display = 'block'; }
+        if (skeleton) { skeleton.classList.remove('hidden'); }
       }
 
       function hideSkeleton(id) {
         var skeleton = document.getElementById(id);
-        if (skeleton) { skeleton.style.display = 'none'; }
+        if (skeleton) { skeleton.classList.add('hidden'); }
       }
 
       function showSummarySkeleton() {
         document.querySelectorAll('.summary-card-skeleton').forEach(function(el) {
-          el.style.display = 'block';
+          el.classList.remove('hidden');
         });
         document.querySelectorAll('.summary-card-content').forEach(function(el) {
-          el.style.display = 'none';
+          el.classList.add('hidden');
         });
       }
 
       function hideSummarySkeleton() {
         document.querySelectorAll('.summary-card-skeleton').forEach(function(el) {
-          el.style.display = 'none';
+          el.classList.add('hidden');
         });
         document.querySelectorAll('.summary-card-content').forEach(function(el) {
-          el.style.display = 'flex';
+          el.classList.remove('hidden');
         });
       }
 
       function showEmptyState(title, message) {
         document.getElementById('emptyStateTitle').textContent = title;
         document.getElementById('emptyStateMessage').textContent = message;
-        document.getElementById('emptyState').style.display = 'flex';
-        document.getElementById('mainContent').style.display = 'none';
+        document.getElementById('emptyState').classList.remove('hidden');
+        document.getElementById('mainContent').classList.add('hidden');
       }
 
       function hideEmptyState() {
-        document.getElementById('emptyState').style.display = 'none';
-        document.getElementById('mainContent').style.display = 'grid';
+        document.getElementById('emptyState').classList.add('hidden');
+        document.getElementById('mainContent').classList.remove('hidden');
       }
 
       function showError(message) {
         document.getElementById('errorMessage').textContent = message;
-        document.getElementById('errorBanner').style.display = 'flex';
+        document.getElementById('errorBanner').classList.remove('hidden');
       }
 
       function hideError() {
-        document.getElementById('errorBanner').style.display = 'none';
+        document.getElementById('errorBanner').classList.add('hidden');
       }
 
       // ======================================================================
@@ -339,24 +339,24 @@ ${generateGitx156HtmlSections()}
         showSkeleton('commentsWeekSkeleton');
         showSkeleton('testsWeekSkeleton');
         showSkeleton('velocitySkeleton');
-        document.getElementById('locWeekChart').style.display = 'none';
-        document.getElementById('complexFilesTable').style.display = 'none';
-        document.getElementById('frequentFilesTable').style.display = 'none';
-        document.getElementById('techStackChart').style.display = 'none';
-        document.getElementById('hygieneGauge').style.display = 'none';
-        document.getElementById('hygieneBreakdown').style.display = 'none';
-        document.getElementById('commentsWeekChart').style.display = 'none';
-        document.getElementById('testsWeekChart').style.display = 'none';
-        document.getElementById('velocityChart').style.display = 'none';
-        document.getElementById('locWeekEmpty').style.display = 'none';
-        document.getElementById('complexFilesEmpty').style.display = 'none';
-        document.getElementById('frequentFilesEmpty').style.display = 'none';
-        document.getElementById('techStackEmpty').style.display = 'none';
-        document.getElementById('hygieneEmpty').style.display = 'none';
-        document.getElementById('commentsWeekEmpty').style.display = 'none';
-        document.getElementById('testsWeekEmpty').style.display = 'none';
-        document.getElementById('velocityEmpty').style.display = 'none';
-        document.getElementById('velocityHint').style.display = 'none';
+        document.getElementById('locWeekChart').classList.add('hidden');
+        document.getElementById('complexFilesTable').classList.add('hidden');
+        document.getElementById('frequentFilesTable').classList.add('hidden');
+        document.getElementById('techStackChart').classList.add('hidden');
+        document.getElementById('hygieneGauge').classList.add('hidden');
+        document.getElementById('hygieneBreakdown').classList.add('hidden');
+        document.getElementById('commentsWeekChart').classList.add('hidden');
+        document.getElementById('testsWeekChart').classList.add('hidden');
+        document.getElementById('velocityChart').classList.add('hidden');
+        document.getElementById('locWeekEmpty').classList.add('hidden');
+        document.getElementById('complexFilesEmpty').classList.add('hidden');
+        document.getElementById('frequentFilesEmpty').classList.add('hidden');
+        document.getElementById('techStackEmpty').classList.add('hidden');
+        document.getElementById('hygieneEmpty').classList.add('hidden');
+        document.getElementById('commentsWeekEmpty').classList.add('hidden');
+        document.getElementById('testsWeekEmpty').classList.add('hidden');
+        document.getElementById('velocityEmpty').classList.add('hidden');
+        document.getElementById('velocityHint').classList.add('hidden');
         hideEmptyState();
         vscode.postMessage({
           type: 'requestAllData',

@@ -32,6 +32,7 @@ describe('VelocityDataService - getWeekCommitDetails', () => {
         sha: 'abc1234567890',
         commit_date: new Date('2024-01-15T10:30:00Z'),
         author: 'John Doe',
+        repository: 'TestRepo1',
         branch: 'main',
         message: 'Add feature X',
         lines_added: 100,
@@ -42,6 +43,7 @@ describe('VelocityDataService - getWeekCommitDetails', () => {
         sha: 'def4567890123',
         commit_date: new Date('2024-01-16T14:20:00Z'),
         author: 'Jane Smith',
+        repository: 'TestRepo2',
         branch: 'feature/y',
         message: 'Fix bug Y',
         lines_added: 50,
@@ -68,6 +70,8 @@ describe('VelocityDataService - getWeekCommitDetails', () => {
     expect(result.repository).toBeNull();
     // GITX-150: repoUrl is always null from service (populated by panel from settings)
     expect(result.repoUrl).toBeNull();
+    // repoUrlMap is always null from service (populated by panel from settings)
+    expect(result.repoUrlMap).toBeNull();
     expect(result.commitCount).toBe(2);
     expect(result.totalLoc).toBe(200);
     expect(result.commits).toHaveLength(2);
@@ -75,8 +79,10 @@ describe('VelocityDataService - getWeekCommitDetails', () => {
     // Verify first commit mapping
     expect(result.commits[0]).toEqual({
       sha: 'abc1234',
+      fullSha: 'abc1234567890',
       commitDate: '2024-01-15T10:30:00.000Z',
       author: 'John Doe',
+      repository: 'TestRepo1',
       branch: 'main',
       message: 'Add feature X',
       linesAdded: 100,
@@ -87,8 +93,10 @@ describe('VelocityDataService - getWeekCommitDetails', () => {
     // Verify second commit mapping
     expect(result.commits[1]).toEqual({
       sha: 'def4567',
+      fullSha: 'def4567890123',
       commitDate: '2024-01-16T14:20:00.000Z',
       author: 'Jane Smith',
+      repository: 'TestRepo2',
       branch: 'feature/y',
       message: 'Fix bug Y',
       linesAdded: 50,
@@ -103,6 +111,7 @@ describe('VelocityDataService - getWeekCommitDetails', () => {
         sha: 'xyz7890123456',
         commit_date: '2024-01-17',
         author: 'Bob Jones',
+        repository: 'my-repo',
         branch: 'develop',
         message: 'Refactor module Z',
         lines_added: 200,
@@ -136,8 +145,10 @@ describe('VelocityDataService - getWeekCommitDetails', () => {
     // Verify commit mapping
     expect(result.commits[0]).toEqual({
       sha: 'xyz7890',
+      fullSha: 'xyz7890123456',
       commitDate: '2024-01-17',
       author: 'Bob Jones',
+      repository: 'my-repo',
       branch: 'develop',
       message: 'Refactor module Z',
       linesAdded: 200,

@@ -176,7 +176,7 @@ body {
    ============================================================================ */
 
 .empty-state {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   min-height: 300px;
@@ -234,7 +234,7 @@ body {
    ============================================================================ */
 
 .error-banner {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
@@ -277,6 +277,7 @@ body {
    Grid Layout
    ============================================================================ */
 
+/* Main content grid: hidden class is controlled by JS */
 .devprofile-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

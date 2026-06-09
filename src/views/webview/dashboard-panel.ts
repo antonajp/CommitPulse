@@ -518,9 +518,19 @@ export class DashboardPanel implements vscode.Disposable {
             );
 
             // Look up repository URL from settings for SHA navigation
+            const settings = getSettings();
             let repoUrl: string | null = null;
+
+            // Build repoUrlMap for all configured repositories (needed for multi-repo drill-down)
+            const repoUrlMap: Record<string, string> = {};
+            for (const repo of settings.repositories) {
+              if (repo.repoUrl) {
+                repoUrlMap[repo.name] = repo.repoUrl;
+              }
+            }
+
+            // For single-repo filter, also set repoUrl for backwards compatibility
             if (drillDownData.repository) {
-              const settings = getSettings();
               const repoEntry = settings.repositories.find(
                 r => r.name === drillDownData.repository
               );
@@ -534,11 +544,15 @@ export class DashboardPanel implements vscode.Disposable {
               }
             }
 
+            this.logger.debug(CLASS_NAME, 'handleMessage',
+              `Built repoUrlMap with ${Object.keys(repoUrlMap).length} entries`);
+
             this.postMessage({
               type: 'locWeekDrillDown',
               weekStart: drillDownData.weekStart,
               repository: drillDownData.repository,
               repoUrl,
+              repoUrlMap: Object.keys(repoUrlMap).length > 0 ? repoUrlMap : null,
               totalLoc: drillDownData.totalLoc,
               commitCount: drillDownData.commitCount,
               commits: drillDownData.commits,

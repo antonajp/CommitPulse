@@ -99,6 +99,7 @@ export function generateLocDrillDownScript(): string {
 
       var locDrillDownPending = null; // Track pending drill-down request
       var locDrillDownRepoUrl = null; // Repository URL for SHA navigation (GITX-150)
+      var locDrillDownRepoUrlMap = null; // Map of repo name -> URL for multi-repo drill-down
       var locDrillDownPreviousFocus = null; // Element focused before modal opened (GITX-151)
       var TRUSTED_COMMIT_DOMAINS = ${trustedDomainsJson}; // Trusted domains for URL validation
       var COMMIT_PATH_SEGMENTS = ${commitPathSegmentsJson}; // Provider-specific path segments (GITX-160)
@@ -230,9 +231,13 @@ export function generateLocDrillDownScript(): string {
 
         // GITX-150: Store repository URL for SHA navigation
         locDrillDownRepoUrl = message.repoUrl || null;
+        // Store repoUrlMap for multi-repo drill-down
+        locDrillDownRepoUrlMap = message.repoUrlMap || null;
 
         // GITX-160: Determine if SHA cells should be disabled
-        var shaDisabled = !locDrillDownRepoUrl;
+        // SHA links are enabled if we have repoUrl OR repoUrlMap
+        var hasAnyRepoUrls = locDrillDownRepoUrl || (locDrillDownRepoUrlMap && Object.keys(locDrillDownRepoUrlMap).length > 0);
+        var shaDisabled = !hasAnyRepoUrls;
 
         if (!message.commits || message.commits.length === 0) {
           empty.style.display = 'block';
@@ -263,13 +268,19 @@ export function generateLocDrillDownScript(): string {
         tbody.innerHTML = message.commits.map(function(c) {
           var msgTrunc = c.message.length > 80 ? c.message.slice(0, 77) + '...' : c.message;
           var dateStr = c.commitDate.split('T')[0];
-          // GITX-160: Apply disabled styling when no repoUrl
-          var shaCellClass = shaDisabled ? 'sha-cell sha-cell-disabled' : 'sha-cell';
-          var shaCellAttrs = shaDisabled
+          // Check if this specific commit's repository has a URL configured
+          var commitRepoUrl = locDrillDownRepoUrl;
+          if (!commitRepoUrl && locDrillDownRepoUrlMap && c.repository) {
+            commitRepoUrl = locDrillDownRepoUrlMap[c.repository] || null;
+          }
+          var commitDisabled = !commitRepoUrl;
+          // GITX-160: Apply disabled styling when no repoUrl for this commit
+          var shaCellClass = commitDisabled ? 'sha-cell sha-cell-disabled' : 'sha-cell';
+          var shaCellAttrs = commitDisabled
             ? 'aria-disabled="true"'
             : 'tabindex="0" role="button"';
           return '<tr>' +
-            '<td class="' + shaCellClass + '" data-sha="' + escapeHtml(c.sha) + '" ' + shaCellAttrs + '>' +
+            '<td class="' + shaCellClass + '" data-sha="' + escapeHtml(c.fullSha || c.sha) + '" data-repo="' + escapeHtml(c.repository || '') + '" ' + shaCellAttrs + '>' +
               escapeHtml(c.sha) + '</td>' +
             '<td>' + escapeHtml(dateStr) + '</td>' +
             '<td>' + escapeHtml(c.author) + '</td>' +
@@ -335,6 +346,7 @@ export function generateLocDrillDownScript(): string {
         modal.setAttribute('aria-hidden', 'true');
         locDrillDownPending = null;
         locDrillDownRepoUrl = null; // GITX-150: Clear repo URL
+        locDrillDownRepoUrlMap = null; // Clear repo URL map
 
         // GITX-151: Restore focus to element that was focused before modal opened
         if (locDrillDownPreviousFocus && typeof locDrillDownPreviousFocus.focus === 'function') {
@@ -462,10 +474,17 @@ export function generateLocDrillDownScript(): string {
        * Ticket: GITX-150, GITX-160
        *
        * @param {string} sha - The commit SHA to open
+       * @param {string} repository - The repository name this commit belongs to
        */
-      function openCommitInBrowser(sha) {
-        if (!locDrillDownRepoUrl) {
-          console.warn('Cannot open commit: no repository URL configured');
+      function openCommitInBrowser(sha, repository) {
+        // Look up repoUrl: first check single-repo URL, then check map
+        var repoUrl = locDrillDownRepoUrl;
+        if (!repoUrl && locDrillDownRepoUrlMap && repository) {
+          repoUrl = locDrillDownRepoUrlMap[repository] || null;
+        }
+
+        if (!repoUrl) {
+          console.warn('Cannot open commit: no repository URL configured for', repository || 'unknown repo');
           // GITX-160: Show toast notification for missing repoUrl
           showDrillDownToast('Cannot open commit: repository URL not configured', 'warning');
           return;
@@ -475,7 +494,7 @@ export function generateLocDrillDownScript(): string {
           return;
         }
         // GITX-160: Build provider-specific commit URL
-        var commitUrl = buildCommitUrl(locDrillDownRepoUrl, sha);
+        var commitUrl = buildCommitUrl(repoUrl, sha);
 
         // Validate URL before opening
         if (!isValidCommitUrl(commitUrl)) {
@@ -538,7 +557,8 @@ export function generateLocDrillDownScript(): string {
           var shaCell = event.target.closest('.sha-cell');
           if (shaCell) {
             var sha = shaCell.getAttribute('data-sha');
-            openCommitInBrowser(sha);
+            var repo = shaCell.getAttribute('data-repo');
+            openCommitInBrowser(sha, repo);
           }
         });
 
@@ -549,7 +569,8 @@ export function generateLocDrillDownScript(): string {
             if (shaCell) {
               event.preventDefault();
               var sha = shaCell.getAttribute('data-sha');
-              openCommitInBrowser(sha);
+              var repo = shaCell.getAttribute('data-repo');
+              openCommitInBrowser(sha, repo);
             }
           }
         });
