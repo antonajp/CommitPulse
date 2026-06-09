@@ -39,7 +39,16 @@ export interface SharedOpenExternalMessage {
   readonly url: string;
 }
 
-export type SharedMessage = SharedExportCsvMessage | SharedOpenExternalMessage;
+/**
+ * Message to open VS Code settings with an optional query filter.
+ * GITX-160: Used to open repository configuration settings.
+ */
+export interface SharedOpenSettingsMessage {
+  readonly type: 'openSettings';
+  readonly query?: string;
+}
+
+export type SharedMessage = SharedExportCsvMessage | SharedOpenExternalMessage | SharedOpenSettingsMessage;
 
 /**
  * Check if a message is a shared message type that can be handled by shared handlers.
@@ -48,7 +57,7 @@ export type SharedMessage = SharedExportCsvMessage | SharedOpenExternalMessage;
  * @returns True if the message is a shared message type
  */
 export function isSharedMessage(message: { type: string }): message is SharedMessage {
-  return message.type === 'exportCsv' || message.type === 'openExternal';
+  return message.type === 'exportCsv' || message.type === 'openExternal' || message.type === 'openSettings';
 }
 
 /**
@@ -103,6 +112,24 @@ export async function handleSharedMessage(
       } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         logger.error(className, METHOD_NAME, `Failed to open external URL: ${errorMsg}`);
+      }
+      return true;
+    }
+
+    case 'openSettings': {
+      // GITX-160: Open VS Code settings with optional query filter
+      const settingsMsg = message as SharedOpenSettingsMessage;
+      logger.debug(className, METHOD_NAME, `Open settings: ${settingsMsg.query || 'default'}`);
+
+      try {
+        if (settingsMsg.query) {
+          await vscode.commands.executeCommand('workbench.action.openSettings', settingsMsg.query);
+        } else {
+          await vscode.commands.executeCommand('workbench.action.openSettings');
+        }
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error(className, METHOD_NAME, `Failed to open settings: ${errorMsg}`);
       }
       return true;
     }

@@ -1,12 +1,16 @@
 /**
  * Unit tests for velocity-chart-drill-down.ts SHA navigation and accessibility.
- * Tests URL validation, commit navigation logic, and focus trap functionality.
+ * Tests URL validation, commit navigation logic, focus trap functionality,
+ * provider-specific URL construction, and disabled state handling.
  *
- * Ticket: GITX-150, GITX-151
+ * Ticket: GITX-150, GITX-151, GITX-160
  */
 
 import { describe, it, expect } from 'vitest';
-import { generateLocDrillDownScript } from '../../views/webview/velocity-chart-drill-down.js';
+import {
+  generateLocDrillDownScript,
+  buildProviderCommitUrl,
+} from '../../views/webview/velocity-chart-drill-down.js';
 
 describe('velocity-chart-drill-down', () => {
   describe('generateLocDrillDownScript', () => {
@@ -39,8 +43,8 @@ describe('velocity-chart-drill-down', () => {
     it('should include openCommitInBrowser function', () => {
       const script = generateLocDrillDownScript();
       expect(script).toContain('function openCommitInBrowser');
-      // Should construct commit URL
-      expect(script).toContain('/commit/');
+      // Should construct commit URL using buildCommitUrl (GITX-160)
+      expect(script).toContain('buildCommitUrl(locDrillDownRepoUrl, sha)');
       // Should call vscode.postMessage
       expect(script).toContain("type: 'openExternal'");
     });
@@ -223,6 +227,149 @@ describe('velocity-chart-drill-down', () => {
       const script = generateLocDrillDownScript();
       // Verify the focus trap is scoped to modal content
       expect(script).toContain("modal.querySelector('.drill-down-modal-content')");
+    });
+  });
+
+  // GITX-160: Provider-specific URL construction tests
+  describe('Provider-specific URL construction (GITX-160)', () => {
+    it('should include COMMIT_PATH_SEGMENTS object', () => {
+      const script = generateLocDrillDownScript();
+      expect(script).toContain('COMMIT_PATH_SEGMENTS');
+      expect(script).toContain('/commit/');
+      expect(script).toContain('/commits/');
+      expect(script).toContain('/-/commit/');
+    });
+
+    it('should include detectProvider function', () => {
+      const script = generateLocDrillDownScript();
+      expect(script).toContain('function detectProvider');
+      expect(script).toContain('bitbucket.');
+      expect(script).toContain('gitlab.');
+      expect(script).toContain('github.');
+    });
+
+    it('should include buildCommitUrl function', () => {
+      const script = generateLocDrillDownScript();
+      expect(script).toContain('function buildCommitUrl');
+      expect(script).toContain('detectProvider(repoUrl)');
+      expect(script).toContain('COMMIT_PATH_SEGMENTS[provider]');
+    });
+
+    it('should use buildCommitUrl instead of hardcoded /commit/ path', () => {
+      const script = generateLocDrillDownScript();
+      // Verify openCommitInBrowser calls buildCommitUrl
+      expect(script).toContain('buildCommitUrl(locDrillDownRepoUrl, sha)');
+    });
+  });
+
+  // GITX-160: Disabled state and toast notification tests
+  describe('Disabled state and toast notification (GITX-160)', () => {
+    it('should include showDrillDownToast function', () => {
+      const script = generateLocDrillDownScript();
+      expect(script).toContain('function showDrillDownToast');
+      expect(script).toContain('drillDownToastContainer');
+      expect(script).toContain('toast-visible');
+    });
+
+    it('should call toast notification when repoUrl is missing', () => {
+      const script = generateLocDrillDownScript();
+      expect(script).toContain('showDrillDownToast(');
+      expect(script).toContain('Cannot open commit: repository URL not configured');
+    });
+
+    it('should render disabled SHA cells when repoUrl is null', () => {
+      const script = generateLocDrillDownScript();
+      expect(script).toContain('sha-cell-disabled');
+      expect(script).toContain('aria-disabled="true"');
+    });
+
+    it('should not add tabindex or role to disabled SHA cells', () => {
+      const script = generateLocDrillDownScript();
+      // When disabled, tabindex and role should NOT be added
+      expect(script).toContain('shaDisabled');
+      // When enabled, tabindex and role should be added
+      expect(script).toContain('tabindex="0" role="button"');
+    });
+
+    it('should show footer hint when repoUrl is not configured', () => {
+      const script = generateLocDrillDownScript();
+      expect(script).toContain('locDrillDownFooterHint');
+      expect(script).toContain('Commit links unavailable');
+      expect(script).toContain('Configure repository URL');
+    });
+
+    it('should include openSettings message for configure link', () => {
+      const script = generateLocDrillDownScript();
+      expect(script).toContain("type: 'openSettings'");
+      expect(script).toContain('gitr.repositories');
+    });
+  });
+});
+
+// GITX-160: Tests for the exported buildProviderCommitUrl function
+describe('buildProviderCommitUrl (GITX-160)', () => {
+  describe('GitHub URLs', () => {
+    it('should use /commit/ path for github.com', () => {
+      const url = buildProviderCommitUrl('https://github.com/user/repo', 'abc1234');
+      expect(url).toBe('https://github.com/user/repo/commit/abc1234');
+    });
+
+    it('should use /commit/ path for GitHub Enterprise', () => {
+      const url = buildProviderCommitUrl('https://github.mycompany.com/org/repo', 'def5678');
+      expect(url).toBe('https://github.mycompany.com/org/repo/commit/def5678');
+    });
+
+    it('should strip .git suffix', () => {
+      const url = buildProviderCommitUrl('https://github.com/user/repo.git', 'abc1234');
+      expect(url).toBe('https://github.com/user/repo/commit/abc1234');
+    });
+
+    it('should strip trailing slashes', () => {
+      const url = buildProviderCommitUrl('https://github.com/user/repo/', 'abc1234');
+      expect(url).toBe('https://github.com/user/repo/commit/abc1234');
+    });
+  });
+
+  describe('Bitbucket URLs', () => {
+    it('should use /commits/ path for bitbucket.org', () => {
+      const url = buildProviderCommitUrl('https://bitbucket.org/user/repo', 'abc1234');
+      expect(url).toBe('https://bitbucket.org/user/repo/commits/abc1234');
+    });
+
+    it('should use /commits/ path for Bitbucket Server', () => {
+      const url = buildProviderCommitUrl('https://bitbucket.mycompany.com/projects/PROJ/repos/repo', 'def5678');
+      expect(url).toBe('https://bitbucket.mycompany.com/projects/PROJ/repos/repo/commits/def5678');
+    });
+  });
+
+  describe('GitLab URLs', () => {
+    it('should use /-/commit/ path for gitlab.com', () => {
+      const url = buildProviderCommitUrl('https://gitlab.com/user/repo', 'abc1234');
+      expect(url).toBe('https://gitlab.com/user/repo/-/commit/abc1234');
+    });
+
+    it('should use /-/commit/ path for self-hosted GitLab', () => {
+      const url = buildProviderCommitUrl('https://gitlab.mycompany.com/group/project', 'def5678');
+      expect(url).toBe('https://gitlab.mycompany.com/group/project/-/commit/def5678');
+    });
+  });
+
+  describe('Unknown provider URLs', () => {
+    it('should default to /commit/ path for unknown domains', () => {
+      const url = buildProviderCommitUrl('https://git.mycompany.com/repo', 'abc1234');
+      expect(url).toBe('https://git.mycompany.com/repo/commit/abc1234');
+    });
+
+    it('should default to /commit/ path for localhost', () => {
+      const url = buildProviderCommitUrl('http://localhost:3000/repo', 'abc1234');
+      expect(url).toBe('http://localhost:3000/repo/commit/abc1234');
+    });
+  });
+
+  describe('URL encoding', () => {
+    it('should URL-encode the SHA', () => {
+      const url = buildProviderCommitUrl('https://github.com/user/repo', 'abc<script>');
+      expect(url).toContain('abc%3Cscript%3E');
     });
   });
 });

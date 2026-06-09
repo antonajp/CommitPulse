@@ -672,6 +672,29 @@ body {
   text-decoration: underline;
 }
 
+/* GITX-160: Focus-visible state for keyboard navigation */
+.drill-down-table .sha-cell:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+  text-decoration: underline;
+}
+
+/* GITX-160: Disabled state when repoUrl is not configured */
+.drill-down-table .sha-cell-disabled {
+  color: var(--vscode-descriptionForeground, #888888);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.drill-down-table .sha-cell-disabled:hover {
+  text-decoration: none;
+  background-color: transparent;
+}
+
+.drill-down-table .sha-cell-disabled:focus {
+  outline: none;
+}
+
 .drill-down-table .message-cell {
   max-width: 300px;
   overflow: hidden;
@@ -691,7 +714,9 @@ body {
   padding: 12px 16px;
   border-top: 1px solid var(--vscode-panel-border, #444);
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
 }
 
 .drill-down-retry-btn {
@@ -710,6 +735,27 @@ body {
 
 .drill-down-retry-btn:focus {
   outline: 2px solid var(--vscode-focusBorder, #007fd4);
+}
+
+/* GITX-160: Footer hint for unconfigured repository URL */
+.drill-down-footer-hint {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.drill-down-configure-link {
+  color: var(--vscode-textLink-foreground, #3794ff);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.drill-down-configure-link:hover {
+  text-decoration: underline;
+}
+
+.drill-down-configure-link:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
 }
 
 /* LOC marker hover indicator (GITX-149) */
