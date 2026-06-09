@@ -618,6 +618,7 @@ export const QUERY_LOC_WEEK_DRILL_DOWN = `
     ch.sha,
     ch.commit_date,
     ch.author,
+    ch.repository,
     COALESCE(
       (SELECT branch FROM commit_branch_relationship cbr
        WHERE cbr.sha = ch.sha
@@ -651,6 +652,7 @@ export const QUERY_LOC_WEEK_DRILL_DOWN_REPOSITORY = `
     ch.sha,
     ch.commit_date,
     ch.author,
+    ch.repository,
     COALESCE(
       (SELECT branch FROM commit_branch_relationship cbr
        WHERE cbr.sha = ch.sha

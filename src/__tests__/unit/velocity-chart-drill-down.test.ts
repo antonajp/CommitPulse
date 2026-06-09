@@ -43,8 +43,8 @@ describe('velocity-chart-drill-down', () => {
     it('should include openCommitInBrowser function', () => {
       const script = generateLocDrillDownScript();
       expect(script).toContain('function openCommitInBrowser');
-      // Should construct commit URL using buildCommitUrl (GITX-160)
-      expect(script).toContain('buildCommitUrl(locDrillDownRepoUrl, sha)');
+      // Should construct commit URL using buildCommitUrl with looked-up repoUrl (GITX-160)
+      expect(script).toContain('buildCommitUrl(repoUrl, sha)');
       // Should call vscode.postMessage
       expect(script).toContain("type: 'openExternal'");
     });
@@ -53,7 +53,8 @@ describe('velocity-chart-drill-down', () => {
       const script = generateLocDrillDownScript();
       // Should have click handler
       expect(script).toContain("tbody.addEventListener('click'");
-      expect(script).toContain('openCommitInBrowser(sha)');
+      // Now passes both sha and repo
+      expect(script).toContain('openCommitInBrowser(sha, repo)');
       // Should have keyboard handler
       expect(script).toContain("tbody.addEventListener('keydown'");
       expect(script).toContain("event.key === 'Enter'");
@@ -125,9 +126,9 @@ describe('velocity-chart-drill-down', () => {
 
     it('should guard against missing repoUrl', () => {
       const script = generateLocDrillDownScript();
-      // Verify null check before constructing URL
-      expect(script).toContain('if (!locDrillDownRepoUrl)');
-      expect(script).toContain('Cannot open commit: no repository URL configured');
+      // Verify null check before constructing URL (now using looked-up repoUrl)
+      expect(script).toContain('if (!repoUrl)');
+      expect(script).toContain('Cannot open commit: repository URL not configured');
     });
 
     it('should guard against missing SHA', () => {
@@ -257,8 +258,8 @@ describe('velocity-chart-drill-down', () => {
 
     it('should use buildCommitUrl instead of hardcoded /commit/ path', () => {
       const script = generateLocDrillDownScript();
-      // Verify openCommitInBrowser calls buildCommitUrl
-      expect(script).toContain('buildCommitUrl(locDrillDownRepoUrl, sha)');
+      // Verify openCommitInBrowser calls buildCommitUrl with looked-up repoUrl
+      expect(script).toContain('buildCommitUrl(repoUrl, sha)');
     });
   });
 

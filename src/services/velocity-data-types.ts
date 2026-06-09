@@ -134,12 +134,16 @@ export interface VelocityFilterOptions {
  * Ticket: GITX-149
  */
 export interface LocWeekCommitDetail {
-  /** Short commit SHA (first 7 characters) */
+  /** Short commit SHA (first 7 characters) for display */
   readonly sha: string;
+  /** Full commit SHA for URL construction */
+  readonly fullSha: string;
   /** Commit timestamp as ISO string */
   readonly commitDate: string;
   /** Git author name */
   readonly author: string;
+  /** Repository name this commit belongs to */
+  readonly repository: string;
   /** Branch name (prioritizes main/master, falls back to 'unknown') */
   readonly branch: string;
   /** Commit message truncated to 1000 characters */
@@ -168,6 +172,12 @@ export interface LocWeekDrillDownResult {
    * Ticket: GITX-150
    */
   readonly repoUrl: string | null;
+  /**
+   * Map of repository names to their base URLs for multi-repo drill-down.
+   * Used when commits span multiple repositories.
+   * Keys are repository names, values are base URLs (e.g., https://github.com/owner/repo).
+   */
+  readonly repoUrlMap: Record<string, string> | null;
   /** Total LOC changed across all commits this week */
   readonly totalLoc: number;
   /** Number of commits returned */

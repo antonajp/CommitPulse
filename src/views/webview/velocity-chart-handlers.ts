@@ -3,12 +3,12 @@
  * Generates JavaScript source for:
  * - Message handling (velocityData, velocityError, filterOptions)
  * - Filter state management and persistence
- * - Team, team member, and repository filter population
+ * - Team and team member filter population (GITX-163: repository filter removed)
  * - Date range filtering (GITX-129)
  * - UI state transitions (loading, error, empty, chart)
  * - CSV export handler
  *
- * Ticket: IQS-888, IQS-920, IQS-944, IQS-946, GITX-121, GITX-129
+ * Ticket: IQS-888, IQS-920, IQS-944, IQS-946, GITX-121, GITX-129, GITX-163
  */
 
 /**
@@ -46,11 +46,11 @@ export function generateDataHandlerScript(): string {
         }
 
         if (!message.rows || message.rows.length === 0) {
-          // Different empty state message based on active filters (IQS-920, GITX-121, GITX-129)
+          // Different empty state message based on active filters (IQS-920, GITX-121, GITX-129, GITX-163)
+          // GITX-163: Removed repository filter
           var activeFilters = [];
           if (currentTeam) { activeFilters.push('Team: ' + escapeHtml(currentTeam)); }
           if (currentTeamMember) { activeFilters.push('Member: ' + escapeHtml(currentTeamMember)); }
-          if (currentRepository) { activeFilters.push('Repository: ' + escapeHtml(currentRepository)); }
           // GITX-129: Include date range in empty state message
           if (currentStartDate && currentEndDate) {
             activeFilters.push('Date Range: ' + escapeHtml(currentStartDate) + ' to ' + escapeHtml(currentEndDate));
@@ -118,11 +118,12 @@ export function generateDataHandlerScript(): string {
         aggregated.sort(function(a, b) { return a.weekStart < b.weekStart ? -1 : 1; });
 
         chartData = { raw: message.rows, aggregated: aggregated };
+        // GITX-163: Make chart area visible BEFORE rendering so D3 can calculate dimensions
+        chartArea.style.display = 'block';
+        dataTableContainer.style.display = 'block';
         renderChart(aggregated);
         renderSummaryStats(aggregated);
         renderDataTable(aggregated);
-        chartArea.style.display = 'block';
-        dataTableContainer.style.display = 'block';
       }
   `;
 }
@@ -222,6 +223,7 @@ export function generateFilterStateScript(): string {
       /**
        * Request velocity data from the extension host.
        * GITX-129: Added startDate/endDate parameters for date range filtering.
+       * GITX-163: Removed repository filter parameter.
        */
       function requestData() {
         showLoading();
@@ -231,9 +233,6 @@ export function generateFilterStateScript(): string {
         }
         if (currentTeamMember) {
           message.teamMember = currentTeamMember;
-        }
-        if (currentRepository) {
-          message.repository = currentRepository;
         }
         if (currentAggregation) {
           message.aggregation = currentAggregation;
@@ -250,18 +249,17 @@ export function generateFilterStateScript(): string {
 
       /**
        * Handle filter options response from the extension host.
-       * GITX-121: Populates team, member, and repository dropdowns.
-       * @param {Object} message - filterOptions message with teams, teamMembers, repositories
+       * GITX-121: Populates team and member dropdowns.
+       * GITX-163: Removed repository dropdown population.
+       * @param {Object} message - filterOptions message with teams and teamMembers
        */
       function handleFilterOptions(message) {
         availableTeams = message.teams || [];
         availableTeamMembers = message.teamMembers || [];
-        availableRepositories = message.repositories || [];
         filterOptionsLoaded = true;
 
         populateTeamFilter();
         populateMemberFilter();
-        populateRepositoryFilter();
       }
 
       /**
@@ -333,49 +331,15 @@ export function generateFilterStateScript(): string {
       }
 
       /**
-       * Populate the repository filter dropdown.
-       * GITX-121: Refactored to use filter options instead of raw data.
-       */
-      function populateRepositoryFilter() {
-        // Clear existing options except "All Repositories"
-        while (repoFilter.options.length > 1) {
-          repoFilter.remove(1);
-        }
-
-        // Add repository options with HTML escaping
-        availableRepositories.forEach(function(repo) {
-          var option = document.createElement('option');
-          option.value = repo;
-          option.textContent = repo; // textContent auto-escapes
-          repoFilter.appendChild(option);
-        });
-
-        // Restore selected value from state
-        if (currentRepository && availableRepositories.indexOf(currentRepository) >= 0) {
-          repoFilter.value = currentRepository;
-        } else {
-          currentRepository = '';
-          repoFilter.value = '';
-        }
-
-        // Hide filter group if only 1 repository (progressive disclosure)
-        if (availableRepositories.length <= 1) {
-          repoFilterGroup.style.display = 'none';
-        } else {
-          repoFilterGroup.style.display = 'flex';
-        }
-      }
-
-      /**
        * Update the chart title to reflect active filters.
        * GITX-121: Extended to show team and member filters.
        * GITX-129: Extended to show date range.
+       * GITX-163: Removed repository filter.
        */
       function updateChartTitle() {
         var filterParts = [];
         if (currentTeam) { filterParts.push('Team: ' + escapeHtml(currentTeam)); }
         if (currentTeamMember) { filterParts.push('Member: ' + escapeHtml(currentTeamMember)); }
-        if (currentRepository) { filterParts.push('Repo: ' + escapeHtml(currentRepository)); }
         // GITX-129: Show date range in title
         if (currentStartDate && currentEndDate) {
           filterParts.push(escapeHtml(currentStartDate) + ' to ' + escapeHtml(currentEndDate));
@@ -396,9 +360,10 @@ export function generateFilterStateScript(): string {
        * Update Clear Filters button visibility.
        * GITX-121: Show button when any filter is active.
        * GITX-129: Include date range in check.
+       * GITX-163: Removed repository filter.
        */
       function updateClearFiltersButton() {
-        var hasActiveFilter = currentTeam || currentTeamMember || currentRepository || currentStartDate || currentEndDate;
+        var hasActiveFilter = currentTeam || currentTeamMember || currentStartDate || currentEndDate;
         clearFiltersBtn.style.display = hasActiveFilter ? 'inline-block' : 'none';
       }
 
@@ -406,13 +371,13 @@ export function generateFilterStateScript(): string {
        * Save filter state to VS Code webview state.
        * GITX-121: Extended to save team and member filters.
        * GITX-129: Extended to save date range.
+       * GITX-163: Removed repository filter.
        */
       function saveFilterState() {
         var currentState = vscode.getState() || {};
         vscode.setState(Object.assign({}, currentState, {
           team: currentTeam,
           teamMember: currentTeamMember,
-          repository: currentRepository,
           aggregation: currentAggregation,
           startDate: currentStartDate,
           endDate: currentEndDate
@@ -423,6 +388,7 @@ export function generateFilterStateScript(): string {
        * Restore filter state from VS Code webview state.
        * GITX-121: Extended to restore team and member filters.
        * GITX-129: Extended to restore date range.
+       * GITX-163: Removed repository filter.
        */
       function restoreFilterState() {
         var state = vscode.getState();
@@ -432,9 +398,6 @@ export function generateFilterStateScript(): string {
           }
           if (state.teamMember) {
             currentTeamMember = state.teamMember;
-          }
-          if (state.repository) {
-            currentRepository = state.repository;
           }
           if (state.aggregation) {
             currentAggregation = state.aggregation;
@@ -463,7 +426,7 @@ export function generateFilterStateScript(): string {
 export function generateCsvExportHandlerScript(): string {
   return `
       // ======================================================================
-      // CSV Export Handler (IQS-944, GITX-121, GITX-129)
+      // CSV Export Handler (IQS-944, GITX-121, GITX-129, GITX-163)
       // ======================================================================
 
       /**
@@ -471,6 +434,7 @@ export function generateCsvExportHandlerScript(): string {
        * Exports aggregated chart data with current filters.
        * GITX-121: Extended to include team and team member filters in export.
        * GITX-129: Extended to include date range in export.
+       * GITX-163: Removed repository filter.
        */
       function handleCsvExport() {
         if (!chartData || !chartData.aggregated || chartData.aggregated.length === 0) { return; }
@@ -481,9 +445,6 @@ export function generateCsvExportHandlerScript(): string {
         }
         if (currentTeamMember) {
           headers.push('Team Member');
-        }
-        if (currentRepository) {
-          headers.push('Repository');
         }
         // GITX-129: Add date range columns
         if (currentStartDate) {
@@ -501,9 +462,6 @@ export function generateCsvExportHandlerScript(): string {
           if (currentTeamMember) {
             row.push(currentTeamMember);
           }
-          if (currentRepository) {
-            row.push(currentRepository);
-          }
           // GITX-129: Add date range values
           if (currentStartDate) {
             row.push(currentStartDate);
@@ -514,7 +472,7 @@ export function generateCsvExportHandlerScript(): string {
           row.push(currentAggregation);
           return row;
         });
-        // Include filter context in filename (IQS-920, IQS-944, GITX-121, GITX-129)
+        // Include filter context in filename (IQS-920, IQS-944, GITX-121, GITX-129, GITX-163)
         var filenameParts = ['sprint-velocity-vs-loc'];
         if (currentAggregation !== 'week') {
           filenameParts.push(currentAggregation);
@@ -524,9 +482,6 @@ export function generateCsvExportHandlerScript(): string {
         }
         if (currentTeamMember) {
           filenameParts.push(currentTeamMember.replace(/[^a-zA-Z0-9._-]/g, '_'));
-        }
-        if (currentRepository) {
-          filenameParts.push(currentRepository.replace(/[^a-zA-Z0-9._-]/g, '_'));
         }
         // GITX-129: Add date range to filename
         if (currentStartDate) {

@@ -362,12 +362,16 @@ export interface ResponseExportCsvError {
  * Ticket: GITX-158
  */
 export interface LocWeekCommitDetail {
-  /** Short SHA (7 characters) */
+  /** Short SHA (7 characters) for display */
   readonly sha: string;
+  /** Full SHA for URL construction */
+  readonly fullSha: string;
   /** Commit date (ISO string) */
   readonly commitDate: string;
   /** Author name or login */
   readonly author: string;
+  /** Repository name this commit belongs to */
+  readonly repository: string;
   /** Primary branch name (or "main" if multiple) */
   readonly branch: string;
   /** Commit message (truncated to 1000 chars) */
@@ -395,6 +399,12 @@ export interface ResponseLocWeekDrillDown {
    * Null if repository URL is not configured or multiple repos are aggregated.
    */
   readonly repoUrl: string | null;
+  /**
+   * Map of repository names to their base URLs for multi-repo drill-down.
+   * Used when commits span multiple repositories.
+   * Keys are repository names, values are base URLs.
+   */
+  readonly repoUrlMap: Record<string, string> | null;
   /** Total LOC for this week */
   readonly totalLoc: number;
   /** Number of commits in this week */

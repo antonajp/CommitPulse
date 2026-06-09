@@ -10,7 +10,7 @@
  * - All data values HTML-escaped before SVG/DOM insertion
  * - Date range filtering (GITX-129)
  *
- * Ticket: IQS-888, IQS-944, IQS-946, GITX-121, GITX-129
+ * Ticket: IQS-888, IQS-944, IQS-946, GITX-121, GITX-129, GITX-163
  */
 
 import type * as vscode from 'vscode';
@@ -95,12 +95,7 @@ function generateHtmlStructure(
             <option value="">All Members</option>
           </select>
         </div>
-        <div class="filter-group" id="repoFilterGroup">
-          <label for="repoFilter">Repository</label>
-          <select id="repoFilter" aria-label="Repository filter" tabindex="0">
-            <option value="">All Repositories</option>
-          </select>
-        </div>
+        <!-- GITX-163: Repository filter removed to simplify UI -->
         <div class="filter-group" id="aggregationFilterGroup">
           <label for="aggregationFilter">Group By</label>
           <select id="aggregationFilter" aria-label="Aggregation period" tabindex="0">
@@ -253,8 +248,7 @@ function generateDomRefsScript(): string {
       var teamFilterGroup = document.getElementById('teamFilterGroup');
       var memberFilter = document.getElementById('memberFilter');
       var memberFilterGroup = document.getElementById('memberFilterGroup');
-      var repoFilter = document.getElementById('repoFilter');
-      var repoFilterGroup = document.getElementById('repoFilterGroup');
+      // GITX-163: Repository filter removed
       var aggregationFilter = document.getElementById('aggregationFilter');
       var startDateFilter = document.getElementById('startDateFilter');
       var endDateFilter = document.getElementById('endDateFilter');
@@ -271,20 +265,18 @@ function generateDomRefsScript(): string {
       var tooltip = document.getElementById('tooltip');
 
       // ======================================================================
-      // State (GITX-121: Added team, teamMember filters; GITX-129: Added date range)
+      // State (GITX-121: Added team, teamMember filters; GITX-129: Added date range; GITX-163: Removed repository)
       // ======================================================================
       var chartData = null;
 
-      // Filter state (IQS-920, IQS-944, GITX-121, GITX-129)
+      // Filter state (IQS-920, IQS-944, GITX-121, GITX-129, GITX-163)
       var currentTeam = '';
       var currentTeamMember = '';
-      var currentRepository = '';
       var currentAggregation = 'week';  // IQS-944: default to weekly
       var currentStartDate = '';        // GITX-129: start date filter
       var currentEndDate = '';          // GITX-129: end date filter
       var availableTeams = [];
       var availableTeamMembers = [];
-      var availableRepositories = [];
       var filterOptionsLoaded = false;
   `;
 }
@@ -300,11 +292,10 @@ function generateEventListenersScript(): string {
       // ======================================================================
       exportCsvBtn.addEventListener('click', handleCsvExport);
 
-      // Apply filters button handler (IQS-920, IQS-944, GITX-121, GITX-129)
+      // Apply filters button handler (IQS-920, IQS-944, GITX-121, GITX-129, GITX-163)
       applyFiltersBtn.addEventListener('click', function() {
         currentTeam = teamFilter.value;
         currentTeamMember = memberFilter.value;
-        currentRepository = repoFilter.value;
         currentAggregation = aggregationFilter.value;
         currentStartDate = startDateFilter.value;
         currentEndDate = endDateFilter.value;
@@ -321,16 +312,14 @@ function generateEventListenersScript(): string {
         requestData();
       });
 
-      // Clear filters button handler (GITX-121, GITX-129)
+      // Clear filters button handler (GITX-121, GITX-129, GITX-163)
       clearFiltersBtn.addEventListener('click', function() {
         currentTeam = '';
         currentTeamMember = '';
-        currentRepository = '';
         currentStartDate = '';
         currentEndDate = '';
         teamFilter.value = '';
         memberFilter.value = '';
-        repoFilter.value = '';
         startDateFilter.value = '';
         endDateFilter.value = '';
         saveFilterState();
@@ -339,7 +328,7 @@ function generateEventListenersScript(): string {
         requestData();
       });
 
-      // Allow Enter key on filter dropdowns (IQS-920, IQS-944, GITX-121, GITX-129)
+      // Allow Enter key on filter dropdowns (IQS-920, IQS-944, GITX-121, GITX-129, GITX-163)
       teamFilter.addEventListener('keydown', function(event) {
         if (event.key === 'Enter') {
           applyFiltersBtn.click();
@@ -350,11 +339,7 @@ function generateEventListenersScript(): string {
           applyFiltersBtn.click();
         }
       });
-      repoFilter.addEventListener('keydown', function(event) {
-        if (event.key === 'Enter') {
-          applyFiltersBtn.click();
-        }
-      });
+      // GITX-163: Repository filter removed
       aggregationFilter.addEventListener('keydown', function(event) {
         if (event.key === 'Enter') {
           applyFiltersBtn.click();

@@ -9,7 +9,7 @@
  * All messages are typed discriminated unions using the 'type' field
  * as the discriminant for exhaustive switch-case handling.
  *
- * Ticket: IQS-888, IQS-944, GITX-121
+ * Ticket: IQS-888, IQS-944, GITX-121, GITX-163
  */
 
 import type { SprintVelocityVsLocPoint } from '../../services/velocity-data-types.js';
@@ -31,7 +31,8 @@ export type VelocityAggregation = 'day' | 'week' | 'biweekly';
 
 /**
  * Request to load sprint velocity vs LOC chart data.
- * Optional date range, team, team member, and repository filters may be provided.
+ * Optional date range, team, and team member filters may be provided.
+ * GITX-163: Repository filter removed to simplify UI.
  */
 export interface RequestVelocityData {
   readonly type: 'requestVelocityData';
@@ -43,8 +44,6 @@ export interface RequestVelocityData {
    * Ticket: GITX-121
    */
   readonly teamMember?: string;
-  /** Filter by repository name (IQS-920) */
-  readonly repository?: string;
   /**
    * Aggregation period: 'day', 'week' (default), or 'biweekly'.
    * Ticket: IQS-944
@@ -123,12 +122,16 @@ export interface ResponseFilterOptions {
  * Ticket: GITX-149
  */
 export interface LocWeekCommitDetail {
-  /** Short SHA (7 characters) */
+  /** Short SHA (7 characters) for display */
   readonly sha: string;
+  /** Full SHA for URL construction */
+  readonly fullSha: string;
   /** Commit date (ISO string) */
   readonly commitDate: string;
   /** Author name or login */
   readonly author: string;
+  /** Repository name this commit belongs to */
+  readonly repository: string;
   /** Primary branch name (or "main" if multiple) */
   readonly branch: string;
   /** Commit message (truncated to 1000 chars) */
@@ -157,6 +160,12 @@ export interface ResponseLocWeekDrillDown {
    * Ticket: GITX-150
    */
   readonly repoUrl: string | null;
+  /**
+   * Map of repository names to their base URLs for multi-repo drill-down.
+   * Used when commits span multiple repositories.
+   * Keys are repository names, values are base URLs.
+   */
+  readonly repoUrlMap: Record<string, string> | null;
   /** Total LOC for this week */
   readonly totalLoc: number;
   /** Number of commits in this week */
