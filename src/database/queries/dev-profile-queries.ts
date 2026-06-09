@@ -42,7 +42,7 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
   ),
   dev_jira_points AS (
     SELECT
-      DATE_TRUNC('week', jd.resolved_date)::date AS week_start,
+      DATE_TRUNC('week', jd.status_change_date)::date AS week_start,
       COALESCE(SUM(jd.calculated_story_points), 0)::int AS story_points,
       COUNT(DISTINCT jd.jira_key)::int AS issue_count
     FROM jira_detail jd
@@ -50,7 +50,7 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
       jd.assignee = cc.email OR jd.assignee = cc.login OR jd.assignee = cc.full_name
     )
     WHERE cc.login = $1
-      AND jd.resolved_date >= $2
+      AND jd.status_change_date >= $2
       AND jd.status IN ('Done', 'Closed', 'Resolved')
     GROUP BY week_start
   ),
