@@ -412,4 +412,147 @@ describe('ContributorRepository', () => {
       expect((selectCall![0] as string)).not.toContain('DROP TABLE');
     });
   });
+
+  // --------------------------------------------------------------------------
+  // GITX-169: Contributor grouping by full_name
+  // --------------------------------------------------------------------------
+
+  describe('getContributorSummaries (GITX-169)', () => {
+    it('should group multiple logins with same full_name', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          full_name: 'Alice Smith',
+          logins: 'alice,alice.smith',
+          vendor: 'Company',
+          team: 'Engineering',
+          repo_list: 'repo-a,repo-b',
+          commit_count: 150,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await repo.getContributorSummaries();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.fullName).toBe('Alice Smith');
+      expect(result[0]?.logins).toBe('alice,alice.smith');
+      expect(result[0]?.vendor).toBe('Company');
+      expect(result[0]?.team).toBe('Engineering');
+      expect(result[0]?.repoList).toBe('repo-a,repo-b');
+      expect(result[0]?.commitCount).toBe(150);
+    });
+
+    it('should handle NULL full_name with login fallback', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          // COALESCE(cc.full_name, STRING_AGG(DISTINCT cc.login, ',')) returns login when full_name is NULL
+          full_name: 'bot-user',
+          logins: 'bot-user',
+          vendor: null,
+          team: null,
+          repo_list: null,
+          commit_count: 5,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await repo.getContributorSummaries();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.fullName).toBe('bot-user');
+      expect(result[0]?.logins).toBe('bot-user');
+      expect(result[0]?.commitCount).toBe(5);
+    });
+
+    it('should aggregate commits across multiple logins', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          full_name: 'Bob Jones',
+          logins: 'bob,bob.jones,bjones',
+          vendor: 'Acme Corp',
+          team: 'Data',
+          repo_list: 'repo-c',
+          commit_count: 250,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await repo.getContributorSummaries();
+
+      expect(result[0]?.fullName).toBe('Bob Jones');
+      expect(result[0]?.logins).toBe('bob,bob.jones,bjones');
+      expect(result[0]?.commitCount).toBe(250);
+    });
+
+    it('should handle same full_name with different teams separately', async () => {
+      // Edge case: same person on multiple teams (should show as separate entries)
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            full_name: 'Charlie Brown',
+            logins: 'charlie',
+            vendor: 'Company',
+            team: 'Engineering',
+            repo_list: 'repo-a',
+            commit_count: 100,
+          },
+          {
+            full_name: 'Charlie Brown',
+            logins: 'charlie',
+            vendor: 'Company',
+            team: 'Data',
+            repo_list: 'repo-b',
+            commit_count: 50,
+          },
+        ],
+        rowCount: 2,
+      });
+
+      const result = await repo.getContributorSummaries();
+
+      expect(result).toHaveLength(2);
+      expect(result[0]?.fullName).toBe('Charlie Brown');
+      expect(result[0]?.team).toBe('Engineering');
+      expect(result[1]?.fullName).toBe('Charlie Brown');
+      expect(result[1]?.team).toBe('Data');
+    });
+
+    it('should return empty array when no contributors', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const result = await repo.getContributorSummaries();
+      expect(result).toEqual([]);
+    });
+
+    it('should handle mixed NULL and non-NULL full_names', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            full_name: 'Alice Smith',
+            logins: 'alice',
+            vendor: 'Company',
+            team: 'Engineering',
+            repo_list: 'repo-a',
+            commit_count: 150,
+          },
+          {
+            // COALESCE fallback: when full_name is NULL, uses aggregated logins
+            full_name: 'bot',
+            logins: 'bot',
+            vendor: null,
+            team: null,
+            repo_list: null,
+            commit_count: 5,
+          },
+        ],
+        rowCount: 2,
+      });
+
+      const result = await repo.getContributorSummaries();
+
+      expect(result).toHaveLength(2);
+      expect(result[0]?.fullName).toBe('Alice Smith');
+      expect(result[1]?.fullName).toBe('bot');
+    });
+  });
 });

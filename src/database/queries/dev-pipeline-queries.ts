@@ -279,8 +279,10 @@ export const QUERY_DEV_PIPELINE_DELTAS_BY_TICKET = `
 
 /**
  * Query to aggregate Development Pipeline deltas by author.
- * Groups all commits by author and sums deltas.
+ * Groups all commits by full_name and sums deltas.
  * Useful for showing "developer productivity metrics" view.
+ *
+ * Ticket: GITX-169 - Changed to group by full_name, team (removed author from GROUP BY)
  *
  * Parameters:
  *   $1 - start_date (TIMESTAMP WITH TIME ZONE) - beginning of date range (nullable)
@@ -288,7 +290,7 @@ export const QUERY_DEV_PIPELINE_DELTAS_BY_TICKET = `
  */
 export const QUERY_DEV_PIPELINE_DELTAS_BY_AUTHOR = `
   SELECT
-    author,
+    STRING_AGG(DISTINCT author, ',') AS authors,
     full_name,
     team,
     COUNT(DISTINCT sha)::INT AS commit_count,
@@ -304,7 +306,7 @@ export const QUERY_DEV_PIPELINE_DELTAS_BY_AUTHOR = `
   FROM vw_dev_pipeline_deltas
   WHERE (commit_date >= $1 OR $1 IS NULL)
     AND (commit_date <= $2 OR $2 IS NULL)
-  GROUP BY author, full_name, team
+  GROUP BY full_name, team
   ORDER BY COUNT(DISTINCT sha) DESC
   LIMIT ${DEV_PIPELINE_MAX_RESULT_ROWS}
 `;
@@ -397,9 +399,10 @@ export interface DevPipelineDeltaByTicket {
 
 /**
  * TypeScript interface for aggregated deltas by author.
+ * Ticket: GITX-169 - Changed author to authors (aggregated logins)
  */
 export interface DevPipelineDeltaByAuthor {
-  readonly author: string;
+  readonly authors: string; // Comma-separated list of logins
   readonly full_name: string | null;
   readonly team: string | null;
   readonly commit_count: number;
@@ -425,8 +428,10 @@ export interface BaselinePopulationStats {
 
 /**
  * Query to fetch weekly aggregated dev pipeline metrics.
- * Groups commits by ISO week and developer.
+ * Groups commits by ISO week and full_name.
  * Includes representative SHA (latest commit of the week) and repository URL for GitHub navigation.
+ *
+ * Ticket: GITX-169 - Changed to group by full_name, team (removed author from GROUP BY)
  *
  * Parameters:
  *   $1 - team (TEXT) - team name filter (required)
@@ -436,7 +441,7 @@ export interface BaselinePopulationStats {
 export const QUERY_DEV_PIPELINE_WEEKLY = `
   SELECT
     DATE_TRUNC('week', v.commit_date)::DATE AS week_start,
-    v.author,
+    STRING_AGG(DISTINCT v.author, ',') AS author,
     v.full_name,
     v.team,
     SUM(v.loc_delta)::BIGINT AS total_loc_delta,
@@ -449,13 +454,13 @@ export const QUERY_DEV_PIPELINE_WEEKLY = `
     -- Include latest commit SHA for GitHub navigation
     (ARRAY_AGG(v.sha ORDER BY v.commit_date DESC))[1] AS latest_sha,
     -- Include repository name for looking up repoUrl from VS Code settings
-    v.repository
+    MAX(v.repository) AS repository
   FROM vw_dev_pipeline_deltas v
   WHERE v.team = $1
     AND v.commit_date >= $2
     AND v.commit_date <= $3
-  GROUP BY DATE_TRUNC('week', v.commit_date)::DATE, v.author, v.full_name, v.team, v.repository
-  ORDER BY week_start ASC, v.author ASC
+  GROUP BY DATE_TRUNC('week', v.commit_date)::DATE, v.full_name, v.team
+  ORDER BY week_start ASC, v.full_name ASC
   LIMIT ${DEV_PIPELINE_MAX_RESULT_ROWS}
 `;
 

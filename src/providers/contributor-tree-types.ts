@@ -16,19 +16,21 @@
  * Row shape returned by the contributor summary query.
  * Combines data from commit_contributors + commit_history aggregation +
  * max_num_count_per_login view for the primary team assignment.
+ *
+ * GITX-169: Now grouped by full_name instead of login.
  */
 export interface ContributorSummaryRow {
-  /** GitHub login (primary key in commit_contributors). */
-  readonly login: string;
-  /** Full display name, or null if not available. */
+  /** Full display name (primary identifier, or null if not available). */
   readonly fullName: string | null;
+  /** Comma-separated list of all GitHub logins associated with this full_name. */
+  readonly logins: string;
   /** Vendor classification (e.g., 'Company' or external vendor name). */
   readonly vendor: string | null;
   /** Primary team assignment from max_num_count_per_login view. */
   readonly team: string | null;
   /** Comma-separated list of repositories this contributor has committed to. */
   readonly repoList: string | null;
-  /** Total number of commits by this contributor. */
+  /** Total number of commits by this contributor (aggregated across all logins). */
   readonly commitCount: number;
 }
 

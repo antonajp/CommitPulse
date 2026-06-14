@@ -144,10 +144,10 @@ export class ReleaseManagementDataService {
   /**
    * Map database row to ReleaseContributionPoint.
    * Converts snake_case to camelCase.
+   * Ticket: GITX-169 - Changed to use full_name as primary identifier (removed author)
    */
   private mapRowToContributionPoint(row: ReleaseContribution): ReleaseContributionPoint {
     return {
-      author: row.author,
       fullName: row.full_name,
       team: row.team,
       repository: row.repository,
@@ -173,11 +173,13 @@ export class ReleaseManagementDataService {
    * Aggregate contribution points into summaries by author.
    * Each author gets one summary with Production and Staging totals.
    */
+  /**
+   * Ticket: GITX-169 - Changed to use fullName as grouping key instead of author
+   */
   private aggregateContributions(
     contributions: readonly ReleaseContributionPoint[],
   ): readonly ReleaseContributionSummary[] {
-    const byAuthor = new Map<string, {
-      author: string;
+    const byFullName = new Map<string, {
       fullName: string | null;
       team: string | null;
       productionMerges: number;
@@ -186,21 +188,21 @@ export class ReleaseManagementDataService {
     }>();
 
     for (const c of contributions) {
-      let entry = byAuthor.get(c.author);
+      // Use fullName as key, with null converted to empty string for Map lookup
+      const key = c.fullName ?? '';
+      let entry = byFullName.get(key);
       if (!entry) {
         entry = {
-          author: c.author,
           fullName: c.fullName,
           team: c.team,
           productionMerges: 0,
           stagingMerges: 0,
           totalTags: 0,
         };
-        byAuthor.set(c.author, entry);
+        byFullName.set(key, entry);
       }
 
-      // Update full name and team if available (take most recent non-null)
-      if (c.fullName) entry.fullName = c.fullName;
+      // Update team if available (take most recent non-null)
       if (c.team) entry.team = c.team;
 
       // Aggregate by environment
@@ -216,7 +218,7 @@ export class ReleaseManagementDataService {
 
     // Convert to array and calculate totalActivity
     const summaries: ReleaseContributionSummary[] = [];
-    for (const entry of byAuthor.values()) {
+    for (const entry of byFullName.values()) {
       summaries.push({
         ...entry,
         totalActivity: entry.productionMerges + entry.stagingMerges + entry.totalTags,

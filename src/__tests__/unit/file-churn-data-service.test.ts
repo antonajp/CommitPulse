@@ -124,8 +124,8 @@ describe('FileChurnDataService', () => {
       const call = vi.mocked(mockDb.query).mock.calls[0];
       expect(call).toBeDefined();
       const sql = call![0] as string;
-      // Individual query uses COALESCE(cc.full_name, ch.author)
-      expect(sql).toContain('COALESCE(cc.full_name, ch.author) AS contributor');
+      // Individual query uses COALESCE(cc.full_name, cc.login) - GITX-169
+      expect(sql).toContain('COALESCE(cc.full_name, cc.login) AS contributor');
     });
 
     it('should pass topN as first parameter', async () => {
@@ -288,7 +288,8 @@ describe('FileChurnDataService', () => {
       const call = vi.mocked(mockDb.query).mock.calls[0];
       expect(call).toBeDefined();
       const sql = call![0] as string;
-      expect(sql).toContain('COALESCE(cc.full_name, ch.author) = $2');
+      // GITX-169: Changed to use cc.login fallback instead of ch.author
+      expect(sql).toContain('COALESCE(cc.full_name, cc.login) = $2');
     });
 
     it('should pass date filters as parameterized values', async () => {

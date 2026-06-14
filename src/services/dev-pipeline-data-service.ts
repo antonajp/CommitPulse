@@ -319,7 +319,7 @@ export class DevPipelineDataService {
     );
 
     const rows: DevPipelineDeltaByAuthor[] = result.rows.map((row) => ({
-      author: row.author,
+      authors: row.authors, // GITX-169: Changed from author to authors (aggregated logins)
       fullName: row.full_name,
       team: row.team,
       commitCount: Number(row.commit_count),

@@ -100,8 +100,8 @@ describe('LocDataService', () => {
       const call = vi.mocked(mockDb.query).mock.calls[0];
       expect(call).toBeDefined();
       const sql = call![0] as string;
-      // Author query uses COALESCE(cc.full_name, ch.author)
-      expect(sql).toContain('COALESCE(cc.full_name, ch.author)');
+      // Author query uses COALESCE(cc.full_name, cc.login) - GITX-169
+      expect(sql).toContain('COALESCE(cc.full_name, cc.login)');
     });
 
     it('should use repository-specific SQL fragment when groupBy is repository', async () => {

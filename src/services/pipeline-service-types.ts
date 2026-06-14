@@ -13,6 +13,7 @@ import type { IncrementalLoadResult } from './jira-incremental-loader.js';
 import type { LinearIncrementalLoadResult } from './linear-incremental-loader.js';
 import type { DataEnhancerResult } from './data-enhancer-service.js';
 import type { TeamAssignmentResult } from './team-assignment-service.js';
+import type { FileMetricsDeltaResult } from './file-metrics-delta-service.js';
 
 // ============================================================================
 // Pipeline step definitions
@@ -31,10 +32,12 @@ export type PipelineStepId =
   | 'linearIssueLoading'
   | 'linearChangelogUpdate'
   | 'commitLinearLinking'
+  | 'fileMetricsDelta'
   | 'teamAssignment';
 
 /**
  * All available pipeline step IDs, in execution order.
+ * GITX-165: Added fileMetricsDelta step after commitLinearLinking.
  */
 export const ALL_PIPELINE_STEPS: readonly PipelineStepId[] = [
   'gitCommitExtraction',
@@ -45,12 +48,14 @@ export const ALL_PIPELINE_STEPS: readonly PipelineStepId[] = [
   'linearIssueLoading',
   'linearChangelogUpdate',
   'commitLinearLinking',
+  'fileMetricsDelta',
   'teamAssignment',
 ] as const;
 
 /**
  * Human-readable labels for each pipeline step.
  * Used in VS Code progress notifications.
+ * GITX-165: Added fileMetricsDelta label.
  */
 export const PIPELINE_STEP_LABELS: Readonly<Record<PipelineStepId, string>> = {
   gitCommitExtraction: 'Git Commit Extraction',
@@ -61,6 +66,7 @@ export const PIPELINE_STEP_LABELS: Readonly<Record<PipelineStepId, string>> = {
   linearIssueLoading: 'Linear Issue Loading',
   linearChangelogUpdate: 'Linear Changelog/Unfinished Update',
   commitLinearLinking: 'Commit-Linear Linking',
+  fileMetricsDelta: 'File Metrics Delta Calculation',
   teamAssignment: 'Team Assignment Calculation',
 };
 
@@ -203,6 +209,8 @@ export interface PipelineRunResult {
   readonly linearLoadResult: LinearIncrementalLoadResult | null;
   /** Data enhancer results (commit-Jira or commit-Linear linking). */
   readonly dataEnhancerResult: DataEnhancerResult | null;
+  /** File metrics delta results. Ticket: GITX-165. */
+  readonly fileMetricsDeltaResult: FileMetricsDeltaResult | null;
   /** Team assignment results. */
   readonly teamAssignmentResult: TeamAssignmentResult | null;
 }

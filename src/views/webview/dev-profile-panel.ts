@@ -7,9 +7,10 @@
  * - CSP nonce generation for script authorization
  * - Rate limiting on message handlers
  * - Proper disposal and resource cleanup
- * - Pre-selection of developer when opened from TreeView
+ * - Pre-selection of developer when opened from TreeView (accepts login, webview converts to full_name)
+ * - Developer filtering by full_name (with login fallback - GITX-169)
  *
- * Ticket: GITX-155
+ * Ticket: GITX-155, GITX-169
  */
 
 import * as vscode from 'vscode';

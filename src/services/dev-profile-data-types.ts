@@ -102,7 +102,7 @@ export interface DevProfileDeveloper {
 /**
  * Timeframe preset option.
  */
-export type DevProfileTimeframe = '30' | '60' | '90' | '180' | '365';
+export type DevProfileTimeframe = '30' | '60' | '90' | '180' | '365' | '730';
 
 /**
  * Filters for developer profile queries.

@@ -174,9 +174,10 @@ file_totals AS (
 ),
 contributor_breakdown AS (
   -- Step 2: Aggregate churn by contributor for the top files
+  -- Ticket: GITX-169 - Changed to group by cc.full_name instead of login
   SELECT
     cf.filename,
-    COALESCE(cc.full_name, ch.author) AS contributor,
+    COALESCE(cc.full_name, cc.login) AS contributor,
     cc.team AS team,
     SUM(cf.line_inserts + cf.line_deletes)::BIGINT AS churn
   FROM commit_files cf
@@ -189,9 +190,10 @@ contributor_breakdown AS (
 
 /**
  * Final SELECT for individual contributor grouping.
+ * Ticket: GITX-169 - Changed to group by cc.full_name instead of COALESCE expression
  */
 export const FILE_CHURN_INDIVIDUAL_SELECT = `
-  GROUP BY cf.filename, COALESCE(cc.full_name, ch.author), cc.team
+  GROUP BY cf.filename, cc.full_name, cc.login, cc.team
 )
 SELECT
   ft.filename,
@@ -238,6 +240,7 @@ WHERE cf.filename = $1
 
 /**
  * Drill-down query for individual contributor mode.
+ * Ticket: GITX-169 - Changed filter to use cc.full_name
  */
 export const FILE_CHURN_DRILLDOWN_BY_INDIVIDUAL = `
 SELECT
@@ -251,7 +254,7 @@ FROM commit_files cf
 INNER JOIN commit_history ch ON cf.sha = ch.sha
 LEFT JOIN commit_contributors cc ON ch.author = cc.login
 WHERE cf.filename = $1
-  AND COALESCE(cc.full_name, ch.author) = $2
+  AND COALESCE(cc.full_name, cc.login) = $2
   AND ch.is_merge = FALSE
 `;
 

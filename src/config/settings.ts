@@ -459,7 +459,53 @@ function validateRepositories(
   }
 
   logger.trace(CLASS_NAME, 'validateRepositories', `Validated ${validated.length} of ${raw.length} repository entries`);
+
+  // GITX-168: Check for duplicate repository names
+  const duplicates = findDuplicateRepositoryNames(validated, logger);
+  if (duplicates.length > 0) {
+    logger.warn(
+      CLASS_NAME,
+      'validateRepositories',
+      `Duplicate repository names detected: ${duplicates.join(', ')}. ` +
+      'This may cause issues with commit attribution. Please update your configuration.',
+    );
+  }
+
   return Object.freeze(validated);
+}
+
+/**
+ * Find duplicate repository names in the validated repository entries.
+ * GITX-168: Detects when users copy/paste repository entries and forget to update the name.
+ *
+ * @param repositories - Validated repository entries
+ * @param logger - Logger instance for diagnostic output
+ * @returns Array of duplicate repository names
+ */
+function findDuplicateRepositoryNames(
+  repositories: readonly RepositoryEntry[],
+  logger: LoggerService,
+): string[] {
+  const nameCounts = new Map<string, number>();
+  const duplicates: string[] = [];
+
+  for (const repo of repositories) {
+    const count = (nameCounts.get(repo.name) ?? 0) + 1;
+    nameCounts.set(repo.name, count);
+  }
+
+  for (const [name, count] of nameCounts) {
+    if (count > 1) {
+      duplicates.push(name);
+      logger.debug(
+        CLASS_NAME,
+        'findDuplicateRepositoryNames',
+        `Repository name "${name}" appears ${count} times in configuration`,
+      );
+    }
+  }
+
+  return duplicates;
 }
 
 /**

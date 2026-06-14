@@ -364,21 +364,21 @@ describe('DevPipelineDataService Integration Tests', () => {
         endDate: '2024-06-30',
       });
 
-      // Should have 2 authors: user1 and user2
+      // Should have 2 authors (by full_name): User One and User Two - GITX-169
       expect(result.length).toBe(2);
 
-      // Find user1 (has 2 commits)
-      const author1 = result.find(r => r.author === 'user1');
+      // Find User One (has 2 commits) - GITX-169: now groups by full_name
+      const author1 = result.find(r => r.fullName === 'User One');
       expect(author1).toBeDefined();
-      expect(author1?.fullName).toBe('User One');
+      expect(author1?.authors).toBe('user1'); // GITX-169: aggregated logins
       expect(author1?.team).toBe('Engineering');
       expect(author1?.commitCount).toBe(2);
       expect(author1?.ticketCount).toBe(1); // Both commits are for IQS-100
 
-      // Find user2 (has 1 commit)
-      const author2 = result.find(r => r.author === 'user2');
+      // Find User Two (has 1 commit)
+      const author2 = result.find(r => r.fullName === 'User Two');
       expect(author2).toBeDefined();
-      expect(author2?.fullName).toBe('User Two');
+      expect(author2?.authors).toBe('user2'); // GITX-169: aggregated logins
       expect(author2?.team).toBe('QA');
       expect(author2?.commitCount).toBe(1);
     });

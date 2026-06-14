@@ -5,6 +5,19 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+[0;34m[INFO][0m Generating changelog from commits since v0.1.35...
+## [0.1.36] - 2026-06-14
+
+### Added
+
+- Group contributor metrics by full_name instead of login
+- Self-healing repository name mismatch detection and correction
+- Add Last 2 years timeframe option to Developer Profile dashboard
+
+### Changed
+
+- Update README with architecture command and contributor maintenance
+
 [0;34m[INFO][0m Generating changelog from commits since v0.1.34...
 ## [0.1.35] - 2026-06-09
 

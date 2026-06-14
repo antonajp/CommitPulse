@@ -62,11 +62,12 @@ export const LOC_COMMITTED_GROUP_BY_TEAM = `
 
 /**
  * LOC Committed grouped by AUTHOR (engineer).
- * Uses COALESCE(cc.full_name, ch.author) for display, ch.author as unique key.
+ * Uses COALESCE(cc.full_name, cc.login) for display, groups by cc.full_name.
+ * Ticket: GITX-169 - Changed to group by full_name instead of login
  */
 export const LOC_COMMITTED_GROUP_BY_AUTHOR = `
   SELECT
-    COALESCE(cc.full_name, ch.author) AS group_key,
+    COALESCE(cc.full_name, cc.login) AS group_key,
     COALESCE(cf.arc_component, '(Not Categorized)') AS arc_component,
     COALESCE(SUM(cf.line_inserts), 0)::BIGINT AS lines_added,
     COALESCE(SUM(cf.line_inserts - cf.line_deletes), 0)::BIGINT AS net_lines,
@@ -94,8 +95,9 @@ export const LOC_GROUP_SUFFIX_TEAM = `
 
 /**
  * Shared GROUP BY suffix for author grouping.
+ * Ticket: GITX-169 - Changed to group by cc.full_name instead of COALESCE expression
  */
 export const LOC_GROUP_SUFFIX_AUTHOR = `
-  GROUP BY COALESCE(cc.full_name, ch.author), COALESCE(cf.arc_component, '(Not Categorized)')
+  GROUP BY cc.full_name, cc.login, COALESCE(cf.arc_component, '(Not Categorized)')
   ORDER BY SUM(cf.line_inserts + cf.line_deletes) DESC
 `;

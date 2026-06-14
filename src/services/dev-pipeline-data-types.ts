@@ -104,10 +104,11 @@ export interface DevPipelineDeltaByTicket {
 /**
  * Aggregated delta metrics grouped by author.
  * Shows total impact of all commits by a single author.
+ * Ticket: GITX-169 - Changed author to authors (aggregated logins by full_name)
  */
 export interface DevPipelineDeltaByAuthor {
-  /** Git author login/username */
-  readonly author: string;
+  /** Comma-separated list of Git author logins (aggregated by full_name) */
+  readonly authors: string;
   /** Contributor's full name */
   readonly fullName: string | null;
   /** Team name */

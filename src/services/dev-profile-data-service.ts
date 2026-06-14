@@ -54,19 +54,20 @@ export class DevProfileDataService {
   }
 
   /**
-   * Validate developer login string at runtime.
+   * Validate developer identifier at runtime.
+   * Accepts either full_name (preferred) or login (fallback).
    *
-   * @param developer - The developer login to validate
+   * @param developerFullName - The developer identifier (full_name or login) to validate
    * @param methodName - Calling method name for log context
    */
-  private validateDeveloper(developer: string, methodName: string): void {
-    if (!developer || developer.trim().length === 0) {
-      this.logger.warn(CLASS_NAME, methodName, 'Empty developer login rejected');
+  private validateDeveloper(developerFullName: string, methodName: string): void {
+    if (!developerFullName || developerFullName.trim().length === 0) {
+      this.logger.warn(CLASS_NAME, methodName, 'Empty developer identifier rejected');
       throw new Error('Developer login is required.');
     }
-    if (developer.length > MAX_FILTER_STRING_LENGTH) {
-      this.logger.warn(CLASS_NAME, methodName, `Developer login exceeds max length: ${developer.length} > ${MAX_FILTER_STRING_LENGTH}`);
-      throw new Error(`Developer login exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
+    if (developerFullName.length > MAX_FILTER_STRING_LENGTH) {
+      this.logger.warn(CLASS_NAME, methodName, `Developer identifier exceeds max length: ${developerFullName.length} > ${MAX_FILTER_STRING_LENGTH}`);
+      throw new Error(`Developer identifier exceeds maximum length of ${MAX_FILTER_STRING_LENGTH} characters.`);
     }
   }
 
@@ -77,7 +78,7 @@ export class DevProfileDataService {
    * @param methodName - Calling method name for log context
    */
   private validateTimeframe(timeframeDays: string, methodName: string): void {
-    const allowedTimeframes = ['30', '60', '90', '180', '365'];
+    const allowedTimeframes = ['30', '60', '90', '180', '365', '730'];
     if (!allowedTimeframes.includes(timeframeDays)) {
       this.logger.warn(CLASS_NAME, methodName, `Invalid timeframe rejected: ${timeframeDays}`);
       throw new Error(`Invalid timeframe: ${timeframeDays}. Allowed values: ${allowedTimeframes.join(', ')}.`);
@@ -99,43 +100,45 @@ export class DevProfileDataService {
 
   /**
    * Get list of all developers for the dropdown selector.
+   * Groups by full_name and aggregates logins.
    * Sorted by commit count descending.
    *
-   * @returns Array of developer options
+   * @returns Array of developer options with fullName as primary identifier
    */
   async getDevelopers(): Promise<DevProfileDeveloper[]> {
     this.logger.debug(CLASS_NAME, 'getDevelopers', 'Fetching developer list');
 
     const sql = `
       SELECT
-        cc.login,
         cc.full_name,
+        STRING_AGG(DISTINCT cc.login, ',') AS logins,
         COUNT(DISTINCT ch.sha)::int AS commit_count
       FROM commit_contributors cc
       LEFT JOIN commit_history ch ON ch.author = cc.login
-      GROUP BY cc.login, cc.full_name
+      GROUP BY cc.full_name
       ORDER BY commit_count DESC
     `;
 
     const result = await this.db.query<{
-      login: string;
       full_name: string | null;
+      logins: string;
       commit_count: number;
     }>(sql);
 
-    this.logger.debug(CLASS_NAME, 'getDevelopers', `Found ${result.rowCount} developers`);
+    this.logger.debug(CLASS_NAME, 'getDevelopers', `Found ${result.rowCount} developers (grouped by full_name)`);
 
     return result.rows.map((row) => ({
-      login: row.login,
       fullName: row.full_name,
+      login: row.logins.split(',')[0] ?? '', // Use first login for display
       commitCount: row.commit_count,
     }));
   }
 
   /**
    * Get summary statistics for a developer.
+   * Filters by full_name with fallback to login for NULL full_name.
    *
-   * @param filters - Developer and timeframe filters
+   * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Summary statistics
    */
   async getSummary(filters: DevProfileFilters): Promise<DevProfileSummary> {
@@ -154,7 +157,8 @@ export class DevProfileDataService {
         COUNT(DISTINCT ch.repository)::int AS repos_worked_on
       FROM commit_history ch
       LEFT JOIN commit_files cf ON cf.sha = ch.sha
-      WHERE ch.author = $1
+      JOIN commit_contributors cc ON ch.author = cc.login
+      WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ch.commit_date >= $2
         AND ch.is_merge = FALSE
     `;
@@ -188,8 +192,9 @@ export class DevProfileDataService {
 
   /**
    * Get LOC per week data for the stacked bar chart.
+   * Filters by full_name with fallback to login for NULL full_name.
    *
-   * @param filters - Developer and timeframe filters
+   * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Array of weekly LOC data points by repository
    */
   async getLocPerWeek(filters: DevProfileFilters): Promise<DevProfileLocWeekly[]> {
@@ -209,7 +214,8 @@ export class DevProfileDataService {
         COALESCE(SUM(cf.line_inserts - cf.line_deletes), 0)::bigint AS net_lines
       FROM commit_history ch
       LEFT JOIN commit_files cf ON cf.sha = ch.sha
-      WHERE ch.author = $1
+      JOIN commit_contributors cc ON ch.author = cc.login
+      WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ch.commit_date >= $2
         AND ch.is_merge = FALSE
         AND cf.line_inserts IS NOT NULL
@@ -238,8 +244,9 @@ export class DevProfileDataService {
 
   /**
    * Get top 15 most complex files modified by the developer.
+   * Filters by full_name with fallback to login for NULL full_name.
    *
-   * @param filters - Developer and timeframe filters
+   * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Array of complex file data points
    */
   async getTopComplexFiles(filters: DevProfileFilters): Promise<DevProfileComplexFile[]> {
@@ -258,7 +265,8 @@ export class DevProfileDataService {
         MAX(ch.commit_date)::date AS last_modified
       FROM commit_files cf
       JOIN commit_history ch ON ch.sha = cf.sha
-      WHERE ch.author = $1
+      JOIN commit_contributors cc ON ch.author = cc.login
+      WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ch.commit_date >= $2
         AND ch.is_merge = FALSE
         AND cf.complexity IS NOT NULL
@@ -287,8 +295,9 @@ export class DevProfileDataService {
 
   /**
    * Get top 20 most frequently modified files by the developer.
+   * Filters by full_name with fallback to login for NULL full_name.
    *
-   * @param filters - Developer and timeframe filters
+   * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Array of frequent file data points
    */
   async getTopFrequentFiles(filters: DevProfileFilters): Promise<DevProfileFrequentFile[]> {
@@ -307,7 +316,8 @@ export class DevProfileDataService {
         ch.repository
       FROM commit_files cf
       JOIN commit_history ch ON ch.sha = cf.sha
-      WHERE ch.author = $1
+      JOIN commit_contributors cc ON ch.author = cc.login
+      WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ch.commit_date >= $2
         AND ch.is_merge = FALSE
       GROUP BY cf.filename, ch.repository
@@ -334,9 +344,10 @@ export class DevProfileDataService {
 
   /**
    * Get technology stack contributions by category for the doughnut chart.
+   * Filters by full_name with fallback to login for NULL full_name.
    * Ticket: GITX-156
    *
-   * @param filters - Developer and timeframe filters
+   * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Array of tech stack data points with percentages
    */
   async getTechStack(filters: DevProfileFilters): Promise<DevProfileTechStack[]> {
@@ -356,8 +367,9 @@ export class DevProfileDataService {
           COALESCE(SUM(cf.line_inserts), 0)::bigint AS loc_count
         FROM commit_files cf
         JOIN commit_history ch ON cf.sha = ch.sha
+        JOIN commit_contributors cc ON ch.author = cc.login
         JOIN vw_technology_stack_category vtsc ON cf.file_extension = vtsc.file_extension
-        WHERE ch.author = $1
+        WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
           AND ch.commit_date >= $2
           AND ch.is_merge = FALSE
           AND cf.line_inserts IS NOT NULL
@@ -399,10 +411,11 @@ export class DevProfileDataService {
 
   /**
    * Get comments added per week for the line chart.
+   * Filters by full_name with fallback to login for NULL full_name.
    * Uses comments_change column with fallback to total_comment_lines for older commits.
    * Ticket: GITX-156
    *
-   * @param filters - Developer and timeframe filters
+   * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Array of weekly comment data points
    */
   async getCommentsPerWeek(filters: DevProfileFilters): Promise<DevProfileCommentsWeekly[]> {
@@ -420,7 +433,8 @@ export class DevProfileDataService {
         COALESCE(SUM(COALESCE(cf.comments_change, 0)), 0)::int AS comments_added
       FROM commit_files cf
       JOIN commit_history ch ON cf.sha = ch.sha
-      WHERE ch.author = $1
+      JOIN commit_contributors cc ON ch.author = cc.login
+      WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ch.commit_date >= $2
         AND ch.is_merge = FALSE
       GROUP BY week_start
@@ -442,10 +456,11 @@ export class DevProfileDataService {
 
   /**
    * Get tests modified per week for the line chart.
+   * Filters by full_name with fallback to login for NULL full_name.
    * Filters by is_test_file = TRUE.
    * Ticket: GITX-156
    *
-   * @param filters - Developer and timeframe filters
+   * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Array of weekly test data points
    */
   async getTestsPerWeek(filters: DevProfileFilters): Promise<DevProfileTestsWeekly[]> {
@@ -463,7 +478,8 @@ export class DevProfileDataService {
         COALESCE(SUM(cf.line_inserts), 0)::int AS test_lines_added
       FROM commit_files cf
       JOIN commit_history ch ON cf.sha = ch.sha
-      WHERE ch.author = $1
+      JOIN commit_contributors cc ON ch.author = cc.login
+      WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ch.commit_date >= $2
         AND ch.is_merge = FALSE
         AND cf.is_test_file = TRUE
@@ -488,10 +504,11 @@ export class DevProfileDataService {
 
   /**
    * Get commit hygiene score from vw_commit_hygiene view.
+   * Filters by full_name with fallback to login for NULL full_name.
    * Calculates weighted score: (jira_ref * 0.4) + (meaningful_msg * 0.4) + (non_merge * 0.2)
    * Ticket: GITX-156
    *
-   * @param filters - Developer and timeframe filters
+   * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Hygiene score breakdown
    */
   async getHygieneScore(filters: DevProfileFilters): Promise<DevProfileHygieneScore> {
@@ -507,19 +524,20 @@ export class DevProfileDataService {
       WITH hygiene_stats AS (
         SELECT
           COUNT(*)::int AS total_commits,
-          ROUND(AVG(hygiene_score)::numeric, 2) AS avg_hygiene_score,
+          ROUND(AVG(vch.hygiene_score)::numeric, 2) AS avg_hygiene_score,
           -- Jira reference percentage: commits with linked ticket
-          ROUND(100.0 * COUNT(*) FILTER (WHERE jira_ticket_id IS NOT NULL OR linear_ticket_id IS NOT NULL) / NULLIF(COUNT(*), 0), 1) AS jira_ref_pct,
+          ROUND(100.0 * COUNT(*) FILTER (WHERE vch.jira_ticket_id IS NOT NULL OR vch.linear_ticket_id IS NOT NULL) / NULLIF(COUNT(*), 0), 1) AS jira_ref_pct,
           -- Meaningful message percentage: commits with conventional prefix OR good length
-          ROUND(100.0 * COUNT(*) FILTER (WHERE has_conventional_prefix = TRUE OR subject_length BETWEEN 20 AND 72) / NULLIF(COUNT(*), 0), 1) AS meaningful_msg_pct,
+          ROUND(100.0 * COUNT(*) FILTER (WHERE vch.has_conventional_prefix = TRUE OR vch.subject_length BETWEEN 20 AND 72) / NULLIF(COUNT(*), 0), 1) AS meaningful_msg_pct,
           -- Quality tier counts for determining overall tier
-          COUNT(*) FILTER (WHERE quality_tier = 'excellent') AS excellent_count,
-          COUNT(*) FILTER (WHERE quality_tier = 'good') AS good_count,
-          COUNT(*) FILTER (WHERE quality_tier = 'fair') AS fair_count,
-          COUNT(*) FILTER (WHERE quality_tier = 'poor') AS poor_count
-        FROM vw_commit_hygiene
-        WHERE author = $1
-          AND commit_date >= $2
+          COUNT(*) FILTER (WHERE vch.quality_tier = 'excellent') AS excellent_count,
+          COUNT(*) FILTER (WHERE vch.quality_tier = 'good') AS good_count,
+          COUNT(*) FILTER (WHERE vch.quality_tier = 'fair') AS fair_count,
+          COUNT(*) FILTER (WHERE vch.quality_tier = 'poor') AS poor_count
+        FROM vw_commit_hygiene vch
+        JOIN commit_contributors cc ON vch.author = cc.login
+        WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+          AND vch.commit_date >= $2
       )
       SELECT
         total_commits,

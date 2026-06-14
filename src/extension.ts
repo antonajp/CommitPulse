@@ -101,6 +101,13 @@ export function activate(context: vscode.ExtensionContext): void {
   disposables.push(...commandDisposables);
   logger.debug(CLASS_NAME, 'activate', `Registered ${commandDisposables.length} command(s)`);
 
+  // Register gitrx.fixRepositoryNames command (GITX-168)
+  const fixRepositoryNamesDisposable = vscode.commands.registerCommand('gitrx.fixRepositoryNames', async () => {
+    logger?.info(CLASS_NAME, 'fixRepositoryNames', 'Command executed: gitrx.fixRepositoryNames');
+    await executeFixRepositoryNames();
+  });
+  disposables.push(fixRepositoryNamesDisposable);
+
   // Register gitr.toggleSchedule command (IQS-865)
   const toggleScheduleDisposable = vscode.commands.registerCommand('gitr.toggleSchedule', async () => {
     logger?.info(CLASS_NAME, 'toggleSchedule', 'Command executed: gitr.toggleSchedule');
@@ -375,14 +382,16 @@ function initializeContributorTreeView(_context: vscode.ExtensionContext): void 
         return;
       }
 
-      logger?.info(CLASS_NAME, 'showContributorDetail', `Showing details for: ${contributor.login}`);
+      const displayName = contributor.fullName ?? contributor.logins;
+      logger?.info(CLASS_NAME, 'showContributorDetail', `Showing details for: ${displayName}`);
 
       // Format details for the output channel
       const lines = [
         '='.repeat(60),
-        `Contributor: ${contributor.login}`,
+        `Contributor: ${displayName}`,
         '='.repeat(60),
         `Full Name:    ${contributor.fullName ?? 'N/A'}`,
+        `Logins:       ${contributor.logins}`,
         `Vendor:       ${contributor.vendor ?? 'Unknown'}`,
         `Team:         ${contributor.team ?? 'Unassigned'}`,
         `Commits:      ${contributor.commitCount.toLocaleString()}`,
@@ -392,7 +401,7 @@ function initializeContributorTreeView(_context: vscode.ExtensionContext): void 
 
       // Write to the Gitr output channel
       for (const line of lines) {
-        logger?.info('ContributorDetail', contributor.login, line);
+        logger?.info('ContributorDetail', displayName, line);
       }
 
       // Show the output channel so the user can see it
@@ -798,6 +807,140 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
   disposables.push(openDevProfileDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
+}
+
+/**
+ * GITX-168: Execute the Fix Repository Names command.
+ * Detects and corrects repository name mismatches in the database.
+ * Requires user confirmation before making any corrections.
+ */
+async function executeFixRepositoryNames(): Promise<void> {
+  logger?.info(CLASS_NAME, 'executeFixRepositoryNames', 'Starting repository name mismatch detection');
+
+  const secretService = getSecretService();
+  if (!secretService) {
+    logger?.warn(CLASS_NAME, 'executeFixRepositoryNames', 'SecretStorageService not available');
+    void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+    return;
+  }
+
+  const settings = getSettings();
+  if (settings.repositories.length === 0) {
+    void vscode.window.showInformationMessage('Gitr: No repositories configured. Add repositories in settings first.');
+    return;
+  }
+
+  // Import database service
+  const { DatabaseService, buildConfigFromSettings } = await import('./database/database-service.js');
+  const { CommitRepository } = await import('./database/commit-repository.js');
+  const { sanitizeUrlForLogging } = await import('./utils/url-sanitizer.js');
+
+  const password = await secretService.getDatabasePassword();
+  if (!password) {
+    void vscode.window.showWarningMessage('Gitr: Database password not set. Use "Gitr: Set Database Password" command first.');
+    return;
+  }
+
+  const dbService = new DatabaseService();
+  const dbConfig = buildConfigFromSettings(settings.database, password);
+
+  try {
+    // Connect to database
+    await dbService.initialize(dbConfig);
+
+    const commitRepo = new CommitRepository(dbService);
+
+    // Collect all mismatches across repositories
+    type MismatchInfo = {
+      repoName: string;
+      repoUrl: string;
+      mismatches: Array<{ currentName: string; commitCount: number }>;
+    };
+    const allMismatches: MismatchInfo[] = [];
+
+    for (const repo of settings.repositories) {
+      const repoUrl = repo.repoUrl ?? `https://github.com/unknown/${repo.name}`;
+      const sanitizedUrl = sanitizeUrlForLogging(repoUrl);
+      const mismatches = await commitRepo.detectRepositoryNameMismatch(repo.name, sanitizedUrl);
+
+      if (mismatches.length > 0) {
+        allMismatches.push({
+          repoName: repo.name,
+          repoUrl: sanitizedUrl,
+          mismatches,
+        });
+      }
+    }
+
+    if (allMismatches.length === 0) {
+      void vscode.window.showInformationMessage('Gitr: No repository name mismatches found. All repositories are correctly configured.');
+      logger?.info(CLASS_NAME, 'executeFixRepositoryNames', 'No mismatches found');
+      return;
+    }
+
+    // Build confirmation message
+    let totalCommits = 0;
+    const detailLines: string[] = [];
+    for (const info of allMismatches) {
+      for (const mismatch of info.mismatches) {
+        totalCommits += mismatch.commitCount;
+        detailLines.push(`  "${mismatch.currentName}" -> "${info.repoName}" (${mismatch.commitCount} commits)`);
+      }
+    }
+
+    const confirmMessage =
+      `Found ${totalCommits} commits with incorrect repository names:\n\n` +
+      detailLines.join('\n') +
+      '\n\nThis will update the repository field in commit_history. Continue?';
+
+    logger?.info(CLASS_NAME, 'executeFixRepositoryNames', `Found ${totalCommits} commits with mismatched names`);
+
+    // Show confirmation dialog
+    const choice = await vscode.window.showWarningMessage(
+      confirmMessage,
+      { modal: true },
+      'Yes, Fix Names',
+      'Cancel',
+    );
+
+    if (choice !== 'Yes, Fix Names') {
+      logger?.info(CLASS_NAME, 'executeFixRepositoryNames', 'User cancelled repository name fix');
+      return;
+    }
+
+    // Apply corrections
+    let totalUpdated = 0;
+    for (const info of allMismatches) {
+      for (const mismatch of info.mismatches) {
+        const updatedCount = await commitRepo.updateRepositoryName(
+          info.repoName,
+          mismatch.currentName,
+          info.repoUrl,
+        );
+        totalUpdated += updatedCount;
+
+        // Audit trail logging
+        logger?.info(
+          CLASS_NAME,
+          'executeFixRepositoryNames',
+          `AUDIT: Updated ${updatedCount} commits: "${mismatch.currentName}" -> "${info.repoName}" (URL: ${info.repoUrl})`,
+        );
+      }
+    }
+
+    void vscode.window.showInformationMessage(`Gitr: Successfully updated ${totalUpdated} commits with correct repository names.`);
+    logger?.info(CLASS_NAME, 'executeFixRepositoryNames', `Completed: ${totalUpdated} commits updated`);
+
+    // Refresh TreeViews to reflect changes
+    void vscode.commands.executeCommand('gitrx.refreshRepos');
+
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger?.error(CLASS_NAME, 'executeFixRepositoryNames', `Failed to fix repository names: ${message}`);
+    void vscode.window.showErrorMessage(`Gitr: Failed to fix repository names: ${message}`);
+  } finally {
+    await dbService.shutdown();
+  }
 }
 
 /**

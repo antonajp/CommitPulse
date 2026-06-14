@@ -33,11 +33,12 @@ ORDER BY team ASC;
 `;
 
 /**
- * Get distinct contributors (authors) from commit_history for filter dropdown.
+ * Get distinct contributors (by full_name) from commit_history for filter dropdown.
+ * Ticket: GITX-169 - Changed to use cc.login as fallback instead of ch.author
  */
 export const QUERY_COMPLEXITY_TREND_CONTRIBUTORS = `
 SELECT DISTINCT
-  COALESCE(cc.full_name, ch.author) AS contributor
+  COALESCE(cc.full_name, cc.login) AS contributor
 FROM commit_history ch
 LEFT JOIN commit_contributors cc ON ch.author = cc.login
 WHERE ch.is_merge = FALSE
