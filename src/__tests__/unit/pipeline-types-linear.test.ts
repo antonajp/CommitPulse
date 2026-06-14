@@ -53,8 +53,8 @@ describe('Pipeline Types - Linear Steps', () => {
   });
 
   describe('ALL_PIPELINE_STEPS', () => {
-    it('should contain 9 steps total', () => {
-      expect(ALL_PIPELINE_STEPS).toHaveLength(9);
+    it('should contain 10 steps total', () => {
+      expect(ALL_PIPELINE_STEPS).toHaveLength(10);
     });
 
     it('should include all original 6 steps', () => {
@@ -91,9 +91,9 @@ describe('Pipeline Types - Linear Steps', () => {
   });
 
   describe('PIPELINE_STEP_LABELS', () => {
-    it('should have labels for all 9 steps', () => {
+    it('should have labels for all 10 steps', () => {
       const labels = Object.keys(PIPELINE_STEP_LABELS);
-      expect(labels).toHaveLength(9);
+      expect(labels).toHaveLength(10);
     });
 
     it('should have human-readable label for linearIssueLoading', () => {

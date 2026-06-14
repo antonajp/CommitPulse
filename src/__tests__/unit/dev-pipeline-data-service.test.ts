@@ -507,7 +507,7 @@ describe('DevPipelineDataService', () => {
       (mockDb.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         rows: [
           {
-            author: 'testuser',
+            authors: 'testuser', // GITX-169: Changed from author to authors (aggregated logins)
             full_name: 'Test User',
             team: 'Engineering',
             commit_count: 20,
@@ -530,7 +530,7 @@ describe('DevPipelineDataService', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
-        author: 'testuser',
+        authors: 'testuser', // GITX-169: Changed from author to authors (aggregated logins)
         fullName: 'Test User',
         team: 'Engineering',
         commitCount: 20,

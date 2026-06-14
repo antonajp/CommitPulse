@@ -21,6 +21,7 @@ import { PipelineRepository } from '../../database/pipeline-repository.js';
 import { GitAnalysisService } from '../../services/git-analysis-service.js';
 import { DataEnhancerService } from '../../services/data-enhancer-service.js';
 import { TeamAssignmentService } from '../../services/team-assignment-service.js';
+import { FileMetricsDeltaService } from '../../services/file-metrics-delta-service.js';
 import { PipelineService } from '../../services/pipeline-service.js';
 import { SccMetricsService } from '../../services/scc-metrics-service.js';
 import type { RepositoryEntry } from '../../config/settings.js';
@@ -453,6 +454,9 @@ describe('E2E Pipeline Integration Tests', () => {
     const selectedSteps: PipelineStepId[] = ['gitCommitExtraction', 'commitJiraLinking'];
     const pipelineConfig = PipelineService.buildConfig(selectedSteps);
 
+    // GITX-165: Create FileMetricsDeltaService for pipeline
+    const fileMetricsDelta = new FileMetricsDeltaService(commitRepo);
+
     const pipelineService = new PipelineService(
       pipelineRepo,
       gitAnalysisService,
@@ -460,6 +464,7 @@ describe('E2E Pipeline Integration Tests', () => {
       null, // No Jira service
       null, // No Linear service
       dataEnhancer,
+      fileMetricsDelta,
       teamAssignment,
       [repoEntry],
       pipelineConfig,
@@ -592,6 +597,9 @@ describe('E2E Pipeline Integration Tests', () => {
       trackerType: 'jira',
     };
 
+    // GITX-165: Create FileMetricsDeltaService for pipeline
+    const fileMetricsDelta = new FileMetricsDeltaService(commitRepo);
+
     // Run ALL pipeline steps (GitHub, Jira, and Linear services are null)
     const pipelineConfig = PipelineService.buildConfig(); // Default = all steps
     const pipelineService = new PipelineService(
@@ -601,6 +609,7 @@ describe('E2E Pipeline Integration Tests', () => {
       null, // No Jira
       null, // No Linear
       dataEnhancer,
+      fileMetricsDelta,
       teamAssignment,
       [repoEntry],
       pipelineConfig,
@@ -610,7 +619,8 @@ describe('E2E Pipeline Integration Tests', () => {
     const result = await pipelineService.runPipeline();
 
     // Assert: Pipeline reports partial success (GitHub/Jira steps skipped/warned)
-    expect(result.stepResults.length).toBe(9); // All 9 steps attempted (6 original + 3 Linear placeholders)
+    // GITX-165: Now 10 steps with fileMetricsDelta
+    expect(result.stepResults.length).toBe(10); // All 10 steps attempted
 
     // Git extraction should succeed
     const gitStep = result.stepResults.find((s) => s.stepId === 'gitCommitExtraction');

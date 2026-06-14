@@ -28,6 +28,8 @@ import { LinearIncrementalLoader } from './linear-incremental-loader.js';
 import type { LinearIncrementalLoadResult } from './linear-incremental-loader.js';
 import { DataEnhancerService } from './data-enhancer-service.js';
 import { TeamAssignmentService } from './team-assignment-service.js';
+import { FileMetricsDeltaService } from './file-metrics-delta-service.js';
+import type { FileMetricsDeltaResult } from './file-metrics-delta-service.js';
 import type { RepositoryEntry } from '../config/settings.js';
 import type { AnalysisRunResult } from './git-analysis-types.js';
 import type { GitHubSyncResult } from './github-service-types.js';
@@ -103,6 +105,7 @@ export class PipelineService {
   private readonly jiraIncrementalLoader: JiraIncrementalLoader | null;
   private readonly linearIncrementalLoader: LinearIncrementalLoader | null;
   private readonly dataEnhancerService: DataEnhancerService;
+  private readonly fileMetricsDeltaService: FileMetricsDeltaService;
   private readonly teamAssignmentService: TeamAssignmentService;
   private readonly repositories: readonly RepositoryEntry[];
   private readonly config: PipelineConfig;
@@ -114,6 +117,7 @@ export class PipelineService {
     jiraIncrementalLoader: JiraIncrementalLoader | null,
     linearIncrementalLoader: LinearIncrementalLoader | null,
     dataEnhancerService: DataEnhancerService,
+    fileMetricsDeltaService: FileMetricsDeltaService,
     teamAssignmentService: TeamAssignmentService,
     repositories: readonly RepositoryEntry[],
     config: PipelineConfig,
@@ -124,6 +128,7 @@ export class PipelineService {
     this.jiraIncrementalLoader = jiraIncrementalLoader;
     this.linearIncrementalLoader = linearIncrementalLoader;
     this.dataEnhancerService = dataEnhancerService;
+    this.fileMetricsDeltaService = fileMetricsDeltaService;
     this.teamAssignmentService = teamAssignmentService;
     this.repositories = repositories;
     this.config = config;
@@ -162,6 +167,7 @@ export class PipelineService {
     let jiraLoadResult: IncrementalLoadResult | null = null;
     let linearLoadResult: LinearIncrementalLoadResult | null = null;
     let dataEnhancerResult: DataEnhancerResult | null = null;
+    let fileMetricsDeltaResult: FileMetricsDeltaResult | null = null;
     let teamAssignmentResult: TeamAssignmentResult | null = null;
 
     const totalSteps = this.config.steps.length;
@@ -222,6 +228,11 @@ export class PipelineService {
             dataEnhancerResult = this.lastDataEnhancerResult;
           }
           break;
+        case 'fileMetricsDelta':
+          if (stepResult.status === 'SUCCESS') {
+            fileMetricsDeltaResult = this.lastFileMetricsDeltaResult;
+          }
+          break;
         case 'teamAssignment':
           if (stepResult.status === 'SUCCESS') {
             teamAssignmentResult = this.lastTeamAssignmentResult;
@@ -259,6 +270,7 @@ export class PipelineService {
       jiraLoadResult,
       linearLoadResult,
       dataEnhancerResult,
+      fileMetricsDeltaResult,
       teamAssignmentResult,
     };
   }
@@ -303,6 +315,7 @@ export class PipelineService {
   private lastJiraLoadResult: IncrementalLoadResult | null = null;
   private lastLinearLoadResult: LinearIncrementalLoadResult | null = null;
   private lastDataEnhancerResult: DataEnhancerResult | null = null;
+  private lastFileMetricsDeltaResult: FileMetricsDeltaResult | null = null;
   private lastTeamAssignmentResult: TeamAssignmentResult | null = null;
 
   /** Execute a single pipeline step with error isolation. Errors do NOT propagate. */
@@ -384,6 +397,8 @@ export class PipelineService {
         return this.runLinearChangelogUpdate();
       case 'commitLinearLinking':
         return this.runCommitLinearLinking();
+      case 'fileMetricsDelta':
+        return this.runFileMetricsDelta();
       case 'teamAssignment':
         return this.runTeamAssignment();
       default: {
@@ -620,6 +635,24 @@ export class PipelineService {
     this.logger.info(CLASS_NAME, 'runCommitLinearLinking', `Commit-Linear linking complete: ${result.linksInserted} links, ${result.refsUpdated} refs updated`);
 
     return `${result.linksInserted} links inserted, ${result.refsUpdated} refs updated from ${result.authorsProcessed} authors`;
+  }
+
+  /**
+   * Step 9: File metrics delta calculation.
+   * Calculates complexity, comments, and code line deltas for commit files.
+   * This populates the complexity_change, comments_change, and code_change columns
+   * in the commit_files table, which are used by the Code Complexity Delta chart.
+   * Ticket: GITX-165.
+   */
+  private async runFileMetricsDelta(): Promise<string> {
+    this.logger.info(CLASS_NAME, 'runFileMetricsDelta', 'Calculating file metrics deltas for commit files');
+
+    const result: FileMetricsDeltaResult = await this.fileMetricsDeltaService.calculateFileMetricsDeltas();
+    this.lastFileMetricsDeltaResult = result;
+
+    this.logger.info(CLASS_NAME, 'runFileMetricsDelta', `File metrics delta calculation complete: ${result.filesProcessed} files, ${result.deltasCalculated} deltas in ${result.durationMs}ms`);
+
+    return `${result.filesProcessed} files processed, ${result.deltasCalculated} deltas calculated (${result.durationMs}ms)`;
   }
 
   /** Build a SKIPPED step result. */

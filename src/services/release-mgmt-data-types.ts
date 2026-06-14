@@ -33,11 +33,10 @@ export type ReleaseEnvironment = 'Production' | 'Staging' | 'Dev';
 /**
  * A single release contribution data point for one team member.
  * Aggregates merge commits and release tags by environment.
+ * Ticket: GITX-169 - Changed to use full_name as primary identifier (removed author)
  */
 export interface ReleaseContributionPoint {
-  /** Author login/username */
-  readonly author: string;
-  /** Full display name (may be null if not in commit_contributors) */
+  /** Full name (primary identifier, may be null for contributors without name) */
   readonly fullName: string | null;
   /** Team name (may be null if not assigned) */
   readonly team: string | null;
@@ -52,13 +51,12 @@ export interface ReleaseContributionPoint {
 }
 
 /**
- * Aggregated release contribution by author (summed across environments).
- * Used for the grouped bar chart where each author has Production and Staging bars.
+ * Aggregated release contribution by contributor (summed across environments).
+ * Used for the grouped bar chart where each contributor has Production and Staging bars.
+ * Ticket: GITX-169 - Changed to use full_name as primary identifier (removed author)
  */
 export interface ReleaseContributionSummary {
-  /** Author login/username */
-  readonly author: string;
-  /** Full display name (may be null) */
+  /** Full name (primary identifier, may be null for contributors without name) */
   readonly fullName: string | null;
   /** Team name (may be null) */
   readonly team: string | null;

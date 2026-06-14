@@ -249,6 +249,21 @@ export class GitAnalysisService {
     };
     this.logger.debug(CLASS_NAME, 'analyzeRepository', `Repo URL: ${sanitizedRepoUrl}`);
 
+    // GITX-168: Detect repository name mismatches before extraction
+    // This catches the common mistake of copy/pasting repo config and forgetting to update the name
+    const mismatches = await this.commitRepo.detectRepositoryNameMismatch(repoName, sanitizedRepoUrl);
+    if (mismatches.length > 0) {
+      const totalAffected = mismatches.reduce((sum, m) => sum + m.commitCount, 0);
+      this.logger.warn(
+        CLASS_NAME,
+        'analyzeRepository',
+        `GITX-168: Repository name mismatch detected for ${repoName}. ` +
+        `${totalAffected} commits exist under different name(s): ` +
+        mismatches.map((m) => `"${m.currentName}" (${m.commitCount})`).join(', ') +
+        '. Run "Gitr: Fix Repository Names" command to correct.',
+      );
+    }
+
     // GITX-1: Auto-incremental extraction using per-repo watermark
     // GITX-123: Unless user explicitly requests full extraction via forceFullExtraction flag
     // When no explicit sinceDate is configured and forceFullExtraction is false/undefined,

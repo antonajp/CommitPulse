@@ -24,18 +24,20 @@ export const FILE_AUTHOR_LOC_DRILLDOWN_LIMIT = 100;
  * Query to get author contributions aggregated by file.
  * Uses ANY($1) for file path array and date range filtering.
  *
+ * Ticket: GITX-169 - Changed to group by cc.full_name instead of ch.author
+ *
  * Parameters:
  *   $1 - filenames (text[]) - Array of file paths to analyze
  *   $2 - startDate (date) - Start of date range (inclusive)
  *   $3 - endDate (date) - End of date range (inclusive)
  *
- * Returns aggregated LOC metrics per author per file.
+ * Returns aggregated LOC metrics per full_name per file.
  */
 export const QUERY_FILE_AUTHOR_LOC = `
 SELECT
   cf.filename,
-  ch.author,
-  COALESCE(cc.full_name, ch.author) AS author_name,
+  STRING_AGG(DISTINCT ch.author, ',') AS author,
+  COALESCE(cc.full_name, cc.login) AS author_name,
   cc.team,
   SUM(cf.line_inserts)::BIGINT AS lines_added,
   SUM(cf.line_deletes)::BIGINT AS lines_deleted,
@@ -52,13 +54,15 @@ WHERE cf.filename = ANY($1)
   AND ch.commit_date <= $3
   AND ch.is_merge = FALSE
   AND cf.line_inserts IS NOT NULL
-GROUP BY cf.filename, ch.author, cc.full_name, cc.team
+GROUP BY cf.filename, cc.full_name, cc.login, cc.team
 ORDER BY cf.filename, total_churn DESC
 LIMIT ${FILE_AUTHOR_LOC_MAX_RESULT_ROWS}
 `;
 
 /**
  * Query to get author contributions with repository filter.
+ *
+ * Ticket: GITX-169 - Changed to group by cc.full_name instead of ch.author
  *
  * Parameters:
  *   $1 - filenames (text[]) - Array of file paths to analyze
@@ -69,8 +73,8 @@ LIMIT ${FILE_AUTHOR_LOC_MAX_RESULT_ROWS}
 export const QUERY_FILE_AUTHOR_LOC_BY_REPO = `
 SELECT
   cf.filename,
-  ch.author,
-  COALESCE(cc.full_name, ch.author) AS author_name,
+  STRING_AGG(DISTINCT ch.author, ',') AS author,
+  COALESCE(cc.full_name, cc.login) AS author_name,
   cc.team,
   SUM(cf.line_inserts)::BIGINT AS lines_added,
   SUM(cf.line_deletes)::BIGINT AS lines_deleted,
@@ -88,7 +92,7 @@ WHERE cf.filename = ANY($1)
   AND ch.repository = $4
   AND ch.is_merge = FALSE
   AND cf.line_inserts IS NOT NULL
-GROUP BY cf.filename, ch.author, cc.full_name, cc.team
+GROUP BY cf.filename, cc.full_name, cc.login, cc.team
 ORDER BY cf.filename, total_churn DESC
 LIMIT ${FILE_AUTHOR_LOC_MAX_RESULT_ROWS}
 `;

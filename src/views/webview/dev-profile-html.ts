@@ -4,7 +4,7 @@
  * - Content Security Policy (nonce-based, no inline scripts)
  * - VS Code theme integration via CSS variables
  * - D3.js v7 loaded from local bundled resource
- * - Developer selector dropdown
+ * - Developer selector dropdown (displays full_name with login, filters by full_name - GITX-169)
  * - Timeframe selector
  * - Summary cards
  * - LOC per week stacked bar chart
@@ -17,7 +17,7 @@
  * - Loading and error states
  * - Keyboard accessibility
  *
- * Ticket: GITX-155, GITX-156
+ * Ticket: GITX-155, GITX-156, GITX-169
  */
 
 import * as vscode from 'vscode';
@@ -83,7 +83,8 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
             <option value="60">Last 60 days</option>
             <option value="90" selected>Last 90 days</option>
             <option value="180">Last 6 months</option>
-            <option value="365">Last year</option>
+            <option value="365">Last 1 year</option>
+            <option value="730">Last 2 years</option>
           </select>
         </div>
       </div>
@@ -374,9 +375,13 @@ ${generateGitx156HtmlSections()}
         select.innerHTML = '<option value="">Select a developer</option>';
         developers.forEach(function(dev) {
           var opt = document.createElement('option');
-          opt.value = dev.login;
-          opt.textContent = dev.fullName ? dev.login + ' (' + dev.fullName + ')' : dev.login;
-          opt.textContent += ' - ' + formatNumber(dev.commitCount) + ' commits';
+          // Use fullName as value, fallback to login
+          opt.value = dev.fullName || dev.login;
+          // Display format: "Full Name (@login)" or just "login"
+          var displayName = dev.fullName
+            ? escapeHtml(dev.fullName) + ' (@' + escapeHtml(dev.login) + ')'
+            : escapeHtml(dev.login);
+          opt.textContent = displayName + ' - ' + formatNumber(dev.commitCount) + ' commits';
           select.appendChild(opt);
         });
         // If currentDeveloper is set (from initial state), select it
@@ -393,10 +398,13 @@ ${generateGitx156HtmlSections()}
         document.getElementById('summaryReposValue').textContent = formatNumber(summary.repositoriesWorkedOn);
 
         if (summary.totalCommits === 0) {
-          var dev = cachedDevelopers.find(function(d) { return d.login === currentDeveloper; });
+          // Find developer by either fullName or login
+          var dev = cachedDevelopers.find(function(d) {
+            return (d.fullName && d.fullName === currentDeveloper) || d.login === currentDeveloper;
+          });
           var devName = dev ? (dev.fullName || dev.login) : currentDeveloper;
           showEmptyState(
-            'No commits found for ' + devName,
+            'No commits found for ' + escapeHtml(devName),
             'Try expanding the date range or selecting a different developer.'
           );
         }
@@ -429,8 +437,14 @@ ${generateVelocityChartScript()}
               // Developer specified or changed: update dropdown and load data
               var select = document.getElementById('developerSelect');
               if (select && select.options.length > 1) {
-                // Dropdown already populated, select developer and load data
-                select.value = currentDeveloper;
+                // Dropdown already populated, convert login to fullName if needed
+                var dev = cachedDevelopers.find(function(d) {
+                  return d.login === currentDeveloper || (d.fullName && d.fullName === currentDeveloper);
+                });
+                if (dev) {
+                  currentDeveloper = dev.fullName || dev.login;
+                  select.value = currentDeveloper;
+                }
                 requestAllData();
               }
               // If dropdown not yet populated, developersData handler will load data
@@ -439,7 +453,14 @@ ${generateVelocityChartScript()}
           case 'developersData':
             populateDevelopers(msg.data);
             if (currentDeveloper) {
-              document.getElementById('developerSelect').value = currentDeveloper;
+              // Convert login to fullName if needed
+              var dev = cachedDevelopers.find(function(d) {
+                return d.login === currentDeveloper || (d.fullName && d.fullName === currentDeveloper);
+              });
+              if (dev) {
+                currentDeveloper = dev.fullName || dev.login;
+                document.getElementById('developerSelect').value = currentDeveloper;
+              }
               requestAllData();
             }
             break;

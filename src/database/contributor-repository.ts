@@ -97,29 +97,45 @@ const SQL_UPDATE_CONTRIBUTOR_REPO = `
 /**
  * Query to get contributor summaries for the Contributors/Teams TreeView.
  * Joins commit_contributors with commit_history (for commit counts) and
- * max_num_count_per_login (for primary team assignment).
+ * max_num_count_per_full_name (for primary team assignment).
  *
- * Returns one row per contributor with login, full_name, vendor,
- * primary team, repo list, and commit count.
+ * Returns one row per contributor (grouped by full_name) with aggregated logins,
+ * vendor, primary team, repo list, and commit count.
  *
- * Ticket: IQS-867
+ * Ticket: GITX-169 - Changed to group by full_name instead of login
+ * Note: When full_name is NULL, all logins with NULL full_name are grouped together,
+ * and the aggregated logins string is used as the display name.
  */
 const SQL_GET_CONTRIBUTOR_SUMMARIES = `
+  WITH contributor_groups AS (
+    SELECT
+      cc.full_name,
+      STRING_AGG(DISTINCT cc.login, ',' ORDER BY cc.login) AS logins,
+      MAX(cc.vendor) AS vendor,
+      MAX(cc.team) AS fallback_team,
+      STRING_AGG(DISTINCT cc.repo, ',') AS repo_list
+    FROM commit_contributors cc
+    GROUP BY cc.full_name
+  ),
+  commit_counts AS (
+    SELECT
+      cc.full_name,
+      COUNT(DISTINCT ch.sha) AS commit_count
+    FROM commit_history ch
+    INNER JOIN commit_contributors cc ON ch.author = cc.login
+    GROUP BY cc.full_name
+  )
   SELECT
-    cc.login,
-    cc.full_name,
-    cc.vendor,
-    COALESCE(m.team, cc.team) AS team,
-    cc.repo AS repo_list,
-    COALESCE(ch_counts.commit_count, 0)::int AS commit_count
-  FROM commit_contributors cc
-  LEFT JOIN max_num_count_per_login m ON m.login = cc.login
-  LEFT JOIN (
-    SELECT author, COUNT(DISTINCT sha) AS commit_count
-    FROM commit_history
-    GROUP BY author
-  ) ch_counts ON ch_counts.author = cc.login
-  ORDER BY COALESCE(m.team, cc.team) NULLS LAST, cc.login
+    COALESCE(cg.full_name, cg.logins) AS full_name,
+    cg.logins,
+    cg.vendor,
+    COALESCE(m.team, cg.fallback_team) AS team,
+    cg.repo_list,
+    COALESCE(cc.commit_count, 0)::int AS commit_count
+  FROM contributor_groups cg
+  LEFT JOIN max_num_count_per_full_name m ON m.full_name = cg.full_name
+  LEFT JOIN commit_counts cc ON cc.full_name IS NOT DISTINCT FROM cg.full_name
+  ORDER BY COALESCE(m.team, cg.fallback_team) NULLS LAST, COALESCE(cg.full_name, cg.logins)
 `;
 
 // ============================================================================
@@ -421,21 +437,21 @@ export class ContributorRepository {
   /**
    * Get contributor summaries for the Contributors/Teams TreeView.
    * Returns all contributors with their primary team, commit count, vendor,
-   * and repo list. Ordered by team then login for grouped display.
+   * and repo list. Ordered by team then full_name for grouped display.
    *
-   * Joins commit_contributors + max_num_count_per_login (primary team) +
+   * Joins commit_contributors + max_num_count_per_full_name (primary team) +
    * commit_history (commit count aggregation).
    *
-   * Ticket: IQS-867
+   * Ticket: GITX-169 - Changed to group by full_name instead of login
    *
-   * @returns Array of ContributorSummaryRow, ordered by team then login
+   * @returns Array of ContributorSummaryRow, ordered by team then full_name
    */
   async getContributorSummaries(): Promise<ContributorSummaryRow[]> {
     this.logger.debug(CLASS_NAME, 'getContributorSummaries', 'Querying contributor summaries for TreeView');
 
     const result: DatabaseQueryResult<{
-      login: string;
       full_name: string | null;
+      logins: string;
       vendor: string | null;
       team: string | null;
       repo_list: string | null;
@@ -443,8 +459,8 @@ export class ContributorRepository {
     }> = await this.db.query(SQL_GET_CONTRIBUTOR_SUMMARIES);
 
     const summaries: ContributorSummaryRow[] = result.rows.map((row) => ({
-      login: row.login,
       fullName: row.full_name,
+      logins: row.logins,
       vendor: row.vendor,
       team: row.team,
       repoList: row.repo_list,

@@ -8,10 +8,11 @@
  * Query to fetch sprint velocity vs LOC data for a developer.
  * Correlates story points from Linear/Jira with lines of code committed.
  * Uses FULL OUTER JOIN to capture weeks with only commits or only issues.
+ * Filters by full_name with fallback to login for NULL full_name.
  * Parameters:
- *   $1 - developer login (TEXT)
+ *   $1 - developer full_name (TEXT)
  *   $2 - start date (DATE)
- * Ticket: GITX-157
+ * Ticket: GITX-157, GITX-169
  */
 export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
   WITH dev_commits AS (
@@ -21,7 +22,8 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
       COUNT(DISTINCT ch.sha)::int AS commit_count
     FROM commit_history ch
     LEFT JOIN commit_files cf ON cf.sha = ch.sha
-    WHERE ch.author = $1
+    JOIN commit_contributors cc ON ch.author = cc.login
+    WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND ch.commit_date >= $2
       AND ch.is_merge = FALSE
     GROUP BY week_start
@@ -35,7 +37,7 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
     JOIN commit_contributors cc ON (
       ld.assignee = cc.email OR ld.assignee = cc.login OR ld.assignee = cc.full_name
     )
-    WHERE cc.login = $1
+    WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND ld.completed_date >= $2
       AND ld.state IN ('Done', 'Completed')
     GROUP BY week_start
@@ -49,7 +51,7 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
     JOIN commit_contributors cc ON (
       jd.assignee = cc.email OR jd.assignee = cc.login OR jd.assignee = cc.full_name
     )
-    WHERE cc.login = $1
+    WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND jd.status_change_date >= $2
       AND jd.status IN ('Done', 'Closed', 'Resolved')
     GROUP BY week_start
@@ -82,9 +84,10 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
 /**
  * Query to check if a developer has any velocity data.
  * Returns true if the developer has any Linear/Jira issues assigned.
+ * Filters by full_name with fallback to login for NULL full_name.
  * Parameters:
- *   $1 - developer login (TEXT)
- * Ticket: GITX-157
+ *   $1 - developer full_name (TEXT)
+ * Ticket: GITX-157, GITX-169
  */
 export const QUERY_DEV_PROFILE_HAS_VELOCITY_DATA = `
   SELECT EXISTS (
@@ -92,12 +95,14 @@ export const QUERY_DEV_PROFILE_HAS_VELOCITY_DATA = `
     JOIN commit_contributors cc ON (
       ld.assignee = cc.email OR ld.assignee = cc.login OR ld.assignee = cc.full_name
     )
-    WHERE cc.login = $1 AND ld.state IN ('Done', 'Completed')
+    WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+      AND ld.state IN ('Done', 'Completed')
     UNION
     SELECT 1 FROM jira_detail jd
     JOIN commit_contributors cc ON (
       jd.assignee = cc.email OR jd.assignee = cc.login OR jd.assignee = cc.full_name
     )
-    WHERE cc.login = $1 AND jd.status IN ('Done', 'Closed', 'Resolved')
+    WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+      AND jd.status IN ('Done', 'Closed', 'Resolved')
   ) AS has_data
 `;

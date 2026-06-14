@@ -90,10 +90,10 @@ describe('ReleaseManagementDataService', () => {
     });
 
     it('should return contributions mapped to camelCase', async () => {
+      // GITX-169: Database now returns full_name as primary, removed author field
       vi.mocked(mockDb.query).mockResolvedValueOnce({
         rows: [
           {
-            author: 'alice',
             full_name: 'Alice Smith',
             team: 'Platform',
             repository: 'frontend',
@@ -102,7 +102,6 @@ describe('ReleaseManagementDataService', () => {
             tag_count: 2,
           },
           {
-            author: 'bob',
             full_name: 'Bob Jones',
             team: 'Backend',
             repository: 'api',
@@ -117,8 +116,8 @@ describe('ReleaseManagementDataService', () => {
       const result = await service.getReleaseContributions();
 
       expect(result).toHaveLength(2);
+      // GITX-169: author field removed, fullName is primary identifier
       expect(result[0]).toEqual({
-        author: 'alice',
         fullName: 'Alice Smith',
         team: 'Platform',
         repository: 'frontend',
@@ -127,7 +126,6 @@ describe('ReleaseManagementDataService', () => {
         tagCount: 2,
       });
       expect(result[1]).toEqual({
-        author: 'bob',
         fullName: 'Bob Jones',
         team: 'Backend',
         repository: 'api',
@@ -298,12 +296,12 @@ describe('ReleaseManagementDataService', () => {
         rowCount: 1,
       });
 
-      // Contributions query
+      // Contributions query - GITX-169: removed author field, using full_name as primary
       vi.mocked(mockDb.query).mockResolvedValueOnce({
         rows: [
-          { author: 'alice', full_name: 'Alice Smith', team: 'Platform', repository: 'app', environment: 'Production', merge_count: 5, tag_count: 2 },
-          { author: 'alice', full_name: 'Alice Smith', team: 'Platform', repository: 'app', environment: 'Staging', merge_count: 8, tag_count: 0 },
-          { author: 'bob', full_name: 'Bob Jones', team: 'Backend', repository: 'api', environment: 'Production', merge_count: 3, tag_count: 1 },
+          { full_name: 'Alice Smith', team: 'Platform', repository: 'app', environment: 'Production', merge_count: 5, tag_count: 2 },
+          { full_name: 'Alice Smith', team: 'Platform', repository: 'app', environment: 'Staging', merge_count: 8, tag_count: 0 },
+          { full_name: 'Bob Jones', team: 'Backend', repository: 'api', environment: 'Production', merge_count: 3, tag_count: 1 },
         ],
         rowCount: 3,
       });
@@ -323,16 +321,16 @@ describe('ReleaseManagementDataService', () => {
       expect(result.hasData).toBe(true);
       expect(result.summaries).toHaveLength(2);
 
-      // Alice should have aggregated counts
-      const alice = result.summaries.find(s => s.author === 'alice');
+      // Alice should have aggregated counts - GITX-169: use fullName instead of author
+      const alice = result.summaries.find(s => s.fullName === 'Alice Smith');
       expect(alice).toBeDefined();
       expect(alice?.productionMerges).toBe(5);
       expect(alice?.stagingMerges).toBe(8);
       expect(alice?.totalTags).toBe(2);
       expect(alice?.totalActivity).toBe(15); // 5 + 8 + 2
 
-      // Bob should have his counts
-      const bob = result.summaries.find(s => s.author === 'bob');
+      // Bob should have his counts - GITX-169: use fullName instead of author
+      const bob = result.summaries.find(s => s.fullName === 'Bob Jones');
       expect(bob).toBeDefined();
       expect(bob?.productionMerges).toBe(3);
       expect(bob?.stagingMerges).toBe(0);
@@ -347,11 +345,11 @@ describe('ReleaseManagementDataService', () => {
         rowCount: 1,
       });
 
-      // Contributions query - Alice has more activity
+      // Contributions query - Alice has more activity - GITX-169: removed author field
       vi.mocked(mockDb.query).mockResolvedValueOnce({
         rows: [
-          { author: 'bob', full_name: 'Bob Jones', team: 'Backend', repository: 'api', environment: 'Production', merge_count: 2, tag_count: 0 },
-          { author: 'alice', full_name: 'Alice Smith', team: 'Platform', repository: 'app', environment: 'Production', merge_count: 10, tag_count: 5 },
+          { full_name: 'Bob Jones', team: 'Backend', repository: 'api', environment: 'Production', merge_count: 2, tag_count: 0 },
+          { full_name: 'Alice Smith', team: 'Platform', repository: 'app', environment: 'Production', merge_count: 10, tag_count: 5 },
         ],
         rowCount: 2,
       });
@@ -364,9 +362,9 @@ describe('ReleaseManagementDataService', () => {
 
       const result = await service.getChartData();
 
-      // Alice should be first (more activity)
-      expect(result.summaries[0]?.author).toBe('alice');
-      expect(result.summaries[1]?.author).toBe('bob');
+      // Alice should be first (more activity) - GITX-169: use fullName instead of author
+      expect(result.summaries[0]?.fullName).toBe('Alice Smith');
+      expect(result.summaries[1]?.fullName).toBe('Bob Jones');
     });
   });
 

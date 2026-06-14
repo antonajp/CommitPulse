@@ -227,6 +227,29 @@ const SQL_UPDATE_COMMIT_FILE_SCC_METRICS = `
 `;
 
 /**
+ * GITX-168: Query to detect repository name mismatches.
+ * Finds commits where the repository name differs from expected but URL matches.
+ * Used for self-healing detection during extraction.
+ */
+const SQL_DETECT_REPOSITORY_NAME_MISMATCH = `
+  SELECT DISTINCT ch.repository AS current_name, COUNT(*)::int AS commit_count
+  FROM commit_history ch
+  WHERE ch.repository != $1 AND ch.repository_url = $2
+  GROUP BY ch.repository
+`;
+
+/**
+ * GITX-168: Query to update repository names in commit_history.
+ * Used for correcting repository name mismatches atomically.
+ * Returns the number of rows updated for audit logging.
+ */
+const SQL_UPDATE_REPOSITORY_NAME = `
+  UPDATE commit_history
+  SET repository = $1
+  WHERE repository = $2 AND repository_url = $3
+`;
+
+/**
  * Query to get unique filenames for tech stack analysis.
  * Filters out dependency directories and limits to a configurable number.
  * Orders by occurrence count to prioritize frequently-changed files.
@@ -858,6 +881,95 @@ export class CommitRepository {
     if (updatedCount < metrics.size) {
       this.logger.warn(CLASS_NAME, 'updateCommitFileSccMetrics', `Expected to update ${metrics.size} files but only updated ${updatedCount} for ${sha.substring(0, 8)}`);
     }
+
+    return updatedCount;
+  }
+
+  /**
+   * GITX-168: Detect repository name mismatches.
+   * Finds commits where the stored repository name differs from the expected name
+   * but the repository_url matches. This happens when users copy/paste repository
+   * configs and forget to update the name field.
+   *
+   * @param expectedName - The expected repository name from current configuration
+   * @param repositoryUrl - The repository URL to match
+   * @returns Array of mismatched entries with current name and commit count
+   */
+  async detectRepositoryNameMismatch(
+    expectedName: string,
+    repositoryUrl: string,
+  ): Promise<Array<{ currentName: string; commitCount: number }>> {
+    this.logger.debug(
+      CLASS_NAME,
+      'detectRepositoryNameMismatch',
+      `Checking for name mismatch: expected="${expectedName}", url="${repositoryUrl}"`,
+    );
+
+    const result: DatabaseQueryResult<{ current_name: string; commit_count: number }> =
+      await this.db.query(SQL_DETECT_REPOSITORY_NAME_MISMATCH, [expectedName, repositoryUrl]);
+
+    const mismatches = result.rows.map((row) => ({
+      currentName: row.current_name,
+      commitCount: row.commit_count,
+    }));
+
+    if (mismatches.length > 0) {
+      this.logger.info(
+        CLASS_NAME,
+        'detectRepositoryNameMismatch',
+        `Found ${mismatches.length} mismatched name(s) for URL ${repositoryUrl}: ` +
+        mismatches.map((m) => `"${m.currentName}" (${m.commitCount} commits)`).join(', '),
+      );
+    } else {
+      this.logger.debug(
+        CLASS_NAME,
+        'detectRepositoryNameMismatch',
+        `No name mismatches found for ${expectedName}`,
+      );
+    }
+
+    return mismatches;
+  }
+
+  /**
+   * GITX-168: Update repository name for commits matching the old name and URL.
+   * Uses an atomic transaction to ensure all-or-nothing update.
+   * Returns the number of commits updated for audit logging.
+   *
+   * Security: Uses parameterized queries ($1, $2, $3) - no SQL injection risk.
+   *
+   * @param newName - The correct repository name to set
+   * @param oldName - The incorrect repository name to replace
+   * @param repositoryUrl - The repository URL to match (prevents cross-repo updates)
+   * @returns Number of commits updated
+   */
+  async updateRepositoryName(
+    newName: string,
+    oldName: string,
+    repositoryUrl: string,
+  ): Promise<number> {
+    this.logger.info(
+      CLASS_NAME,
+      'updateRepositoryName',
+      `Updating repository name: "${oldName}" -> "${newName}" for URL ${repositoryUrl}`,
+    );
+
+    let updatedCount = 0;
+
+    await this.db.transaction(async (client: PoolClient) => {
+      const result = await client.query(SQL_UPDATE_REPOSITORY_NAME, [
+        newName,
+        oldName,
+        repositoryUrl,
+      ]);
+      updatedCount = result.rowCount ?? 0;
+
+      this.logger.info(
+        CLASS_NAME,
+        'updateRepositoryName',
+        `Updated ${updatedCount} commits from "${oldName}" to "${newName}"`,
+      );
+    });
 
     return updatedCount;
   }

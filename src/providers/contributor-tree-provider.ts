@@ -266,12 +266,17 @@ export class ContributorTreeProvider
 
   /**
    * Build root nodes in flat mode: one collapsible node per contributor.
-   * Contributors are sorted alphabetically by login.
+   * Contributors are sorted alphabetically by fullName (with fallback to logins).
+   * GITX-169: Sort by fullName instead of login.
    */
   private getFlatRootNodes(): ContributorTreeItem[] {
     this.logger.debug(CLASS_NAME, 'getFlatRootNodes', 'Building flat root nodes');
 
-    const sorted = [...this.contributorCache].sort((a, b) => a.login.localeCompare(b.login));
+    const sorted = [...this.contributorCache].sort((a, b) => {
+      const nameA = (a.fullName ?? a.logins).toLowerCase();
+      const nameB = (b.fullName ?? b.logins).toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
     const rootNodes: ContributorTreeItem[] = [];
 
     for (const contributor of sorted) {
@@ -288,7 +293,8 @@ export class ContributorTreeProvider
 
   /**
    * Build child nodes for a team: one collapsible node per contributor in that team.
-   * Contributors are sorted by commit count descending, then by login.
+   * Contributors are sorted by commit count descending, then by fullName.
+   * GITX-169: Sort by fullName instead of login.
    */
   private getTeamChildNodes(teamName: string): ContributorTreeItem[] {
     const targetTeam = teamName === UNASSIGNED_TEAM_LABEL ? null : teamName;
@@ -297,11 +303,13 @@ export class ContributorTreeProvider
         targetTeam === null ? c.team === null : c.team === targetTeam,
       )
       .sort((a, b) => {
-        // Sort by commit count desc, then login asc
+        // Sort by commit count desc, then fullName asc
         if (b.commitCount !== a.commitCount) {
           return b.commitCount - a.commitCount;
         }
-        return a.login.localeCompare(b.login);
+        const nameA = (a.fullName ?? a.logins).toLowerCase();
+        const nameB = (b.fullName ?? b.logins).toLowerCase();
+        return nameA.localeCompare(nameB);
       });
 
     this.logger.debug(
@@ -314,19 +322,23 @@ export class ContributorTreeProvider
   }
 
   /**
-   * Build detail leaf nodes for a contributor: name, vendor, commits, repos.
+   * Build detail leaf nodes for a contributor: name, logins, vendor, commits, repos.
+   * GITX-169: Updated to show all associated logins and use fullName as identifier.
    */
-  private getContributorDetailNodes(login: string): ContributorTreeItem[] {
-    const contributor = this.contributorCache.find((c) => c.login === login);
+  private getContributorDetailNodes(contributorKey: string): ContributorTreeItem[] {
+    // Find by fullName or logins (since contributorKey could be either)
+    const contributor = this.contributorCache.find(
+      (c) => c.fullName === contributorKey || c.logins === contributorKey,
+    );
     if (!contributor) {
-      this.logger.warn(CLASS_NAME, 'getContributorDetailNodes', `Contributor not found: ${login}`);
+      this.logger.warn(CLASS_NAME, 'getContributorDetailNodes', `Contributor not found: ${contributorKey}`);
       return [];
     }
 
     this.logger.debug(
       CLASS_NAME,
       'getContributorDetailNodes',
-      `Building detail nodes for: ${login}`,
+      `Building detail nodes for: ${contributorKey}`,
     );
 
     const details: ContributorTreeItem[] = [];
@@ -339,13 +351,31 @@ export class ContributorTreeProvider
           label: 'Name',
           description: contributor.fullName,
           tooltip: `Full Name: ${contributor.fullName}`,
-          contributorLogin: login,
+          contributorLogin: contributorKey,
         },
         vscode.TreeItemCollapsibleState.None,
       );
       nameNode.iconPath = ICONS.name;
       details.push(nameNode);
     }
+
+    // Logins - show all associated logins
+    const logins = contributor.logins
+      .split(',')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    const loginsNode = new ContributorTreeItem(
+      {
+        type: 'detail',
+        label: 'Logins',
+        description: logins.length === 1 ? logins[0]! : `${logins.length} logins`,
+        tooltip: `Logins:\n${logins.map((l) => `  - ${l}`).join('\n')}`,
+        contributorLogin: contributorKey,
+      },
+      vscode.TreeItemCollapsibleState.None,
+    );
+    loginsNode.iconPath = ICONS.name;
+    details.push(loginsNode);
 
     // Vendor
     const vendorLabel = contributor.vendor ?? 'Unknown';
@@ -355,7 +385,7 @@ export class ContributorTreeProvider
         label: 'Vendor',
         description: vendorLabel,
         tooltip: `Vendor: ${vendorLabel}`,
-        contributorLogin: login,
+        contributorLogin: contributorKey,
       },
       vscode.TreeItemCollapsibleState.None,
     );
@@ -369,7 +399,7 @@ export class ContributorTreeProvider
         label: 'Commits',
         description: contributor.commitCount.toLocaleString(),
         tooltip: `Total Commits: ${contributor.commitCount.toLocaleString()}`,
-        contributorLogin: login,
+        contributorLogin: contributorKey,
       },
       vscode.TreeItemCollapsibleState.None,
     );
@@ -388,7 +418,7 @@ export class ContributorTreeProvider
           label: 'Repositories',
           description: repos.length === 1 ? repos[0]! : `${repos.length} repos`,
           tooltip: `Repositories:\n${repos.map((r) => `  - ${r}`).join('\n')}`,
-          contributorLogin: login,
+          contributorLogin: contributorKey,
         },
         vscode.TreeItemCollapsibleState.None,
       );
@@ -405,23 +435,36 @@ export class ContributorTreeProvider
 
   /**
    * Build a contributor tree node with commit count description and icon.
+   * GITX-169: Display as "{fullName} (@{login})" or just login if no fullName.
    */
   private buildContributorNode(contributor: ContributorSummaryRow): ContributorTreeItem {
+    // Get the primary login (first one in the comma-separated list)
+    const primaryLogin = contributor.logins.split(',')[0]?.trim() ?? contributor.logins;
+
+    // Format: "{fullName} (@{login})" or just login if no fullName
     const displayName = contributor.fullName
-      ? `${contributor.login} (${contributor.fullName})`
-      : contributor.login;
+      ? `${contributor.fullName} (@${primaryLogin})`
+      : primaryLogin;
 
-    const vendorTag = contributor.vendor ? ` [${contributor.vendor}]` : '';
-    const description = `${contributor.commitCount.toLocaleString()} commits${vendorTag}`;
+    // Description: "{team} • {commitCount} commits"
+    const teamLabel = contributor.team ?? '(Unassigned)';
+    const description = `${teamLabel} \u2022 ${contributor.commitCount.toLocaleString()} commits`;
 
+    // Tooltip with all details
+    const logins = contributor.logins
+      .split(',')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
     const tooltipParts = [
-      `Login: ${contributor.login}`,
-      contributor.fullName ? `Name: ${contributor.fullName}` : null,
+      contributor.fullName ? contributor.fullName : null,
+      `Logins: ${logins.join(', ')}`,
+      `Team: ${teamLabel}`,
       contributor.vendor ? `Vendor: ${contributor.vendor}` : null,
-      contributor.team ? `Team: ${contributor.team}` : null,
       `Commits: ${contributor.commitCount.toLocaleString()}`,
-      contributor.repoList ? `Repos: ${contributor.repoList}` : null,
     ].filter(Boolean);
+
+    // Use fullName as the key, or logins if fullName is null
+    const contributorKey = contributor.fullName ?? contributor.logins;
 
     const node = new ContributorTreeItem(
       {
@@ -430,7 +473,7 @@ export class ContributorTreeProvider
         description,
         tooltip: tooltipParts.join('\n'),
         teamName: contributor.team ?? undefined,
-        contributorLogin: contributor.login,
+        contributorLogin: contributorKey,
         contributorData: contributor,
       },
       vscode.TreeItemCollapsibleState.Collapsed,
@@ -441,10 +484,11 @@ export class ContributorTreeProvider
     node.iconPath = isCompany ? ICONS.contributorCompany : ICONS.contributor;
 
     // Set command for click to open Developer Profile dashboard (GITX-155)
+    // Use the primary login for the command
     node.command = {
       command: 'gitrx.openDeveloperProfile',
       title: 'Open Developer Profile',
-      arguments: [contributor.login],
+      arguments: [primaryLogin],
     };
 
     return node;

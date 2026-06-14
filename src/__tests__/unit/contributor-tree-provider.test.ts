@@ -93,32 +93,32 @@ describe('ContributorTreeProvider', () => {
   describe('getChildren (grouped mode - with data)', () => {
     const mockContributors: ContributorSummaryRow[] = [
       {
-        login: 'alice',
         fullName: 'Alice Smith',
+        logins: 'alice,alice.smith',
         vendor: 'Company',
         team: 'Engineering',
         repoList: 'repo-a,repo-b',
         commitCount: 150,
       },
       {
-        login: 'bob',
         fullName: 'Bob Jones',
+        logins: 'bob',
         vendor: 'Acme Corp',
         team: 'Engineering',
         repoList: 'repo-a',
         commitCount: 80,
       },
       {
-        login: 'charlie',
         fullName: 'Charlie Brown',
+        logins: 'charlie',
         vendor: 'Company',
         team: 'Data',
         repoList: 'repo-c',
         commitCount: 50,
       },
       {
-        login: 'dave',
         fullName: null,
+        logins: 'dave',
         vendor: null,
         team: null,
         repoList: null,
@@ -191,8 +191,9 @@ describe('ContributorTreeProvider', () => {
 
       // Engineering team has 2 contributors, sorted by commit count desc
       expect(children).toHaveLength(2);
-      expect(children[0]?.nodeData.contributorLogin).toBe('alice'); // 150 commits
-      expect(children[1]?.nodeData.contributorLogin).toBe('bob'); // 80 commits
+      // GITX-169: contributorLogin now contains fullName or logins
+      expect(children[0]?.nodeData.contributorLogin).toMatch(/Alice Smith|alice/); // 150 commits
+      expect(children[1]?.nodeData.contributorLogin).toMatch(/Bob Jones|bob/); // 80 commits
 
       provider.dispose();
     });
@@ -206,10 +207,12 @@ describe('ContributorTreeProvider', () => {
       const children = await provider.getChildren(engNode);
 
       const aliceNode = children[0];
-      expect(aliceNode?.nodeData.label).toContain('alice');
+      // GITX-169: Label should now be "Alice Smith (@alice)" format
       expect(aliceNode?.nodeData.label).toContain('Alice Smith');
       expect(aliceNode?.nodeData.description).toContain('150 commits');
-      expect(aliceNode?.nodeData.description).toContain('Company');
+      expect(aliceNode?.nodeData.description).toContain('Engineering');
+      // Vendor is in tooltip, not description
+      expect(aliceNode?.nodeData.tooltip).toContain('Company');
       expect(aliceNode?.nodeData.type).toBe('contributor');
       expect(aliceNode?.collapsibleState).toBe(TreeItemCollapsibleState.Collapsed);
 
@@ -271,6 +274,7 @@ describe('ContributorTreeProvider', () => {
 
       const children = await provider.getChildren(unassignedNode);
       expect(children).toHaveLength(1);
+      // GITX-169: contributorLogin is now fullName or logins
       expect(children[0]?.nodeData.contributorLogin).toBe('dave');
 
       provider.dispose();
@@ -319,16 +323,16 @@ describe('ContributorTreeProvider', () => {
   describe('getChildren (flat mode)', () => {
     const mockContributors: ContributorSummaryRow[] = [
       {
-        login: 'bob',
         fullName: 'Bob Jones',
+        logins: 'bob',
         vendor: 'Acme Corp',
         team: 'Engineering',
         repoList: 'repo-a',
         commitCount: 80,
       },
       {
-        login: 'alice',
         fullName: 'Alice Smith',
+        logins: 'alice',
         vendor: 'Company',
         team: 'Data',
         repoList: 'repo-b',
@@ -352,10 +356,10 @@ describe('ContributorTreeProvider', () => {
 
       const roots = await provider.getChildren();
 
-      // Flat mode: contributors sorted alphabetically by login
+      // GITX-169: Flat mode now sorts by fullName instead of login
       expect(roots).toHaveLength(2);
-      expect(roots[0]?.nodeData.contributorLogin).toBe('alice');
-      expect(roots[1]?.nodeData.contributorLogin).toBe('bob');
+      expect(roots[0]?.nodeData.label).toContain('Alice Smith'); // A comes before B
+      expect(roots[1]?.nodeData.label).toContain('Bob Jones');
       expect(roots[0]?.nodeData.type).toBe('contributor');
 
       provider.dispose();
@@ -486,6 +490,164 @@ describe('ContributorTreeProvider', () => {
   });
 
   // ==========================================================================
+  // GITX-169: Contributor display format and grouping
+  // ==========================================================================
+
+  describe('GITX-169: Contributor display format', () => {
+    const mockContributorsWithMultipleLogins: ContributorSummaryRow[] = [
+      {
+        fullName: 'Alice Smith',
+        logins: 'alice,alice.smith',
+        vendor: 'Company',
+        team: 'Engineering',
+        repoList: 'repo-a,repo-b',
+        commitCount: 150,
+      },
+      {
+        fullName: null,
+        logins: 'bot-user',
+        vendor: null,
+        team: null,
+        repoList: null,
+        commitCount: 5,
+      },
+    ];
+
+    function injectMockData(provider: ContributorTreeProvider): void {
+      const p = provider as unknown as {
+        contributorCache: ContributorSummaryRow[];
+        dataLoaded: boolean;
+      };
+      p.contributorCache = [...mockContributorsWithMultipleLogins];
+      p.dataLoaded = true;
+    }
+
+    it('should display "Full Name (@login)" when fullName exists', async () => {
+      const provider = new ContributorTreeProvider(mockSecretService);
+      injectMockData(provider);
+
+      const roots = await provider.getChildren();
+      const engNode = roots.find((r) => r.nodeData.label === 'Engineering');
+      expect(engNode).toBeDefined();
+
+      const children = await provider.getChildren(engNode);
+      expect(children).toHaveLength(1);
+
+      const aliceNode = children[0];
+      // Format should be "Alice Smith (@alice)"
+      expect(aliceNode?.nodeData.label).toContain('Alice Smith');
+      expect(aliceNode?.nodeData.label).toMatch(/@alice/);
+
+      provider.dispose();
+    });
+
+    it('should display login only when fullName is NULL', async () => {
+      const provider = new ContributorTreeProvider(mockSecretService);
+      injectMockData(provider);
+
+      const roots = await provider.getChildren();
+      const unassignedNode = roots.find((r) => r.nodeData.label === '(Unassigned)');
+      expect(unassignedNode).toBeDefined();
+
+      const children = await provider.getChildren(unassignedNode);
+      expect(children).toHaveLength(1);
+
+      const botNode = children[0];
+      // When fullName is null, just show login
+      expect(botNode?.nodeData.label).toBe('bot-user');
+      expect(botNode?.nodeData.label).not.toContain('@');
+
+      provider.dispose();
+    });
+
+    it('should show all logins in tooltip', async () => {
+      const provider = new ContributorTreeProvider(mockSecretService);
+      injectMockData(provider);
+
+      const roots = await provider.getChildren();
+      const engNode = roots.find((r) => r.nodeData.label === 'Engineering');
+      const children = await provider.getChildren(engNode);
+
+      const aliceNode = children[0];
+      // Tooltip should include all logins
+      expect(aliceNode?.nodeData.tooltip).toContain('alice');
+      expect(aliceNode?.nodeData.tooltip).toContain('alice.smith');
+
+      provider.dispose();
+    });
+
+    it('should sort by fullName in flat mode', async () => {
+      const provider = new ContributorTreeProvider(mockSecretService);
+      const p = provider as unknown as {
+        contributorCache: ContributorSummaryRow[];
+        dataLoaded: boolean;
+      };
+      p.contributorCache = [
+        {
+          fullName: 'Zebra User',
+          logins: 'zebra',
+          vendor: 'Company',
+          team: 'Engineering',
+          repoList: 'repo-a',
+          commitCount: 100,
+        },
+        {
+          fullName: 'Alice Smith',
+          logins: 'alice',
+          vendor: 'Company',
+          team: 'Engineering',
+          repoList: 'repo-a',
+          commitCount: 150,
+        },
+        {
+          fullName: null,
+          logins: 'aaa-bot',
+          vendor: null,
+          team: null,
+          repoList: null,
+          commitCount: 5,
+        },
+      ];
+      p.dataLoaded = true;
+
+      provider.toggleViewMode(); // Switch to flat
+
+      const roots = await provider.getChildren();
+
+      // Should be sorted: aaa-bot, Alice Smith, Zebra User
+      expect(roots).toHaveLength(3);
+      expect(roots[0]?.nodeData.label).toBe('aaa-bot');
+      expect(roots[1]?.nodeData.label).toContain('Alice Smith');
+      expect(roots[2]?.nodeData.label).toContain('Zebra User');
+
+      provider.dispose();
+    });
+
+    it('should show Logins detail node with all associated logins', async () => {
+      const provider = new ContributorTreeProvider(mockSecretService);
+      injectMockData(provider);
+
+      const roots = await provider.getChildren();
+      const engNode = roots.find((r) => r.nodeData.label === 'Engineering');
+      const children = await provider.getChildren(engNode);
+      const aliceNode = children[0];
+
+      const details = await provider.getChildren(aliceNode);
+
+      // Should include a Logins detail node
+      const loginsDetail = details.find((d) => d.nodeData.label === 'Logins');
+      expect(loginsDetail).toBeDefined();
+      // Description shows count when multiple logins
+      expect(loginsDetail?.nodeData.description).toBe('2 logins');
+      // Tooltip has the full list
+      expect(loginsDetail?.nodeData.tooltip).toContain('alice');
+      expect(loginsDetail?.nodeData.tooltip).toContain('alice.smith');
+
+      provider.dispose();
+    });
+  });
+
+  // ==========================================================================
   // ContributorTreeItem
   // ==========================================================================
 
@@ -535,8 +697,8 @@ describe('ContributorTreeProvider', () => {
 
     it('should carry contributor data in nodeData', () => {
       const mockData: ContributorSummaryRow = {
-        login: 'test-user',
         fullName: 'Test User',
+        logins: 'test-user',
         vendor: 'TestCorp',
         team: 'QA',
         repoList: 'repo-1',

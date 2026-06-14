@@ -59,8 +59,8 @@ describe('DevProfileDataService', () => {
     it('should return mapped developer data sorted by commit count', async () => {
       vi.mocked(mockDb.query).mockResolvedValueOnce({
         rows: [
-          { login: 'john.doe', full_name: 'John Doe', commit_count: 150 },
-          { login: 'jane.smith', full_name: 'Jane Smith', commit_count: 100 },
+          { full_name: 'John Doe', logins: 'john.doe', commit_count: 150 },
+          { full_name: 'Jane Smith', logins: 'jane.smith', commit_count: 100 },
         ],
         rowCount: 2,
       });
@@ -69,13 +69,13 @@ describe('DevProfileDataService', () => {
 
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual({
-        login: 'john.doe',
         fullName: 'John Doe',
+        login: 'john.doe',
         commitCount: 150,
       });
       expect(result[1]).toEqual({
-        login: 'jane.smith',
         fullName: 'Jane Smith',
+        login: 'jane.smith',
         commitCount: 100,
       });
     });
@@ -83,7 +83,7 @@ describe('DevProfileDataService', () => {
     it('should handle developers with null full_name', async () => {
       vi.mocked(mockDb.query).mockResolvedValueOnce({
         rows: [
-          { login: 'bot', full_name: null, commit_count: 50 },
+          { full_name: null, logins: 'bot', commit_count: 50 },
         ],
         rowCount: 1,
       });
@@ -91,6 +91,34 @@ describe('DevProfileDataService', () => {
       const result = await service.getDevelopers();
 
       expect(result[0]?.fullName).toBeNull();
+      expect(result[0]?.login).toBe('bot');
+    });
+
+    it('should group multiple logins by full_name (GITX-169)', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [
+          { full_name: 'Alice Smith', logins: 'alice,alice.smith', commit_count: 200 },
+        ],
+        rowCount: 1,
+      });
+
+      const result = await service.getDevelopers();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.fullName).toBe('Alice Smith');
+      expect(result[0]?.login).toBe('alice'); // First login used for display
+      expect(result[0]?.commitCount).toBe(200);
+    });
+
+    it('should use STRING_AGG for logins in SQL (GITX-169)', async () => {
+      await service.getDevelopers();
+
+      const call = vi.mocked(mockDb.query).mock.calls[0];
+      expect(call).toBeDefined();
+      const sql = call![0] as string;
+
+      expect(sql).toContain('STRING_AGG(DISTINCT cc.login');
+      expect(sql).toContain('GROUP BY cc.full_name');
     });
   });
 
@@ -349,7 +377,7 @@ describe('DevProfileDataService', () => {
 
     describe('timeframe validation', () => {
       it('should accept valid timeframe values', async () => {
-        const validTimeframes = ['30', '60', '90', '180', '365'] as const;
+        const validTimeframes = ['30', '60', '90', '180', '365', '730'] as const;
         for (const timeframe of validTimeframes) {
           vi.mocked(mockDb.query).mockResolvedValueOnce({ rows: [], rowCount: 0 });
           await service.getSummary({
@@ -357,7 +385,7 @@ describe('DevProfileDataService', () => {
             timeframeDays: timeframe,
           });
         }
-        expect(mockDb.query).toHaveBeenCalledTimes(5);
+        expect(mockDb.query).toHaveBeenCalledTimes(6);
       });
 
       it('should reject invalid timeframe value', async () => {

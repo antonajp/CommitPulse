@@ -54,6 +54,7 @@ export interface RequestDevelopers {
 
 /**
  * Request to load summary statistics for a developer.
+ * The developer field should contain full_name (preferred) or login (fallback).
  */
 export interface RequestSummary {
   readonly type: 'requestSummary';
@@ -63,6 +64,7 @@ export interface RequestSummary {
 
 /**
  * Request to load LOC per week data.
+ * The developer field should contain full_name (preferred) or login (fallback).
  */
 export interface RequestLocPerWeek {
   readonly type: 'requestLocPerWeek';
@@ -72,6 +74,7 @@ export interface RequestLocPerWeek {
 
 /**
  * Request to load top complex files.
+ * The developer field should contain full_name (preferred) or login (fallback).
  */
 export interface RequestTopComplexFiles {
   readonly type: 'requestTopComplexFiles';
@@ -81,6 +84,7 @@ export interface RequestTopComplexFiles {
 
 /**
  * Request to load top frequent files.
+ * The developer field should contain full_name (preferred) or login (fallback).
  */
 export interface RequestTopFrequentFiles {
   readonly type: 'requestTopFrequentFiles';
@@ -99,6 +103,7 @@ export interface RequestOpenFile {
 
 /**
  * Request to load all data for a developer.
+ * The developer field should contain full_name (preferred) or login (fallback).
  */
 export interface RequestAllData {
   readonly type: 'requestAllData';
@@ -108,6 +113,7 @@ export interface RequestAllData {
 
 /**
  * Request to load technology stack data.
+ * The developer field should contain full_name (preferred) or login (fallback).
  * Ticket: GITX-156
  */
 export interface RequestTechStack {
@@ -118,6 +124,7 @@ export interface RequestTechStack {
 
 /**
  * Request to load comments per week data.
+ * The developer field should contain full_name (preferred) or login (fallback).
  * Ticket: GITX-156
  */
 export interface RequestCommentsPerWeek {
@@ -128,6 +135,7 @@ export interface RequestCommentsPerWeek {
 
 /**
  * Request to load tests per week data.
+ * The developer field should contain full_name (preferred) or login (fallback).
  * Ticket: GITX-156
  */
 export interface RequestTestsPerWeek {
@@ -138,6 +146,7 @@ export interface RequestTestsPerWeek {
 
 /**
  * Request to load hygiene score data.
+ * The developer field should contain full_name (preferred) or login (fallback).
  * Ticket: GITX-156
  */
 export interface RequestHygieneScore {
@@ -148,6 +157,7 @@ export interface RequestHygieneScore {
 
 /**
  * Request to load velocity vs LOC data.
+ * The developer field should contain full_name (preferred) or login (fallback).
  * Ticket: GITX-157
  */
 export interface RequestVelocityVsLoc {
@@ -158,6 +168,7 @@ export interface RequestVelocityVsLoc {
 
 /**
  * Request to check if velocity data is available.
+ * The developer field should contain full_name (preferred) or login (fallback).
  * Ticket: GITX-157
  */
 export interface RequestHasVelocityData {

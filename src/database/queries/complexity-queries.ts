@@ -62,9 +62,10 @@ top_files AS (
 ),
 contributor_loc AS (
   -- Aggregate LOC contributions per file per contributor
+  -- Ticket: GITX-169 - Changed to group by cc.full_name instead of login
   SELECT
     cf.filename,
-    COALESCE(cc.full_name, ch.author) AS contributor,
+    COALESCE(cc.full_name, cc.login) AS contributor,
     cc.team AS team,
     COALESCE(SUM(cf.line_inserts), 0)::BIGINT AS loc
   FROM commit_files cf
@@ -77,9 +78,10 @@ contributor_loc AS (
 
 /**
  * Suffix for individual contributor grouping (GROUP BY contributor).
+ * Ticket: GITX-169 - Changed to group by cc.full_name instead of COALESCE expression
  */
 export const TOP_COMPLEX_FILES_INDIVIDUAL_SUFFIX = `
-  GROUP BY cf.filename, COALESCE(cc.full_name, ch.author), cc.team
+  GROUP BY cf.filename, cc.full_name, cc.login, cc.team
 )
 SELECT
   tf.filename,

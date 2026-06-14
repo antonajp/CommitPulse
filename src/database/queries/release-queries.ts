@@ -37,7 +37,6 @@ export const RELEASE_DEFAULT_DAYS = 30;
 export const QUERY_RELEASE_CONTRIBUTIONS_BY_ENVIRONMENT = `
   WITH time_filtered_merges AS (
     SELECT
-      author,
       full_name,
       team,
       environment,
@@ -45,11 +44,10 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_ENVIRONMENT = `
       COUNT(*)::INT AS merge_count
     FROM vw_merge_commits_by_environment
     WHERE commit_date >= $1 AND commit_date <= $2
-    GROUP BY author, full_name, team, environment, repository
+    GROUP BY full_name, team, environment, repository
   ),
   time_filtered_tags AS (
     SELECT
-      author,
       full_name,
       team,
       repository,
@@ -57,10 +55,9 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_ENVIRONMENT = `
     FROM vw_release_tags
     WHERE tag_type IN ('Semantic Version', 'Date Release', 'Named Release')
       AND commit_date >= $1 AND commit_date <= $2
-    GROUP BY author, full_name, team, repository
+    GROUP BY full_name, team, repository
   )
   SELECT
-    COALESCE(m.author, t.author) AS author,
     COALESCE(m.full_name, t.full_name) AS full_name,
     COALESCE(m.team, t.team) AS team,
     COALESCE(m.repository, t.repository) AS repository,
@@ -69,7 +66,7 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_ENVIRONMENT = `
     COALESCE(t.tag_count, 0) AS tag_count
   FROM time_filtered_merges m
     FULL OUTER JOIN time_filtered_tags t
-      ON m.author = t.author
+      ON m.full_name = t.full_name
       AND m.repository = t.repository
   ORDER BY COALESCE(m.merge_count, 0) DESC, COALESCE(t.tag_count, 0) DESC
   LIMIT ${RELEASE_MAX_RESULT_ROWS}
@@ -86,7 +83,6 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_ENVIRONMENT = `
 export const QUERY_RELEASE_CONTRIBUTIONS_BY_TEAM = `
   WITH time_filtered_merges AS (
     SELECT
-      author,
       full_name,
       team,
       environment,
@@ -95,11 +91,10 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_TEAM = `
     FROM vw_merge_commits_by_environment
     WHERE commit_date >= $1 AND commit_date <= $2
       AND team = $3
-    GROUP BY author, full_name, team, environment, repository
+    GROUP BY full_name, team, environment, repository
   ),
   time_filtered_tags AS (
     SELECT
-      author,
       full_name,
       team,
       repository,
@@ -108,10 +103,9 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_TEAM = `
     WHERE tag_type IN ('Semantic Version', 'Date Release', 'Named Release')
       AND commit_date >= $1 AND commit_date <= $2
       AND team = $3
-    GROUP BY author, full_name, team, repository
+    GROUP BY full_name, team, repository
   )
   SELECT
-    COALESCE(m.author, t.author) AS author,
     COALESCE(m.full_name, t.full_name) AS full_name,
     COALESCE(m.team, t.team) AS team,
     COALESCE(m.repository, t.repository) AS repository,
@@ -120,7 +114,7 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_TEAM = `
     COALESCE(t.tag_count, 0) AS tag_count
   FROM time_filtered_merges m
     FULL OUTER JOIN time_filtered_tags t
-      ON m.author = t.author
+      ON m.full_name = t.full_name
       AND m.repository = t.repository
   ORDER BY COALESCE(m.merge_count, 0) DESC, COALESCE(t.tag_count, 0) DESC
   LIMIT ${RELEASE_MAX_RESULT_ROWS}
@@ -137,7 +131,6 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_TEAM = `
 export const QUERY_RELEASE_CONTRIBUTIONS_BY_REPOSITORY = `
   WITH time_filtered_merges AS (
     SELECT
-      author,
       full_name,
       team,
       environment,
@@ -146,11 +139,10 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_REPOSITORY = `
     FROM vw_merge_commits_by_environment
     WHERE commit_date >= $1 AND commit_date <= $2
       AND repository = $3
-    GROUP BY author, full_name, team, environment, repository
+    GROUP BY full_name, team, environment, repository
   ),
   time_filtered_tags AS (
     SELECT
-      author,
       full_name,
       team,
       repository,
@@ -159,10 +151,9 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_REPOSITORY = `
     WHERE tag_type IN ('Semantic Version', 'Date Release', 'Named Release')
       AND commit_date >= $1 AND commit_date <= $2
       AND repository = $3
-    GROUP BY author, full_name, team, repository
+    GROUP BY full_name, team, repository
   )
   SELECT
-    COALESCE(m.author, t.author) AS author,
     COALESCE(m.full_name, t.full_name) AS full_name,
     COALESCE(m.team, t.team) AS team,
     COALESCE(m.repository, t.repository) AS repository,
@@ -171,20 +162,22 @@ export const QUERY_RELEASE_CONTRIBUTIONS_BY_REPOSITORY = `
     COALESCE(t.tag_count, 0) AS tag_count
   FROM time_filtered_merges m
     FULL OUTER JOIN time_filtered_tags t
-      ON m.author = t.author
+      ON m.full_name = t.full_name
       AND m.repository = t.repository
   ORDER BY COALESCE(m.merge_count, 0) DESC, COALESCE(t.tag_count, 0) DESC
   LIMIT ${RELEASE_MAX_RESULT_ROWS}
 `;
 
 /**
- * Query to fetch merge commits by environment for a specific author.
+ * Query to fetch merge commits by environment for a specific contributor (full_name).
  * Useful for drill-down: "Show me all John's production merges in the last 30 days."
+ *
+ * Ticket: GITX-169 - Changed filter to use full_name instead of author
  *
  * Parameters:
  *   $1 - start_date (TIMESTAMP WITH TIME ZONE) - beginning of date range
  *   $2 - end_date (TIMESTAMP WITH TIME ZONE) - end of date range
- *   $3 - author (TEXT) - author login to filter by
+ *   $3 - full_name (TEXT) - contributor full_name to filter by
  */
 export const QUERY_MERGE_COMMITS_BY_AUTHOR = `
   SELECT
@@ -199,19 +192,21 @@ export const QUERY_MERGE_COMMITS_BY_AUTHOR = `
     commit_message
   FROM vw_merge_commits_by_environment
   WHERE commit_date >= $1 AND commit_date <= $2
-    AND author = $3
+    AND full_name = $3
   ORDER BY commit_date DESC
   LIMIT ${RELEASE_MAX_RESULT_ROWS}
 `;
 
 /**
- * Query to fetch release tags created by a specific author.
+ * Query to fetch release tags created by a specific contributor (full_name).
  * Useful for drill-down: "Show me all release tags John created in the last 30 days."
+ *
+ * Ticket: GITX-169 - Changed filter to use full_name instead of author
  *
  * Parameters:
  *   $1 - start_date (TIMESTAMP WITH TIME ZONE) - beginning of date range
  *   $2 - end_date (TIMESTAMP WITH TIME ZONE) - end of date range
- *   $3 - author (TEXT) - author login to filter by
+ *   $3 - full_name (TEXT) - contributor full_name to filter by
  */
 export const QUERY_RELEASE_TAGS_BY_AUTHOR = `
   SELECT
@@ -227,7 +222,7 @@ export const QUERY_RELEASE_TAGS_BY_AUTHOR = `
   FROM vw_release_tags
   WHERE tag_type IN ('Semantic Version', 'Date Release', 'Named Release')
     AND commit_date >= $1 AND commit_date <= $2
-    AND author = $3
+    AND full_name = $3
   ORDER BY commit_date DESC
   LIMIT ${RELEASE_MAX_RESULT_ROWS}
 `;
@@ -283,9 +278,9 @@ export const QUERY_BRANCH_ENVIRONMENT_MAPPING = `
 /**
  * TypeScript interface for release contribution row.
  * Maps to the result of QUERY_RELEASE_CONTRIBUTIONS_BY_ENVIRONMENT.
+ * Ticket: GITX-169 - Removed author field (now groups by full_name only)
  */
 export interface ReleaseContribution {
-  readonly author: string;
   readonly full_name: string | null;
   readonly team: string | null;
   readonly repository: string | null;

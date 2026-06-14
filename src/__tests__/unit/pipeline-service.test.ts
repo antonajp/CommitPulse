@@ -17,6 +17,7 @@ import { JiraChangelogService } from '../../services/jira-changelog-service.js';
 import { JiraIncrementalLoader } from '../../services/jira-incremental-loader.js';
 import { DataEnhancerService } from '../../services/data-enhancer-service.js';
 import { TeamAssignmentService } from '../../services/team-assignment-service.js';
+import { FileMetricsDeltaService } from '../../services/file-metrics-delta-service.js';
 import {
   PipelineService,
   ALL_PIPELINE_STEPS,
@@ -29,6 +30,7 @@ import type { GitHubSyncResult } from '../../services/github-service-types.js';
 import type { IncrementalLoadResult } from '../../services/jira-incremental-loader.js';
 import type { DataEnhancerResult } from '../../services/data-enhancer-service.js';
 import type { TeamAssignmentResult } from '../../services/team-assignment-service.js';
+import type { FileMetricsDeltaResult } from '../../services/file-metrics-delta-service.js';
 import type { PipelineProgressCallback, PipelineCancellationToken } from '../../services/pipeline-service.js';
 
 /**
@@ -181,6 +183,14 @@ function createMockTeamAssignmentResult(): TeamAssignmentResult {
   };
 }
 
+function createMockFileMetricsDeltaResult(): FileMetricsDeltaResult {
+  return {
+    filesProcessed: 10,
+    deltasCalculated: 25,
+    durationMs: 300,
+  };
+}
+
 function createMockProgress(): PipelineProgressCallback {
   return { report: vi.fn() };
 }
@@ -200,6 +210,7 @@ describe('PipelineService', () => {
   let githubService: GitHubService;
   let jiraIncrementalLoader: JiraIncrementalLoader;
   let dataEnhancerService: DataEnhancerService;
+  let fileMetricsDeltaService: FileMetricsDeltaService;
   let teamAssignmentService: TeamAssignmentService;
 
   beforeEach(async () => {
@@ -242,6 +253,7 @@ describe('PipelineService', () => {
     jiraIncrementalLoader = new JiraIncrementalLoader(loaderConfig, jiraService, changelogService, jiraRepo, pipelineRepo);
 
     dataEnhancerService = new DataEnhancerService(commitRepo, commitJiraRepo, {});
+    fileMetricsDeltaService = new FileMetricsDeltaService(commitRepo);
     teamAssignmentService = new TeamAssignmentService(contributorRepo, commitJiraRepo, pipelineRepo);
   });
 
@@ -260,7 +272,7 @@ describe('PipelineService', () => {
       const config = createDefaultConfig();
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
       expect(service).toBeDefined();
@@ -270,7 +282,7 @@ describe('PipelineService', () => {
       const config = createDefaultConfig();
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, null, null, null,
-        dataEnhancerService, teamAssignmentService,
+        dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
       expect(service).toBeDefined();
@@ -365,11 +377,11 @@ describe('PipelineService', () => {
   // --------------------------------------------------------------------------
 
   describe('runPipeline', () => {
-    it('should execute all 6 steps and return SUCCESS when all pass', async () => {
+    it('should execute all 10 steps and return SUCCESS when all pass', async () => {
       const config = createDefaultConfig();
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -381,12 +393,13 @@ describe('PipelineService', () => {
       vi.spyOn(githubService, 'syncAll').mockResolvedValue(createMockGithubSyncResult());
       vi.spyOn(jiraIncrementalLoader, 'runIncrementalLoad').mockResolvedValue(createMockJiraLoadResult());
       vi.spyOn(dataEnhancerService, 'enhanceCommitJiraLinks').mockResolvedValue(createMockDataEnhancerResult());
+      vi.spyOn(fileMetricsDeltaService, 'calculateFileMetricsDeltas').mockResolvedValue(createMockFileMetricsDeltaResult());
       vi.spyOn(teamAssignmentService, 'updateTeamAssignmentsWithPipeline').mockResolvedValue(createMockTeamAssignmentResult());
 
       const result = await service.runPipeline();
 
       expect(result.status).toBe('SUCCESS');
-      expect(result.stepResults).toHaveLength(9);
+      expect(result.stepResults).toHaveLength(10);
       expect(result.stepResults.every((r) => r.status === 'SUCCESS')).toBe(true);
       expect(result.pipelineRunId).toBe(1);
       expect(result.totalDurationMs).toBeGreaterThanOrEqual(0);
@@ -396,7 +409,7 @@ describe('PipelineService', () => {
       const config = createDefaultConfig();
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -407,6 +420,7 @@ describe('PipelineService', () => {
       vi.spyOn(githubService, 'syncAll').mockResolvedValue(createMockGithubSyncResult());
       vi.spyOn(jiraIncrementalLoader, 'runIncrementalLoad').mockResolvedValue(createMockJiraLoadResult());
       vi.spyOn(dataEnhancerService, 'enhanceCommitJiraLinks').mockResolvedValue(createMockDataEnhancerResult());
+      vi.spyOn(fileMetricsDeltaService, 'calculateFileMetricsDeltas').mockResolvedValue(createMockFileMetricsDeltaResult());
       vi.spyOn(teamAssignmentService, 'updateTeamAssignmentsWithPipeline').mockResolvedValue(createMockTeamAssignmentResult());
 
       const result = await service.runPipeline();
@@ -420,7 +434,7 @@ describe('PipelineService', () => {
       const config = createDefaultConfig();
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -431,15 +445,16 @@ describe('PipelineService', () => {
       vi.spyOn(githubService, 'syncAll').mockResolvedValue(createMockGithubSyncResult());
       vi.spyOn(jiraIncrementalLoader, 'runIncrementalLoad').mockResolvedValue(createMockJiraLoadResult());
       vi.spyOn(dataEnhancerService, 'enhanceCommitJiraLinks').mockResolvedValue(createMockDataEnhancerResult());
+      vi.spyOn(fileMetricsDeltaService, 'calculateFileMetricsDeltas').mockResolvedValue(createMockFileMetricsDeltaResult());
       vi.spyOn(teamAssignmentService, 'updateTeamAssignmentsWithPipeline').mockResolvedValue(createMockTeamAssignmentResult());
 
       const progress = createMockProgress();
       await service.runPipeline(progress);
 
-      expect(progress.report).toHaveBeenCalledTimes(9);
-      // First call should be step 1/9
+      expect(progress.report).toHaveBeenCalledTimes(10);
+      // First call should be step 1/10
       expect(progress.report).toHaveBeenCalledWith(
-        expect.objectContaining({ message: expect.stringContaining('Step 1/9') }),
+        expect.objectContaining({ message: expect.stringContaining('Step 1/10') }),
       );
     });
 
@@ -447,7 +462,7 @@ describe('PipelineService', () => {
       const config = createDefaultConfig();
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -475,7 +490,7 @@ describe('PipelineService', () => {
       const config = createDefaultConfig();
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -487,6 +502,7 @@ describe('PipelineService', () => {
       vi.spyOn(githubService, 'syncAll').mockRejectedValue(new Error('GitHub rate limit exceeded'));
       vi.spyOn(jiraIncrementalLoader, 'runIncrementalLoad').mockResolvedValue(createMockJiraLoadResult());
       vi.spyOn(dataEnhancerService, 'enhanceCommitJiraLinks').mockResolvedValue(createMockDataEnhancerResult());
+      vi.spyOn(fileMetricsDeltaService, 'calculateFileMetricsDeltas').mockResolvedValue(createMockFileMetricsDeltaResult());
       vi.spyOn(teamAssignmentService, 'updateTeamAssignmentsWithPipeline').mockResolvedValue(createMockTeamAssignmentResult());
 
       const result = await service.runPipeline();
@@ -509,7 +525,7 @@ describe('PipelineService', () => {
       );
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -537,7 +553,7 @@ describe('PipelineService', () => {
       );
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -568,7 +584,7 @@ describe('PipelineService', () => {
       );
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService,
-        jiraIncrementalLoader, null, dataEnhancerService, teamAssignmentService,
+        jiraIncrementalLoader, null, dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -603,7 +619,7 @@ describe('PipelineService', () => {
       const config = PipelineService.buildConfig(['githubContributorSync']);
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, null, jiraIncrementalLoader, null,
-        dataEnhancerService, teamAssignmentService,
+        dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -623,7 +639,7 @@ describe('PipelineService', () => {
       const config = PipelineService.buildConfig(['jiraIssueLoading', 'jiraChangelogUpdate']);
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService, null, null,
-        dataEnhancerService, teamAssignmentService,
+        dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -643,7 +659,7 @@ describe('PipelineService', () => {
       const config = PipelineService.buildConfig(['linearIssueLoading', 'linearChangelogUpdate', 'commitLinearLinking']);
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService, jiraIncrementalLoader, null,
-        dataEnhancerService, teamAssignmentService,
+        dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 
@@ -665,7 +681,7 @@ describe('PipelineService', () => {
       const config = PipelineService.buildConfig(['gitCommitExtraction']);
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService, jiraIncrementalLoader, null,
-        dataEnhancerService, teamAssignmentService,
+        dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         [], // No repositories
         config,
       );
@@ -700,8 +716,8 @@ describe('PipelineService', () => {
   // --------------------------------------------------------------------------
 
   describe('ALL_PIPELINE_STEPS', () => {
-    it('should contain 9 steps in execution order', () => {
-      expect(ALL_PIPELINE_STEPS).toHaveLength(9);
+    it('should contain 10 steps in execution order', () => {
+      expect(ALL_PIPELINE_STEPS).toHaveLength(10);
       expect(ALL_PIPELINE_STEPS[0]).toBe('gitCommitExtraction');
       expect(ALL_PIPELINE_STEPS[1]).toBe('githubContributorSync');
       expect(ALL_PIPELINE_STEPS[2]).toBe('jiraIssueLoading');
@@ -710,7 +726,8 @@ describe('PipelineService', () => {
       expect(ALL_PIPELINE_STEPS[5]).toBe('linearIssueLoading');
       expect(ALL_PIPELINE_STEPS[6]).toBe('linearChangelogUpdate');
       expect(ALL_PIPELINE_STEPS[7]).toBe('commitLinearLinking');
-      expect(ALL_PIPELINE_STEPS[8]).toBe('teamAssignment');
+      expect(ALL_PIPELINE_STEPS[8]).toBe('fileMetricsDelta');
+      expect(ALL_PIPELINE_STEPS[9]).toBe('teamAssignment');
     });
   });
 
@@ -723,7 +740,7 @@ describe('PipelineService', () => {
       const config = PipelineService.buildConfig(['gitCommitExtraction']);
       const service = new PipelineService(
         pipelineRepo, gitAnalysisService, githubService, jiraIncrementalLoader, null,
-        dataEnhancerService, teamAssignmentService,
+        dataEnhancerService, fileMetricsDeltaService, teamAssignmentService,
         createMockRepositories(), config,
       );
 

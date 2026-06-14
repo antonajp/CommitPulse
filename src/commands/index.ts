@@ -22,6 +22,7 @@ import { LinearService } from '../services/linear-service.js';
 import { LinearIncrementalLoader } from '../services/linear-incremental-loader.js';
 import { DataEnhancerService } from '../services/data-enhancer-service.js';
 import { TeamAssignmentService } from '../services/team-assignment-service.js';
+import { FileMetricsDeltaService } from '../services/file-metrics-delta-service.js';
 import { PipelineService } from '../services/pipeline-service.js';
 import type { FastExtractionMode, ExtractionModeQuickPickItem } from '../services/git-analysis-types.js';
 
@@ -1335,6 +1336,8 @@ async function buildPipelineService(
   const dataEnhancerService = new DataEnhancerService(
     commitRepo, commitJiraRepo, settings.jira.keyAliases, commitLinearRepo, settings.jira.projectKeys,
   );
+  // GITX-165: Create FileMetricsDeltaService for complexity/comments/code delta calculation
+  const fileMetricsDeltaService = new FileMetricsDeltaService(commitRepo);
   const teamAssignmentService = new TeamAssignmentService(contributorRepo, commitJiraRepo, pipelineRepo);
 
   // Step 8: Build pipeline config (IQS-931: added sinceDate, GITX-123: added forceFullExtraction, GITX-130: added selectedRepository, GITX-131: added useGitLogAll)
@@ -1361,6 +1364,7 @@ async function buildPipelineService(
   logger.info(CLASS_NAME, 'buildPipelineService', `Pipeline config: ${pipelineConfig.steps.length} steps, jiraIncrement=${pipelineConfig.jiraIncrement}, jiraDaysAgo=${pipelineConfig.jiraDaysAgo}, linearTeamKeys=${pipelineConfig.linearTeamKeys.length}, sinceDate=${pipelineConfig.sinceDate ?? '(none)'}, extractionMode=${modeLabel}${repoLabel}`);
 
   // Step 9: Create and return PipelineService with dbService for cleanup
+  // GITX-165: Added fileMetricsDeltaService parameter
   const pipelineService = new PipelineService(
     pipelineRepo,
     gitAnalysisService,
@@ -1368,6 +1372,7 @@ async function buildPipelineService(
     jiraIncrementalLoader,
     linearIncrementalLoader,
     dataEnhancerService,
+    fileMetricsDeltaService,
     teamAssignmentService,
     settings.repositories,
     pipelineConfig,
