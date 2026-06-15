@@ -124,3 +124,37 @@ export interface DevProfileVelocityPoint {
   readonly issueCount: number; // Number of issues completed
   readonly commitCount: number; // Number of commits
 }
+
+/**
+ * Weekly test debt data point for stacked bar chart.
+ * Shows commits by test coverage tier (low/medium/high).
+ * Ticket: GITX-172
+ */
+export interface DevProfileTestDebtWeekly {
+  readonly weekStart: string; // YYYY-MM-DD (Monday of the week)
+  readonly lowTestCommits: number; // test_ratio NULL or < 0.1
+  readonly mediumTestCommits: number; // test_ratio 0.1 - 0.5
+  readonly highTestCommits: number; // test_ratio >= 0.5
+  readonly totalCommits: number;
+}
+
+/**
+ * Test debt metrics summary with ROI calculation.
+ * Ticket: GITX-172
+ */
+export interface DevProfileTestDebtMetrics {
+  /** Weekly breakdown for stacked bar chart */
+  readonly weeklyData: readonly DevProfileTestDebtWeekly[];
+  /** Bug rate for low test commits */
+  readonly lowTestBugRate: number;
+  /** Bug rate for high test commits */
+  readonly highTestBugRate: number;
+  /** ROI multiplier (lowTestBugRate / highTestBugRate), e.g., 2.4 = "2.4x more bugs" */
+  readonly roiMultiplier: number;
+  /** Total commits analyzed */
+  readonly totalCommits: number;
+  /** Low test commits count */
+  readonly lowTestCommits: number;
+  /** Team average ROI for comparison (null if not available) */
+  readonly teamAvgRoiMultiplier: number | null;
+}

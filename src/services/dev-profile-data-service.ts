@@ -21,6 +21,8 @@ import type {
   DevProfileDeveloper,
   DevProfileFilters,
   DevProfileVelocityPoint,
+  DevProfileTestDebtMetrics,
+  DevProfileTestDebtWeekly,
 } from './dev-profile-data-types.js';
 
 // Re-export types for convenience
@@ -37,6 +39,8 @@ export type {
   DevProfileTimeframe,
   DevProfileFilters,
   DevProfileVelocityPoint,
+  DevProfileTestDebtMetrics,
+  DevProfileTestDebtWeekly,
 } from './dev-profile-data-types.js';
 
 const CLASS_NAME = 'DevProfileDataService';
@@ -670,5 +674,199 @@ export class DevProfileDataService {
 
     this.logger.debug(CLASS_NAME, 'hasVelocityData', `Velocity data available: ${hasData}`);
     return hasData;
+  }
+
+  /**
+   * Get test debt metrics for a developer.
+   * Returns weekly breakdown of commits by test coverage tier and ROI calculation.
+   * Uses vw_commit_test_ratio and vw_subsequent_bugs views.
+   * Ticket: GITX-172
+   *
+   * @param filters - Developer and timeframe filters (developer is full_name)
+   * @returns Test debt metrics with weekly data and ROI multiplier
+   */
+  async getTestDebtMetrics(filters: DevProfileFilters): Promise<DevProfileTestDebtMetrics> {
+    this.validateDeveloper(filters.developer, 'getTestDebtMetrics');
+    this.validateTimeframe(filters.timeframeDays, 'getTestDebtMetrics');
+
+    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `Fetching test debt metrics for ${filters.developer}`);
+
+    const startDate = this.getStartDate(filters.timeframeDays);
+
+    // Check if the required view exists
+    const viewExistsResult = await this.db.query<{ view_exists: boolean }>(
+      `SELECT EXISTS (
+        SELECT 1 FROM information_schema.views
+        WHERE table_name = 'vw_commit_test_ratio'
+      ) AS view_exists`
+    );
+
+    if (!viewExistsResult.rows[0]?.view_exists) {
+      this.logger.warn(CLASS_NAME, 'getTestDebtMetrics', 'vw_commit_test_ratio view not found');
+      return {
+        weeklyData: [],
+        lowTestBugRate: 0,
+        highTestBugRate: 0,
+        roiMultiplier: 0,
+        totalCommits: 0,
+        lowTestCommits: 0,
+        teamAvgRoiMultiplier: null,
+      };
+    }
+
+    // Query weekly test debt breakdown by tier
+    // Filter by full_name with login fallback (GITX-169 pattern)
+    const weeklyQuery = `
+      SELECT
+        DATE_TRUNC('week', ctr.commit_date)::DATE AS week_start,
+        COUNT(*) FILTER (WHERE ctr.test_ratio IS NULL OR ctr.test_ratio < 0.1)::int AS low_test_commits,
+        COUNT(*) FILTER (WHERE ctr.test_ratio >= 0.1 AND ctr.test_ratio < 0.5)::int AS medium_test_commits,
+        COUNT(*) FILTER (WHERE ctr.test_ratio >= 0.5)::int AS high_test_commits,
+        COUNT(*)::int AS total_commits
+      FROM vw_commit_test_ratio ctr
+      JOIN commit_contributors cc ON ctr.author = cc.login
+      WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+        AND ctr.commit_date >= $2
+        AND ctr.prod_loc_changed >= 50
+      GROUP BY DATE_TRUNC('week', ctr.commit_date)
+      ORDER BY week_start ASC
+    `;
+
+    const weeklyResult = await this.db.query<{
+      week_start: Date;
+      low_test_commits: number;
+      medium_test_commits: number;
+      high_test_commits: number;
+      total_commits: number;
+    }>(weeklyQuery, [filters.developer, startDate]);
+
+    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `Found ${weeklyResult.rowCount} weekly data points`);
+
+    // Query bug rates by tier for ROI calculation
+    // Check if subsequent bugs view exists
+    const bugsViewExistsResult = await this.db.query<{ view_exists: boolean }>(
+      `SELECT EXISTS (
+        SELECT 1 FROM information_schema.views
+        WHERE table_name = 'vw_subsequent_bugs'
+      ) AS view_exists`
+    );
+
+    let lowTestBugRate = 0;
+    let highTestBugRate = 0;
+    let totalCommits = 0;
+    let lowTestCommits = 0;
+    let teamAvgRoiMultiplier: number | null = null;
+
+    if (bugsViewExistsResult.rows[0]?.view_exists) {
+      // Query developer's bug rates by tier
+      const bugRateQuery = `
+        WITH dev_commits AS (
+          SELECT
+            ctr.sha,
+            ctr.test_ratio,
+            COALESCE(sb.jira_bugs_filed, 0) + COALESCE(sb.linear_bugs_filed, 0) AS subsequent_bugs
+          FROM vw_commit_test_ratio ctr
+          LEFT JOIN vw_subsequent_bugs sb ON ctr.sha = sb.original_sha
+          JOIN commit_contributors cc ON ctr.author = cc.login
+          WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+            AND ctr.commit_date >= $2
+            AND ctr.prod_loc_changed >= 50
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE test_ratio IS NULL OR test_ratio < 0.1)::int AS low_test_count,
+          COUNT(*) FILTER (WHERE test_ratio >= 0.5)::int AS high_test_count,
+          SUM(subsequent_bugs) FILTER (WHERE test_ratio IS NULL OR test_ratio < 0.1)::int AS low_test_bugs,
+          SUM(subsequent_bugs) FILTER (WHERE test_ratio >= 0.5)::int AS high_test_bugs,
+          COUNT(*)::int AS total_commits
+        FROM dev_commits
+      `;
+
+      const bugRateResult = await this.db.query<{
+        low_test_count: number;
+        high_test_count: number;
+        low_test_bugs: number;
+        high_test_bugs: number;
+        total_commits: number;
+      }>(bugRateQuery, [filters.developer, startDate]);
+
+      const row = bugRateResult.rows[0];
+      if (row && row.total_commits > 0) {
+        totalCommits = row.total_commits;
+        lowTestCommits = row.low_test_count ?? 0;
+        const lowTestBugs = row.low_test_bugs ?? 0;
+        const highTestBugs = row.high_test_bugs ?? 0;
+        const lowTestCount = row.low_test_count ?? 0;
+        const highTestCount = row.high_test_count ?? 0;
+
+        lowTestBugRate = lowTestCount > 0 ? lowTestBugs / lowTestCount : 0;
+        highTestBugRate = highTestCount > 0 ? highTestBugs / highTestCount : 0;
+      }
+
+      // Query team average ROI for comparison
+      const teamAvgQuery = `
+        WITH team_commits AS (
+          SELECT
+            ctr.sha,
+            ctr.test_ratio,
+            COALESCE(sb.jira_bugs_filed, 0) + COALESCE(sb.linear_bugs_filed, 0) AS subsequent_bugs
+          FROM vw_commit_test_ratio ctr
+          LEFT JOIN vw_subsequent_bugs sb ON ctr.sha = sb.original_sha
+          WHERE ctr.commit_date >= $1
+            AND ctr.prod_loc_changed >= 50
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE test_ratio IS NULL OR test_ratio < 0.1)::int AS low_test_count,
+          COUNT(*) FILTER (WHERE test_ratio >= 0.5)::int AS high_test_count,
+          SUM(subsequent_bugs) FILTER (WHERE test_ratio IS NULL OR test_ratio < 0.1)::int AS low_test_bugs,
+          SUM(subsequent_bugs) FILTER (WHERE test_ratio >= 0.5)::int AS high_test_bugs
+        FROM team_commits
+      `;
+
+      const teamAvgResult = await this.db.query<{
+        low_test_count: number;
+        high_test_count: number;
+        low_test_bugs: number;
+        high_test_bugs: number;
+      }>(teamAvgQuery, [startDate]);
+
+      const teamRow = teamAvgResult.rows[0];
+      if (teamRow) {
+        const teamLowTestCount = teamRow.low_test_count ?? 0;
+        const teamHighTestCount = teamRow.high_test_count ?? 0;
+        const teamLowTestBugs = teamRow.low_test_bugs ?? 0;
+        const teamHighTestBugs = teamRow.high_test_bugs ?? 0;
+
+        const teamLowRate = teamLowTestCount > 0 ? teamLowTestBugs / teamLowTestCount : 0;
+        const teamHighRate = teamHighTestCount > 0 ? teamHighTestBugs / teamHighTestCount : 0;
+
+        if (teamHighRate > 0) {
+          teamAvgRoiMultiplier = Number((teamLowRate / teamHighRate).toFixed(1));
+        }
+      }
+    }
+
+    // Calculate ROI multiplier
+    const roiMultiplier = highTestBugRate > 0 ? Number((lowTestBugRate / highTestBugRate).toFixed(1)) : 0;
+
+    // Build weekly data array
+    const weeklyData: DevProfileTestDebtWeekly[] = weeklyResult.rows.map((row) => ({
+      weekStart: row.week_start.toISOString().split('T')[0] ?? '',
+      lowTestCommits: row.low_test_commits,
+      mediumTestCommits: row.medium_test_commits,
+      highTestCommits: row.high_test_commits,
+      totalCommits: row.total_commits,
+    }));
+
+    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `ROI multiplier: ${roiMultiplier}, totalCommits: ${totalCommits}`);
+
+    return {
+      weeklyData,
+      lowTestBugRate: Number(lowTestBugRate.toFixed(2)),
+      highTestBugRate: Number(highTestBugRate.toFixed(2)),
+      roiMultiplier,
+      totalCommits,
+      lowTestCommits,
+      teamAvgRoiMultiplier,
+    };
   }
 }

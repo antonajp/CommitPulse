@@ -822,6 +822,505 @@ describe('DevProfileDataService', () => {
       })).rejects.toThrow('Invalid timeframe');
       expect(mockDb.query).not.toHaveBeenCalled();
     });
+
+    // ========================================================================
+    // GITX-170: Story points attribution to assignee at completion time
+    // ========================================================================
+    describe('GITX-170: assignee at completion time', () => {
+      it('should use jira_history table for Jira points attribution', async () => {
+        await service.getVelocityVsLoc({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        const call = vi.mocked(mockDb.query).mock.calls[0];
+        expect(call).toBeDefined();
+        const sql = call![0] as string;
+
+        // Should use jira_history (jh) not jira_detail for attribution
+        expect(sql).toContain('jira_history jh');
+        // Should join to jira_detail only for story points value
+        expect(sql).toContain('jira_detail jd ON jh.jira_key = jd.jira_key');
+      });
+
+      it('should use jh.assignee instead of jd.assignee for attribution', async () => {
+        await service.getVelocityVsLoc({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        const call = vi.mocked(mockDb.query).mock.calls[0];
+        expect(call).toBeDefined();
+        const sql = call![0] as string;
+
+        // The dev_jira_points CTE should join on jh.assignee (history snapshot)
+        // not jd.assignee (current assignee)
+        expect(sql).toContain('jh.assignee = cc.email');
+        expect(sql).toContain('jh.assignee = cc.login');
+        expect(sql).toContain('jh.assignee = cc.full_name');
+      });
+
+      it('should filter by status field and completion statuses', async () => {
+        await service.getVelocityVsLoc({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        const call = vi.mocked(mockDb.query).mock.calls[0];
+        expect(call).toBeDefined();
+        const sql = call![0] as string;
+
+        // Should filter by field = 'status' for status transitions
+        expect(sql).toContain("jh.field = 'status'");
+        // Should filter by completion statuses
+        expect(sql).toContain("jh.to_value IN ('Done', 'Closed', 'Resolved')");
+      });
+
+      it('should use jh.change_date for completion timing', async () => {
+        await service.getVelocityVsLoc({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        const call = vi.mocked(mockDb.query).mock.calls[0];
+        expect(call).toBeDefined();
+        const sql = call![0] as string;
+
+        // Should use jh.change_date (actual completion timestamp)
+        // not jd.status_change_date for week_start calculation
+        expect(sql).toContain('jh.change_date');
+        expect(sql).toContain("DATE_TRUNC('week', jh.change_date)");
+      });
+
+      it('should count multiple completions of same ticket (rework)', async () => {
+        // This is correct behavior per acceptance criteria:
+        // "Multiple 'Done' transitions of same ticket each counted"
+        // The query uses COUNT(DISTINCT jd.jira_key) for issue_count,
+        // but SUM(story_points) will count each completion transition.
+        // If a ticket is moved to Done twice, points are summed twice.
+        await service.getVelocityVsLoc({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        const call = vi.mocked(mockDb.query).mock.calls[0];
+        expect(call).toBeDefined();
+        const sql = call![0] as string;
+
+        // Story points are summed per history record, so multiple
+        // "Done" transitions each contribute their story points
+        expect(sql).toContain('SUM(jd.calculated_story_points)');
+      });
+    });
+  });
+
+  // ==========================================================================
+  // GITX-172: getTestDebtMetrics
+  // ==========================================================================
+  describe('getTestDebtMetrics', () => {
+    it('should return empty metrics when no data', async () => {
+      // Mock view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock weekly query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+      // Mock bugs view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock bug rate query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 0,
+          high_test_count: 0,
+          low_test_bugs: 0,
+          high_test_bugs: 0,
+          total_commits: 0,
+        }],
+        rowCount: 1,
+      });
+      // Mock team average query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 0,
+          high_test_count: 0,
+          low_test_bugs: 0,
+          high_test_bugs: 0,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await service.getTestDebtMetrics({
+        developer: 'john.doe',
+        timeframeDays: '90',
+      });
+
+      expect(result.weeklyData).toEqual([]);
+      expect(result.totalCommits).toBe(0);
+    });
+
+    it('should return empty metrics when view does not exist', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: false }],
+        rowCount: 1,
+      });
+
+      const result = await service.getTestDebtMetrics({
+        developer: 'john.doe',
+        timeframeDays: '90',
+      });
+
+      expect(result.weeklyData).toEqual([]);
+      expect(result.totalCommits).toBe(0);
+      expect(result.lowTestCommits).toBe(0);
+      expect(result.roiMultiplier).toBe(0);
+    });
+
+    it('should return weekly test debt data by tier', async () => {
+      // Mock view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock weekly query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [
+          {
+            week_start: new Date('2025-01-06'),
+            low_test_commits: 5,
+            medium_test_commits: 3,
+            high_test_commits: 2,
+            total_commits: 10,
+          },
+          {
+            week_start: new Date('2025-01-13'),
+            low_test_commits: 3,
+            medium_test_commits: 4,
+            high_test_commits: 5,
+            total_commits: 12,
+          },
+        ],
+        rowCount: 2,
+      });
+      // Mock bugs view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock bug rate query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 8,
+          high_test_count: 7,
+          low_test_bugs: 4,
+          high_test_bugs: 1,
+          total_commits: 22,
+        }],
+        rowCount: 1,
+      });
+      // Mock team average query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 100,
+          high_test_count: 50,
+          low_test_bugs: 30,
+          high_test_bugs: 10,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await service.getTestDebtMetrics({
+        developer: 'john.doe',
+        timeframeDays: '90',
+      });
+
+      expect(result.weeklyData).toHaveLength(2);
+      expect(result.weeklyData[0]).toEqual({
+        weekStart: '2025-01-06',
+        lowTestCommits: 5,
+        mediumTestCommits: 3,
+        highTestCommits: 2,
+        totalCommits: 10,
+      });
+      expect(result.totalCommits).toBe(22);
+      expect(result.lowTestCommits).toBe(8);
+    });
+
+    it('should calculate ROI multiplier correctly', async () => {
+      // Mock view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock weekly query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+      // Mock bugs view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock bug rate query: low has 4 bugs / 8 commits = 0.5, high has 1 bug / 7 commits = 0.14
+      // ROI = 0.5 / 0.14 = 3.5
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 8,
+          high_test_count: 7,
+          low_test_bugs: 4,
+          high_test_bugs: 1,
+          total_commits: 22,
+        }],
+        rowCount: 1,
+      });
+      // Mock team average query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 100,
+          high_test_count: 50,
+          low_test_bugs: 30,
+          high_test_bugs: 10,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await service.getTestDebtMetrics({
+        developer: 'john.doe',
+        timeframeDays: '90',
+      });
+
+      // ROI = (4/8) / (1/7) = 0.5 / 0.14 = 3.5
+      expect(result.roiMultiplier).toBeCloseTo(3.5, 1);
+    });
+
+    it('should calculate team average ROI', async () => {
+      // Mock view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock weekly query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+      // Mock bugs view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock bug rate query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 10,
+          high_test_count: 10,
+          low_test_bugs: 5,
+          high_test_bugs: 2,
+          total_commits: 20,
+        }],
+        rowCount: 1,
+      });
+      // Mock team average query: low has 30/100=0.3, high has 10/50=0.2
+      // Team ROI = 0.3 / 0.2 = 1.5
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 100,
+          high_test_count: 50,
+          low_test_bugs: 30,
+          high_test_bugs: 10,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await service.getTestDebtMetrics({
+        developer: 'john.doe',
+        timeframeDays: '90',
+      });
+
+      expect(result.teamAvgRoiMultiplier).toBeCloseTo(1.5, 1);
+    });
+
+    it('should filter by full_name with login fallback (GITX-169 pattern)', async () => {
+      // Mock view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock weekly query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+      // Mock bugs view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock bug rate query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 0,
+          high_test_count: 0,
+          low_test_bugs: 0,
+          high_test_bugs: 0,
+          total_commits: 0,
+        }],
+        rowCount: 1,
+      });
+      // Mock team average query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 0,
+          high_test_count: 0,
+          low_test_bugs: 0,
+          high_test_bugs: 0,
+        }],
+        rowCount: 1,
+      });
+
+      await service.getTestDebtMetrics({
+        developer: 'John Doe',
+        timeframeDays: '90',
+      });
+
+      // Check the weekly query uses the GITX-169 pattern
+      const call = vi.mocked(mockDb.query).mock.calls[1];
+      expect(call).toBeDefined();
+      const sql = call![0] as string;
+
+      expect(sql).toContain('cc.full_name = $1');
+      expect(sql).toContain('cc.full_name IS NULL AND cc.login = $1');
+      expect(sql).toContain('commit_contributors cc');
+    });
+
+    it('should use parameterized queries', async () => {
+      // Mock view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock weekly query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+      // Mock bugs view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock bug rate query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 0,
+          high_test_count: 0,
+          low_test_bugs: 0,
+          high_test_bugs: 0,
+          total_commits: 0,
+        }],
+        rowCount: 1,
+      });
+      // Mock team average query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 0,
+          high_test_count: 0,
+          low_test_bugs: 0,
+          high_test_bugs: 0,
+        }],
+        rowCount: 1,
+      });
+
+      await service.getTestDebtMetrics({
+        developer: 'john.doe',
+        timeframeDays: '90',
+      });
+
+      // Check the weekly query uses parameterized placeholders
+      const call = vi.mocked(mockDb.query).mock.calls[1];
+      expect(call).toBeDefined();
+      const sql = call![0] as string;
+      const params = call![1] as unknown[];
+
+      expect(sql).toContain('$1');
+      expect(sql).toContain('$2');
+      expect(params[0]).toBe('john.doe');
+      expect(typeof params[1]).toBe('string'); // date string
+    });
+
+    it('should validate developer input', async () => {
+      await expect(service.getTestDebtMetrics({
+        developer: '',
+        timeframeDays: '90',
+      })).rejects.toThrow('Developer login is required');
+      expect(mockDb.query).not.toHaveBeenCalled();
+    });
+
+    it('should validate timeframe input', async () => {
+      await expect(service.getTestDebtMetrics({
+        developer: 'john.doe',
+        timeframeDays: '45' as '30',
+      })).rejects.toThrow('Invalid timeframe');
+      expect(mockDb.query).not.toHaveBeenCalled();
+    });
+
+    it('should require minimum 50 LOC for commits', async () => {
+      // Mock view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock weekly query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+      });
+      // Mock bugs view exists check
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ view_exists: true }],
+        rowCount: 1,
+      });
+      // Mock bug rate query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 0,
+          high_test_count: 0,
+          low_test_bugs: 0,
+          high_test_bugs: 0,
+          total_commits: 0,
+        }],
+        rowCount: 1,
+      });
+      // Mock team average query
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          low_test_count: 0,
+          high_test_count: 0,
+          low_test_bugs: 0,
+          high_test_bugs: 0,
+        }],
+        rowCount: 1,
+      });
+
+      await service.getTestDebtMetrics({
+        developer: 'john.doe',
+        timeframeDays: '90',
+      });
+
+      // Check the weekly query filters by prod_loc_changed >= 50
+      const call = vi.mocked(mockDb.query).mock.calls[1];
+      expect(call).toBeDefined();
+      const sql = call![0] as string;
+
+      expect(sql).toContain('prod_loc_changed >= 50');
+    });
   });
 
   // ==========================================================================
@@ -863,8 +1362,27 @@ describe('DevProfileDataService', () => {
       const sql = call![0] as string;
 
       expect(sql).toContain('linear_detail');
-      expect(sql).toContain('jira_detail');
+      // GITX-170: Uses jira_history to check assignee at completion time
+      expect(sql).toContain('jira_history');
       expect(sql).toContain('UNION');
+    });
+
+    // GITX-170: Verify jira_history is used for assignee at completion time
+    it('should use jira_history to check completion (GITX-170)', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ has_data: false }],
+        rowCount: 1,
+      });
+
+      await service.hasVelocityData('john.doe');
+
+      const call = vi.mocked(mockDb.query).mock.calls[0];
+      expect(call).toBeDefined();
+      const sql = call![0] as string;
+
+      // Should filter by status field changes to completion statuses
+      expect(sql).toContain("jh.field = 'status'");
+      expect(sql).toContain("jh.to_value IN ('Done', 'Closed', 'Resolved')");
     });
 
     it('should validate developer input', async () => {

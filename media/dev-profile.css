@@ -744,6 +744,140 @@ body {
 }
 
 /* ============================================================================
+   Test Debt Risk Analysis (GITX-172)
+   ============================================================================ */
+
+.test-debt-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.test-debt-chart-container {
+  min-height: 280px;
+}
+
+.test-debt-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  border-radius: 6px;
+}
+
+.test-debt-roi {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.roi-value {
+  font-size: 2.5em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-testing-iconFailed, #f48771);
+}
+
+.roi-label {
+  font-size: 1em;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.test-debt-comparison {
+  padding: 8px 12px;
+  background-color: var(--vscode-sideBar-background, #252526);
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.comparison-label {
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.test-debt-summary {
+  display: flex;
+  gap: 24px;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.summary-item {
+  font-variant-numeric: tabular-nums;
+}
+
+.card-success {
+  font-style: italic;
+  color: var(--vscode-testing-iconPassed, #4ec9b0);
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* Test Debt tier badges (reused in explanation) */
+.tier-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.8em;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.tier-badge.tier-low {
+  background-color: rgba(220, 38, 38, 0.2);
+  color: #dc2626;
+  border: 1px solid #dc2626;
+}
+
+.tier-badge.tier-medium {
+  background-color: rgba(202, 138, 4, 0.2);
+  color: #ca8a04;
+  border: 1px solid #ca8a04;
+}
+
+.tier-badge.tier-high {
+  background-color: rgba(22, 163, 74, 0.2);
+  color: #16a34a;
+  border: 1px solid #16a34a;
+}
+
+/* Chart explanation collapsible */
+.chart-explanation {
+  margin-top: 12px;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground, #888888);
+}
+
+.chart-explanation summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  user-select: none;
+}
+
+.chart-explanation summary:hover {
+  text-decoration: underline;
+}
+
+.chart-explanation summary:focus {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
+.chart-explanation p,
+.chart-explanation ul {
+  margin-top: 8px;
+}
+
+.chart-explanation ul {
+  padding-left: 20px;
+}
+
+.chart-explanation li {
+  margin-bottom: 4px;
+}
+
+/* ============================================================================
    Reduced Motion Support
    ============================================================================ */
 

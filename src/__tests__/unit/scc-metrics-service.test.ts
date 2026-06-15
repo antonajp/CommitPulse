@@ -454,6 +454,136 @@ describe('SccMetricsService', () => {
   });
 
   // --------------------------------------------------------------------------
+  // GITX-173: IaC file filtering - generated/ and logs/ directories
+  // --------------------------------------------------------------------------
+
+  describe('dependency path filtering (GITX-173)', () => {
+    it('should INCLUDE CloudFormation templates in generated/cloudformation/', () => {
+      const files = [
+        createFileDiff({
+          filePath: 'generated/cloudformation/template.yaml',
+          fileExtension: '.yaml',
+          parentDirectory: 'generated',
+          subDirectory: 'cloudformation',
+        }),
+      ];
+
+      const rows = service.buildCommitFileRows('sha123', 'testuser', files);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.filename).toBe('generated/cloudformation/template.yaml');
+    });
+
+    it('should INCLUDE Terraform files in generated/terraform/', () => {
+      const files = [
+        createFileDiff({
+          filePath: 'generated/terraform/main.tf',
+          fileExtension: '.tf',
+          parentDirectory: 'generated',
+          subDirectory: 'terraform',
+        }),
+      ];
+
+      const rows = service.buildCommitFileRows('sha123', 'testuser', files);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.filename).toBe('generated/terraform/main.tf');
+    });
+
+    it('should INCLUDE files in logs/ directory (WSO2 config use case)', () => {
+      const files = [
+        createFileDiff({
+          filePath: 'logs/wso2-config.xml',
+          fileExtension: '.xml',
+          parentDirectory: 'logs',
+          subDirectory: '',
+        }),
+      ];
+
+      const rows = service.buildCommitFileRows('sha123', 'testuser', files);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.filename).toBe('logs/wso2-config.xml');
+    });
+
+    it('should INCLUDE files in __generated__/ directory', () => {
+      const files = [
+        createFileDiff({
+          filePath: '__generated__/api-types.ts',
+          fileExtension: '.ts',
+          parentDirectory: '__generated__',
+          subDirectory: '',
+        }),
+      ];
+
+      const rows = service.buildCommitFileRows('sha123', 'testuser', files);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.filename).toBe('__generated__/api-types.ts');
+    });
+
+    it('should still EXCLUDE node_modules/ directory', () => {
+      const files = [
+        createFileDiff({
+          filePath: 'node_modules/lodash/index.js',
+          fileExtension: '.js',
+          parentDirectory: 'node_modules',
+          subDirectory: 'lodash',
+        }),
+      ];
+
+      const rows = service.buildCommitFileRows('sha123', 'testuser', files);
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it('should still EXCLUDE .venv/ directory', () => {
+      const files = [
+        createFileDiff({
+          filePath: '.venv/lib/python/site.py',
+          fileExtension: '.py',
+          parentDirectory: '.venv',
+          subDirectory: 'lib',
+        }),
+      ];
+
+      const rows = service.buildCommitFileRows('sha123', 'testuser', files);
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it('should still EXCLUDE target/ directory (Java)', () => {
+      const files = [
+        createFileDiff({
+          filePath: 'target/classes/Main.class',
+          fileExtension: '.class',
+          parentDirectory: 'target',
+          subDirectory: 'classes',
+        }),
+      ];
+
+      const rows = service.buildCommitFileRows('sha123', 'testuser', files);
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it('should still EXCLUDE nested node_modules/', () => {
+      const files = [
+        createFileDiff({
+          filePath: 'packages/app/node_modules/lodash/index.js',
+          fileExtension: '.js',
+          parentDirectory: 'packages',
+          subDirectory: 'app',
+        }),
+      ];
+
+      const rows = service.buildCommitFileRows('sha123', 'testuser', files);
+
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // IQS-883: Security hardening - MAX_FILES_PER_COMMIT threshold
   // --------------------------------------------------------------------------
 
