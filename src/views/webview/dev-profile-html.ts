@@ -21,7 +21,7 @@
  */
 
 import * as vscode from 'vscode';
-import { generateLocWeekChartScript, generateTableRenderingScripts, generateGitx156ChartScripts, generateVelocityChartScript } from './dev-profile-charts.js';
+import { generateLocWeekChartScript, generateTableRenderingScripts, generateGitx156ChartScripts, generateVelocityChartScript, generateTestDebtChartScript } from './dev-profile-charts.js';
 import { generateGitx156HtmlSections } from './dev-profile-html-sections.js';
 
 /**
@@ -145,7 +145,7 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
         <h2>Lines of Code per Week</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="locWeekSkeleton" aria-hidden="true"></div>
-          <div id="locWeekChart" class="d3-chart hidden" role="img" aria-label="Stacked bar chart showing lines of code per week by repository"></div>
+          <div id="locWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing lines of code per week by repository"></div>
         </div>
         <p class="card-empty hidden" id="locWeekEmpty">No LOC data available for the selected timeframe.</p>
       </section>
@@ -237,6 +237,7 @@ ${generateGitx156HtmlSections()}
       let cachedHygieneScore = null;
       let cachedVelocityData = [];
       let velocityDataAvailable = false;
+      let cachedTestDebtMetrics = null;
       let complexFilesSortKey = 'complexityScore';
       let complexFilesSortDir = 'desc';
       let frequentFilesSortKey = 'modificationCount';
@@ -340,6 +341,7 @@ ${generateGitx156HtmlSections()}
         showSkeleton('commentsWeekSkeleton');
         showSkeleton('testsWeekSkeleton');
         showSkeleton('velocitySkeleton');
+        showSkeleton('testDebtSkeleton');
         document.getElementById('locWeekChart').classList.add('hidden');
         document.getElementById('complexFilesTable').classList.add('hidden');
         document.getElementById('frequentFilesTable').classList.add('hidden');
@@ -349,6 +351,8 @@ ${generateGitx156HtmlSections()}
         document.getElementById('commentsWeekChart').classList.add('hidden');
         document.getElementById('testsWeekChart').classList.add('hidden');
         document.getElementById('velocityChart').classList.add('hidden');
+        document.getElementById('testDebtChart').classList.add('hidden');
+        document.getElementById('testDebtMetrics').classList.add('hidden');
         document.getElementById('locWeekEmpty').classList.add('hidden');
         document.getElementById('complexFilesEmpty').classList.add('hidden');
         document.getElementById('frequentFilesEmpty').classList.add('hidden');
@@ -358,6 +362,8 @@ ${generateGitx156HtmlSections()}
         document.getElementById('testsWeekEmpty').classList.add('hidden');
         document.getElementById('velocityEmpty').classList.add('hidden');
         document.getElementById('velocityHint').classList.add('hidden');
+        document.getElementById('testDebtEmpty').classList.add('hidden');
+        document.getElementById('testDebtSuccess').classList.add('hidden');
         hideEmptyState();
         vscode.postMessage({
           type: 'requestAllData',
@@ -414,6 +420,7 @@ ${generateLocWeekChartScript()}
 ${generateTableRenderingScripts()}
 ${generateGitx156ChartScripts()}
 ${generateVelocityChartScript()}
+${generateTestDebtChartScript()}
 
       // ======================================================================
       // Message Handler
@@ -499,6 +506,10 @@ ${generateVelocityChartScript()}
               renderVelocityChart(cachedVelocityData);
             }
             break;
+          case 'testDebtMetricsData':
+            cachedTestDebtMetrics = msg.data;
+            renderTestDebtChart(msg.data);
+            break;
           case 'error':
             hideEmptyState();
             showError(msg.message);
@@ -511,6 +522,7 @@ ${generateVelocityChartScript()}
             hideSkeleton('commentsWeekSkeleton');
             hideSkeleton('testsWeekSkeleton');
             hideSkeleton('velocitySkeleton');
+            hideSkeleton('testDebtSkeleton');
             break;
         }
       });
@@ -599,6 +611,7 @@ ${generateVelocityChartScript()}
       showSkeleton('commentsWeekSkeleton');
       showSkeleton('testsWeekSkeleton');
       showSkeleton('velocitySkeleton');
+      showSkeleton('testDebtSkeleton');
 
       // GITX-157: Initialize lazy loading for charts
       initLazyLoading();

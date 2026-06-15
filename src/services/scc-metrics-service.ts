@@ -532,8 +532,10 @@ export class SccMetricsService {
    *
    * General build/transient:
    *   - dist/, build/, coverage/, .cache/
-   *   - tmp/, .tmp/, temp/, logs/
-   *   - __generated__/, generated/
+   *   - tmp/, .tmp/, temp/
+   *
+   * NOT excluded (may contain IaC config files - GITX-173):
+   *   - logs/, generated/, __generated__/
    *
    * @param filePath - Relative file path from commit
    * @returns true if file should be excluded from LOC metrics
@@ -600,9 +602,9 @@ export class SccMetricsService {
       'tmp/',
       '.tmp/',
       'temp/',
-      'logs/',
-      '__generated__/',
-      'generated/',
+      // NOTE: 'logs/' and 'generated/' REMOVED per GITX-173 - these directories
+      // may contain CloudFormation/Terraform/WSO2 config files that need analysis.
+      // The Python original had NO such filtering.
     ];
 
     // Check root-level prefixes
@@ -627,7 +629,7 @@ export class SccMetricsService {
       '/build/',
       '/.next/',
       '/.nuxt/',
-      '/__generated__/',
+      // NOTE: '/__generated__/' REMOVED per GITX-173 - may contain IaC config files
     ];
 
     for (const pattern of nestedPatterns) {
@@ -687,8 +689,8 @@ export class SccMetricsService {
         // Create parent directories
         await mkdir(dirname(destPath), { recursive: true });
 
-        // Write file content
-        await writeFile(destPath, content, 'utf-8');
+        // Write file content - no encoding parameter to preserve binary files
+        await writeFile(destPath, content);
         extractedCount++;
         this.logger.trace(CLASS_NAME, 'extractFilesToTempDir', `Extracted: ${filePath}`);
       } catch (error: unknown) {

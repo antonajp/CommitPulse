@@ -24,6 +24,7 @@ import type {
   DevProfileTestsWeekly,
   DevProfileHygieneScore,
   DevProfileVelocityPoint,
+  DevProfileTestDebtMetrics,
 } from '../../services/dev-profile-data-service.js';
 
 // Re-export types for convenience
@@ -39,6 +40,7 @@ export type {
   DevProfileTestsWeekly,
   DevProfileHygieneScore,
   DevProfileVelocityPoint,
+  DevProfileTestDebtMetrics,
 } from '../../services/dev-profile-data-service.js';
 
 // ============================================================================
@@ -177,6 +179,17 @@ export interface RequestHasVelocityData {
 }
 
 /**
+ * Request to load test debt metrics for a developer.
+ * The developer field should contain full_name (preferred) or login (fallback).
+ * Ticket: GITX-172
+ */
+export interface RequestTestDebtMetrics {
+  readonly type: 'requestTestDebtMetrics';
+  readonly developer: string;
+  readonly timeframeDays: DevProfileTimeframe;
+}
+
+/**
  * Union type of all messages sent from the webview to the extension host.
  */
 export type DevProfileWebviewToHost =
@@ -192,7 +205,8 @@ export type DevProfileWebviewToHost =
   | RequestTestsPerWeek
   | RequestHygieneScore
   | RequestVelocityVsLoc
-  | RequestHasVelocityData;
+  | RequestHasVelocityData
+  | RequestTestDebtMetrics;
 
 // ============================================================================
 // Extension -> Webview (Responses)
@@ -311,6 +325,15 @@ export interface ResponseHasVelocityData {
 }
 
 /**
+ * Response with test debt metrics data.
+ * Ticket: GITX-172
+ */
+export interface ResponseTestDebtMetrics {
+  readonly type: 'testDebtMetricsData';
+  readonly data: DevProfileTestDebtMetrics;
+}
+
+/**
  * Union type of all messages sent from the extension host to the webview.
  */
 export type DevProfileHostToWebview =
@@ -326,4 +349,5 @@ export type DevProfileHostToWebview =
   | ResponseHygieneScore
   | ResponseVelocityVsLoc
   | ResponseHasVelocityData
+  | ResponseTestDebtMetrics
   | ResponseError;

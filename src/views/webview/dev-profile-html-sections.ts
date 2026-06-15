@@ -2,7 +2,7 @@
  * HTML section generators for Developer Profile Dashboard.
  * Extracted to keep main HTML file under 600 lines.
  *
- * Ticket: GITX-156, GITX-157
+ * Ticket: GITX-156, GITX-157, GITX-172
  */
 
 /**
@@ -92,5 +92,41 @@ export function generateGitx156HtmlSections(): string {
           <div id="testsWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing test files modified per week"></div>
         </div>
         <p class="card-empty hidden" id="testsWeekEmpty">No test data available for the selected timeframe.</p>
+      </section>
+
+      <!-- Test Debt Risk Analysis (GITX-172) -->
+      <section class="card card-wide chart-lazy" id="testDebtCard" aria-label="Test Debt Risk Analysis" data-chart-id="testDebt">
+        <h2>Test Debt Risk Analysis</h2>
+        <div class="test-debt-container">
+          <div class="chart-container test-debt-chart-container">
+            <div class="chart-skeleton" id="testDebtSkeleton" aria-hidden="true"></div>
+            <div id="testDebtChart" class="d3-chart d3-stacked-bar hidden" role="img" aria-label="Stacked bar chart showing weekly commits by test coverage tier"></div>
+          </div>
+          <div class="test-debt-metrics hidden" id="testDebtMetrics">
+            <div class="test-debt-roi" id="testDebtRoi">
+              <span class="roi-value" id="roiValue">-</span>
+              <span class="roi-label">Your low-test commits cause <span id="roiMultiplier">0</span>x more bugs</span>
+            </div>
+            <div class="test-debt-comparison hidden" id="testDebtComparison">
+              <span class="comparison-label">Team average: <span id="teamAvgRoi">-</span>x</span>
+            </div>
+            <div class="test-debt-summary" id="testDebtSummary">
+              <span class="summary-item"><span id="lowTestCount">0</span> low-test commits</span>
+              <span class="summary-item"><span id="totalTestCommits">0</span> total commits</span>
+            </div>
+          </div>
+        </div>
+        <p class="card-empty hidden" id="testDebtEmpty">No test coverage data available for this developer.</p>
+        <p class="card-success hidden" id="testDebtSuccess">Great job! All commits have good test coverage.</p>
+        <details class="chart-explanation">
+          <summary>What is Test Debt?</summary>
+          <p>Test debt occurs when production code is committed without adequate test coverage. This chart shows your commits by test coverage tier:</p>
+          <ul>
+            <li><span class="tier-badge tier-low">Low</span> Test ratio &lt; 10% (highest bug risk)</li>
+            <li><span class="tier-badge tier-medium">Medium</span> Test ratio 10-50%</li>
+            <li><span class="tier-badge tier-high">High</span> Test ratio &gt; 50% (lowest bug risk)</li>
+          </ul>
+          <p>The ROI metric shows how much more likely low-test commits are to result in bugs compared to well-tested commits.</p>
+        </details>
       </section>`;
 }

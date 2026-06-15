@@ -2,11 +2,12 @@
  * D3.js chart rendering functions for the Developer Profile Dashboard.
  * Contains inline JavaScript code for rendering charts in the webview.
  * Extracted from dev-profile-html.ts to keep files under 600 lines.
- * Ticket: GITX-155, GITX-156, GITX-157
+ * Ticket: GITX-155, GITX-156, GITX-157, GITX-172, GITX-174
  */
 
 /**
- * Generate the JavaScript code for the LOC week chart (GITX-155).
+ * Generate the JavaScript code for the LOC week chart (GITX-155, GITX-174).
+ * GITX-174: Converted from stacked bar chart to multi-line chart with zero-value filtering.
  */
 export function generateLocWeekChartScript(): string {
   return `
@@ -20,6 +21,14 @@ export function generateLocWeekChartScript(): string {
           return;
         }
 
+        // GITX-174: Check if all values are zero (empty state)
+        var hasNonZero = data.some(function(d) { return d.linesAdded > 0; });
+        if (!hasNonZero) {
+          document.getElementById('locWeekChart').classList.add('hidden');
+          document.getElementById('locWeekEmpty').classList.remove('hidden');
+          return;
+        }
+
         document.getElementById('locWeekChart').classList.remove('hidden');
         document.getElementById('locWeekEmpty').classList.add('hidden');
 
@@ -27,14 +36,19 @@ export function generateLocWeekChartScript(): string {
         var weeks = Array.from(new Set(data.map(function(d) { return d.weekStart; }))).sort();
         var repos = Array.from(new Set(data.map(function(d) { return d.repository; })));
 
-        // Build stacked data
-        var stackedData = weeks.map(function(week) {
-          var entry = { week: week };
-          repos.forEach(function(repo) {
-            var point = data.find(function(d) { return d.weekStart === week && d.repository === repo; });
-            entry[repo] = point ? point.linesAdded : 0;
-          });
-          return entry;
+        // GITX-174: Build line data per repository with null for zero values
+        var repoData = repos.map(function(repo) {
+          return {
+            repo: repo,
+            values: weeks.map(function(week) {
+              var point = data.find(function(d) { return d.weekStart === week && d.repository === repo; });
+              var linesAdded = point ? point.linesAdded : 0;
+              return {
+                week: week,
+                value: linesAdded > 0 ? linesAdded : null // null for zero values to create gaps
+              };
+            })
+          };
         });
 
         // Chart dimensions
@@ -55,43 +69,52 @@ export function generateLocWeekChartScript(): string {
         var x = d3.scaleBand()
           .domain(weeks)
           .range([0, width])
-          .padding(0.2);
+          .padding(0.1);
 
-        var maxY = d3.max(stackedData, function(d) {
-          return repos.reduce(function(sum, repo) { return sum + (d[repo] || 0); }, 0);
-        });
+        var maxY = d3.max(data, function(d) { return d.linesAdded; }) || 100;
         var y = d3.scaleLinear()
-          .domain([0, maxY || 100])
+          .domain([0, maxY])
           .nice()
           .range([height, 0]);
 
         var color = d3.scaleOrdinal(d3.schemeCategory10).domain(repos);
 
-        // Stack generator
-        var stack = d3.stack().keys(repos);
-        var series = stack(stackedData);
+        // GITX-174: Line generator with .defined() for zero-value filtering
+        var line = d3.line()
+          .defined(function(d) { return d.value !== null; })
+          .x(function(d) { return x(d.week) + x.bandwidth() / 2; })
+          .y(function(d) { return y(d.value); })
+          .curve(d3.curveMonotoneX);
 
-        // Draw bars
-        svg.selectAll('.serie')
-          .data(series)
-          .enter()
-          .append('g')
-          .attr('class', 'serie')
-          .attr('fill', function(d) { return color(d.key); })
-          .selectAll('rect')
-          .data(function(d) { return d; })
-          .enter()
-          .append('rect')
-          .attr('x', function(d) { return x(d.data.week); })
-          .attr('y', function(d) { return y(d[1]); })
-          .attr('height', function(d) { return y(d[0]) - y(d[1]); })
-          .attr('width', x.bandwidth())
-          .attr('tabindex', '0')
-          .attr('role', 'img')
-          .attr('aria-label', function(d, i, nodes) {
-            var parentData = d3.select(nodes[i].parentNode).datum();
-            return parentData.key + ': ' + formatNumber(d[1] - d[0]) + ' lines for week ' + d.data.week;
-          });
+        // GITX-174: Draw lines for each repository
+        repoData.forEach(function(rd) {
+          svg.append('path')
+            .datum(rd.values)
+            .attr('fill', 'none')
+            .attr('stroke', color(rd.repo))
+            .attr('stroke-width', 2)
+            .attr('d', line);
+
+          // GITX-174: Add data points at non-zero values (4px radius)
+          svg.selectAll('.point-' + rd.repo.replace(/[^a-zA-Z0-9]/g, '-'))
+            .data(rd.values.filter(function(d) { return d.value !== null; }))
+            .enter()
+            .append('circle')
+            .attr('class', 'point')
+            .attr('cx', function(d) { return x(d.week) + x.bandwidth() / 2; })
+            .attr('cy', function(d) { return y(d.value); })
+            .attr('r', 4)
+            .attr('fill', color(rd.repo))
+            .attr('tabindex', 0)
+            .attr('role', 'img')
+            .attr('aria-label', function(d) {
+              return rd.repo + ': ' + formatNumber(d.value) + ' lines for week ' + d.week;
+            })
+            .append('title')
+            .text(function(d) {
+              return rd.repo + '\\n' + d.week + '\\n' + formatNumber(d.value) + ' lines added';
+            });
+        });
 
         // X axis
         svg.append('g')
@@ -252,6 +275,9 @@ export function generateTableRenderingScripts(): string {
 
 // Re-export velocity chart script from separate module (GITX-157)
 export { generateVelocityChartScript } from './dev-profile-velocity-chart.js';
+
+// Re-export test debt chart script from separate module (GITX-172)
+export { generateTestDebtChartScript } from './dev-profile-test-debt-chart.js';
 
 /**
  * Generate the JavaScript code for the GITX-156 charts (tech stack, hygiene, comments, tests).

@@ -285,7 +285,7 @@ export class DevProfilePanel implements vscode.Disposable {
         }
 
         case 'requestAllData': {
-          // Request all data in parallel (including GITX-156 + GITX-157 charts)
+          // Request all data in parallel (including GITX-156 + GITX-157 + GITX-172 charts)
           this.selectedDeveloper = message.developer;
           this.selectedTimeframe = message.timeframeDays;
           const filters = {
@@ -293,7 +293,8 @@ export class DevProfilePanel implements vscode.Disposable {
             timeframeDays: message.timeframeDays,
           };
           // GITX-157: Added velocityVsLoc and hasVelocityData
-          const [summary, locPerWeek, complexFiles, frequentFiles, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, hasVelocityData] = await Promise.all([
+          // GITX-172: Added testDebtMetrics
+          const [summary, locPerWeek, complexFiles, frequentFiles, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, hasVelocityData, testDebtMetrics] = await Promise.all([
             this.dataService.getSummary(filters),
             this.dataService.getLocPerWeek(filters),
             this.dataService.getTopComplexFiles(filters),
@@ -304,6 +305,7 @@ export class DevProfilePanel implements vscode.Disposable {
             this.dataService.getHygieneScore(filters),
             this.dataService.getVelocityVsLoc(filters),
             this.dataService.hasVelocityData(filters.developer),
+            this.dataService.getTestDebtMetrics(filters),
           ]);
           this.postMessage({ type: 'summaryData', data: summary });
           this.postMessage({ type: 'locPerWeekData', data: locPerWeek });
@@ -316,6 +318,8 @@ export class DevProfilePanel implements vscode.Disposable {
           // GITX-157: Send velocity data and availability status
           this.postMessage({ type: 'velocityVsLocData', data: velocityVsLoc });
           this.postMessage({ type: 'hasVelocityData', hasData: hasVelocityData });
+          // GITX-172: Send test debt metrics
+          this.postMessage({ type: 'testDebtMetricsData', data: testDebtMetrics });
           break;
         }
 
@@ -369,6 +373,16 @@ export class DevProfilePanel implements vscode.Disposable {
           // GITX-157: Check if velocity data is available
           const hasData = await this.dataService.hasVelocityData(message.developer);
           this.postMessage({ type: 'hasVelocityData', hasData });
+          break;
+        }
+
+        case 'requestTestDebtMetrics': {
+          // GITX-172: Test debt metrics
+          const testDebtData = await this.dataService.getTestDebtMetrics({
+            developer: message.developer,
+            timeframeDays: message.timeframeDays,
+          });
+          this.postMessage({ type: 'testDebtMetricsData', data: testDebtData });
           break;
         }
 

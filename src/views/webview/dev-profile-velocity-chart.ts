@@ -211,7 +211,8 @@ export function generateVelocityChartScript(): string {
           { key: '5', id: 'velocityCard', label: 'Sprint Velocity' },
           { key: '6', id: 'techStackCard', label: 'Technology Stack' },
           { key: '7', id: 'hygieneCard', label: 'Commit Hygiene' },
-          { key: '8', id: 'commentsWeekCard', label: 'Comments per Week' }
+          { key: '8', id: 'commentsWeekCard', label: 'Comments per Week' },
+          { key: '9', id: 'testDebtCard', label: 'Test Debt Analysis' }
         ];
 
         document.addEventListener('keydown', function(e) {
