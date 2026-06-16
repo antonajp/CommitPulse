@@ -59,6 +59,12 @@ export class DevProfilePanel implements vscode.Disposable {
   private dataService: DevProfileDataService | undefined;
   private selectedDeveloper: string | null = null;
   private selectedTimeframe: DevProfileTimeframe = '90';
+  /**
+   * Flag to track disposal state and prevent race conditions.
+   * When true, incoming messages are ignored to avoid "pool after end" errors.
+   * GITX-175: Fixes race condition between panel disposal and active database queries.
+   */
+  private isDisposed = false;
 
   /**
    * Create or reveal the Developer Profile panel.
@@ -212,6 +218,12 @@ export class DevProfilePanel implements vscode.Disposable {
    */
   private async handleMessage(message: DevProfileWebviewToHost): Promise<void> {
     this.logger.debug(CLASS_NAME, 'handleMessage', `Handling message: ${message.type}`);
+
+    // GITX-175: Check disposal state to prevent race condition with pool shutdown
+    if (this.isDisposed) {
+      this.logger.debug(CLASS_NAME, 'handleMessage', `Panel disposed, ignoring message: ${message.type}`);
+      return;
+    }
 
     // Rate limiting check
     const rateLimitCheck = this.rateLimiter.checkRateLimit(message.type);
@@ -430,8 +442,15 @@ export class DevProfilePanel implements vscode.Disposable {
   /**
    * Ensure a database connection is available for queries.
    * Lazily initializes the DatabaseService and DevProfileDataService.
+   * GITX-175: Throws if panel is disposed to prevent pool recreation during disposal.
    */
   private async ensureDbConnection(): Promise<void> {
+    // GITX-175: Prevent pool recreation during disposal
+    if (this.isDisposed) {
+      this.logger.debug(CLASS_NAME, 'ensureDbConnection', 'Panel disposed, rejecting connection request');
+      throw new Error('Panel is disposed. Cannot establish database connection.');
+    }
+
     if (this.dataService) {
       this.logger.trace(CLASS_NAME, 'ensureDbConnection', 'Data service already available');
       return;
@@ -495,6 +514,12 @@ export class DevProfilePanel implements vscode.Disposable {
    * Shuts down the database connection if one was opened.
    */
   dispose(): void {
+    // GITX-175: Prevent double disposal and set flag FIRST to stop new queries
+    if (this.isDisposed) {
+      this.logger.debug(CLASS_NAME, 'dispose', 'Panel already disposed, skipping');
+      return;
+    }
+    this.isDisposed = true;
     this.logger.info(CLASS_NAME, 'dispose', 'Disposing DevProfilePanel');
 
     DevProfilePanel.currentPanel = undefined;
@@ -502,12 +527,20 @@ export class DevProfilePanel implements vscode.Disposable {
     // Reset rate limiter state
     this.rateLimiter.reset();
 
-    // Shut down the database connection
-    if (this.db) {
+    // GITX-175: Clear references BEFORE shutdown to prevent new queries
+    // Store reference for async shutdown, then clear immediately
+    const dbToShutdown = this.db;
+    this.db = undefined;
+    this.dataService = undefined;
+
+    // Shut down the database connection in background
+    // Log any shutdown errors but don't block disposal
+    if (dbToShutdown) {
       this.logger.debug(CLASS_NAME, 'dispose', 'Shutting down developer profile database connection');
-      void this.db.shutdown();
-      this.db = undefined;
-      this.dataService = undefined;
+      dbToShutdown.shutdown().catch((err: unknown) => {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        this.logger.error(CLASS_NAME, 'dispose', `DB shutdown error: ${errorMsg}`);
+      });
     }
 
     // Dispose the webview panel

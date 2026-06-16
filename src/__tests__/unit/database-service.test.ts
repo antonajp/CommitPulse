@@ -465,6 +465,66 @@ describe('DatabaseService', () => {
       expect(service.isInitialized()).toBe(false);
     });
   });
+
+  /**
+   * GITX-175: Tests for shutdown guard to prevent "cannot use a pool after calling end" errors.
+   * These tests verify that queries and transactions are rejected during shutdown.
+   */
+  describe('shutdown guard (GITX-175)', () => {
+    it('should reject queries when shutdown is in progress', async () => {
+      const config = createTestConfig();
+      await service.initialize(config);
+
+      // Start shutdown but don't await it yet
+      const shutdownPromise = service.shutdown();
+
+      // Query should be rejected because isShuttingDown is true
+      await expect(service.query('SELECT 1')).rejects.toThrow('shutting down');
+
+      // Complete shutdown
+      await shutdownPromise;
+    });
+
+    it('should reject transactions when shutdown is in progress', async () => {
+      const config = createTestConfig();
+      await service.initialize(config);
+
+      // Start shutdown but don't await it yet
+      const shutdownPromise = service.shutdown();
+
+      // Transaction should be rejected because isShuttingDown is true
+      await expect(service.transaction(async () => 'never')).rejects.toThrow('shutting down');
+
+      // Complete shutdown
+      await shutdownPromise;
+    });
+
+    it('should handle double shutdown gracefully', async () => {
+      const config = createTestConfig();
+      await service.initialize(config);
+
+      // First shutdown
+      await service.shutdown();
+
+      // Second shutdown should not throw
+      await expect(service.shutdown()).resolves.not.toThrow();
+    });
+
+    it('should clear isShuttingDown flag on reinitialization', async () => {
+      const config = createTestConfig();
+      await service.initialize(config);
+      await service.shutdown();
+
+      // Reinitialize
+      setupMockClient();
+      await service.initialize(config);
+
+      // Query should work after reinitialization
+      mockQuery.mockResolvedValueOnce({ rows: [{ result: 1 }], rowCount: 1 });
+      const result = await service.query('SELECT 1 AS result');
+      expect(result.rows[0]).toEqual({ result: 1 });
+    });
+  });
 });
 
 describe('buildConfigFromSettings', () => {
