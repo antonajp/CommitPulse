@@ -219,6 +219,12 @@ export class DatabaseService {
   ): Promise<DatabaseQueryResult<T>> {
     this.ensureInitialized();
 
+    // GITX-175: Reject queries if shutdown is in progress to prevent race condition
+    if (this.isShuttingDown) {
+      this.logger.warn(CLASS_NAME, 'query', 'Query rejected: shutdown in progress');
+      throw new Error('DatabaseService is shutting down. Cannot execute query.');
+    }
+
     this.logger.trace(CLASS_NAME, 'query', `Executing query: ${this.truncateSql(sql)} with ${params.length} parameter(s)`);
 
     // Safety check: warn if SQL appears to contain string interpolation
@@ -260,6 +266,12 @@ export class DatabaseService {
    */
   async transaction<T>(callback: TransactionCallback<T>): Promise<T> {
     this.ensureInitialized();
+
+    // GITX-175: Reject transactions if shutdown is in progress to prevent race condition
+    if (this.isShuttingDown) {
+      this.logger.warn(CLASS_NAME, 'transaction', 'Transaction rejected: shutdown in progress');
+      throw new Error('DatabaseService is shutting down. Cannot begin transaction.');
+    }
 
     this.logger.debug(CLASS_NAME, 'transaction', 'Beginning transaction');
 
