@@ -2,15 +2,99 @@
  * D3.js chart rendering functions for the Developer Profile Dashboard.
  * Contains inline JavaScript code for rendering charts in the webview.
  * Extracted from dev-profile-html.ts to keep files under 600 lines.
- * Ticket: GITX-155, GITX-156, GITX-157, GITX-172, GITX-174
+ * Ticket: GITX-155, GITX-156, GITX-157, GITX-172, GITX-174, GITX-176
  */
 
 /**
- * Generate the JavaScript code for the LOC week chart (GITX-155, GITX-174).
+ * Generate the JavaScript code for the LOC week chart (GITX-155, GITX-174, GITX-176).
  * GITX-174: Converted from stacked bar chart to multi-line chart with zero-value filtering.
+ * GITX-176: Custom D3.js tooltips with viewport boundary detection and keyboard accessibility.
  */
 export function generateLocWeekChartScript(): string {
   return `
+      // ======================================================================
+      // GITX-176: Tooltip helper functions for LOC chart
+      // ======================================================================
+      var locTooltip = null;
+
+      function formatWeekDate(weekStr) {
+        // Convert YYYY-MM-DD to "Week of Mon DD, YYYY"
+        try {
+          var date = new Date(weekStr + 'T00:00:00');
+          var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          return 'Week of ' + months[date.getMonth()] + ' ' + date.getDate() + ', ' + date.getFullYear();
+        } catch (e) {
+          return weekStr;
+        }
+      }
+
+      function truncateRepoName(name, maxLen) {
+        if (!name || name.length <= maxLen) { return name; }
+        return name.slice(0, maxLen - 3) + '...';
+      }
+
+      function showLocTooltip(event, repoName, weekStr, value) {
+        if (!locTooltip) {
+          locTooltip = document.getElementById('locTooltip');
+        }
+        if (!locTooltip) { return; }
+
+        var displayRepo = truncateRepoName(escapeHtml(repoName), 40);
+        var displayWeek = formatWeekDate(weekStr);
+        var displayValue = formatNumber(value);
+
+        locTooltip.innerHTML =
+          '<div class="tt-repo">' + displayRepo + '</div>' +
+          '<div class="tt-week">' + displayWeek + '</div>' +
+          '<div class="tt-value">Lines Added: ' + displayValue + '</div>';
+
+        locTooltip.classList.add('visible');
+        locTooltip.setAttribute('aria-hidden', 'false');
+        moveLocTooltip(event);
+      }
+
+      function moveLocTooltip(event) {
+        if (!locTooltip) { return; }
+
+        var x = event.pageX + 12;
+        var y = event.pageY - 28;
+
+        // GITX-176: Viewport boundary detection
+        var ttRect = locTooltip.getBoundingClientRect();
+        var viewportWidth = window.innerWidth;
+        var viewportHeight = window.innerHeight;
+
+        // Check right boundary
+        if (x + ttRect.width > viewportWidth - 20) {
+          x = event.pageX - ttRect.width - 12;
+        }
+        // Check left boundary
+        if (x < 10) {
+          x = 10;
+        }
+        // Check bottom boundary
+        if (y + ttRect.height > viewportHeight - 20) {
+          y = event.pageY - ttRect.height - 12;
+        }
+        // Check top boundary
+        if (y < 10) {
+          y = event.pageY + 20;
+        }
+
+        locTooltip.style.left = x + 'px';
+        locTooltip.style.top = y + 'px';
+      }
+
+      function hideLocTooltip() {
+        if (!locTooltip) {
+          locTooltip = document.getElementById('locTooltip');
+        }
+        if (locTooltip) {
+          locTooltip.classList.remove('visible');
+          locTooltip.setAttribute('aria-hidden', 'true');
+        }
+      }
+
       function renderLocWeekChart(data) {
         hideSkeleton('locWeekSkeleton');
         cachedLocData = data;
@@ -95,7 +179,8 @@ export function generateLocWeekChartScript(): string {
             .attr('stroke-width', 2)
             .attr('d', line);
 
-          // GITX-174: Add data points at non-zero values (4px radius)
+          // GITX-174, GITX-176: Add data points at non-zero values (4px radius)
+          // GITX-176: Custom tooltip with mouse and keyboard event handlers
           svg.selectAll('.point-' + rd.repo.replace(/[^a-zA-Z0-9]/g, '-'))
             .data(rd.values.filter(function(d) { return d.value !== null; }))
             .enter()
@@ -110,9 +195,28 @@ export function generateLocWeekChartScript(): string {
             .attr('aria-label', function(d) {
               return rd.repo + ': ' + formatNumber(d.value) + ' lines for week ' + d.week;
             })
-            .append('title')
-            .text(function(d) {
-              return rd.repo + '\\n' + d.week + '\\n' + formatNumber(d.value) + ' lines added';
+            // GITX-176: Mouse event handlers for custom tooltip
+            .on('mouseenter', function(event, d) {
+              showLocTooltip(event, rd.repo, d.week, d.value);
+            })
+            .on('mousemove', function(event) {
+              moveLocTooltip(event);
+            })
+            .on('mouseleave', function() {
+              hideLocTooltip();
+            })
+            // GITX-176: Keyboard event handlers for accessibility
+            .on('focus', function(event, d) {
+              // Create synthetic event for tooltip positioning
+              var rect = this.getBoundingClientRect();
+              var syntheticEvent = {
+                pageX: rect.left + rect.width / 2,
+                pageY: rect.top
+              };
+              showLocTooltip(syntheticEvent, rd.repo, d.week, d.value);
+            })
+            .on('blur', function() {
+              hideLocTooltip();
             });
         });
 
