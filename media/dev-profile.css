@@ -892,4 +892,70 @@ body {
   .chart-lazy.loading::before {
     animation: none;
   }
+
+  .chart-tooltip {
+    transition: none;
+  }
+}
+
+/* ============================================================================
+   Chart Tooltip (GITX-176)
+   Custom tooltip for D3.js charts with VS Code theme integration.
+   ============================================================================ */
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #555);
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 0.85em;
+  color: var(--vscode-editorWidget-foreground, #cccccc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.15s;
+  max-width: 300px;
+}
+
+.chart-tooltip.visible {
+  opacity: 1;
+}
+
+.chart-tooltip .tt-repo {
+  font-weight: 600;
+  margin-bottom: 4px;
+  line-height: 1.4;
+  word-break: break-word;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.chart-tooltip .tt-week {
+  color: var(--vscode-descriptionForeground, #888888);
+  font-size: 0.9em;
+  margin-bottom: 4px;
+}
+
+.chart-tooltip .tt-value {
+  font-weight: 500;
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+/* Data point hover states (GITX-176) */
+.d3-chart circle.point {
+  transition: r 0.15s ease-out, stroke-width 0.15s ease-out;
+}
+
+.d3-chart circle.point:hover,
+.d3-chart circle.point:focus {
+  r: 6;
+  stroke: var(--vscode-focusBorder, #007fd4);
+  stroke-width: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .d3-chart circle.point {
+    transition: none;
+  }
 }

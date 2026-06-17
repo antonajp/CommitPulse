@@ -215,6 +215,9 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
       </section>
 ${generateGitx156HtmlSections()}
     </main>
+
+    <!-- GITX-176: Custom tooltip for LOC chart -->
+    <div id="locTooltip" class="chart-tooltip" role="tooltip" aria-hidden="true"></div>
   </div>
 
   <script nonce="${nonce}" src="${d3Uri.toString()}"></script>

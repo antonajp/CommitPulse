@@ -231,10 +231,12 @@ export function generateVelocityChartScript(): string {
           });
         } else {
           // Line chart (GITX-158: Added drill-down click handlers)
+          // GITX-177: Zero-value filtering - null values create gaps in the line
           repos.forEach(function(repo) {
             var lineData = dates.map(function(date) {
               var pt = dataPoints.find(function(d) { return d.date === date && d.repository === repo; });
-              return { date: date, value: pt ? pt.locCount : 0 };
+              var value = pt ? pt.locCount : 0;
+              return { date: date, value: value > 0 ? value : null };
             });
             var line = d3.line()
               .x(function(d) { return x(d.date) + x.bandwidth() / 2; })
@@ -244,7 +246,8 @@ export function generateVelocityChartScript(): string {
             g.append('path').datum(lineData)
               .attr('fill', 'none').attr('stroke', color(repo)).attr('stroke-width', 2).attr('d', line);
 
-            lineData.forEach(function(d) {
+            // GITX-177: Only render data points for non-null values
+            lineData.filter(function(d) { return d.value !== null; }).forEach(function(d) {
               g.append('circle')
                 .attr('cx', x(d.date) + x.bandwidth() / 2).attr('cy', y(d.value)).attr('r', 3).attr('fill', color(repo))
                 .attr('cursor', 'pointer')
@@ -276,10 +279,25 @@ export function generateVelocityChartScript(): string {
           .attr('text-anchor', 'middle').attr('fill', chartDefaults.color)
           .attr('font-size', '12px').attr('font-weight', '600').text('LOC per ' + granularity);
 
-        // Legend
-        var legend = svg.append('g').attr('transform', 'translate(' + (margin.left + 10) + ',' + (height + margin.top + 36) + ')');
+        // GITX-177: Multi-row legend with dynamic wrapping based on chart width
+        var legendItemWidth = 120;
+        var legendItemHeight = 16;
+        var legendItemsPerRow = Math.max(1, Math.floor(width / legendItemWidth));
+        var legendRows = Math.ceil(repos.length / legendItemsPerRow);
+        var legendStartY = height + margin.top + 36;
+
+        // Adjust SVG height to accommodate multi-row legend
+        var totalLegendHeight = legendRows * legendItemHeight;
+        var requiredHeight = legendStartY + totalLegendHeight + 10;
+        if (requiredHeight > height + margin.top + margin.bottom) {
+          svg.attr('height', requiredHeight);
+        }
+
+        var legend = svg.append('g').attr('transform', 'translate(' + (margin.left + 10) + ',' + legendStartY + ')');
         repos.forEach(function(repo, i) {
-          var lg = legend.append('g').attr('transform', 'translate(' + (i * 120) + ',0)');
+          var row = Math.floor(i / legendItemsPerRow);
+          var col = i % legendItemsPerRow;
+          var lg = legend.append('g').attr('transform', 'translate(' + (col * legendItemWidth) + ',' + (row * legendItemHeight) + ')');
           lg.append('rect').attr('width', 10).attr('height', 10).attr('fill', color(repo));
           lg.append('text').attr('x', 14).attr('y', 9).attr('fill', chartDefaults.color).attr('font-size', '10px').text(repo);
         });

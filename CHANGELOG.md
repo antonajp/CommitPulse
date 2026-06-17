@@ -5,6 +5,14 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+[0;34m[INFO][0m Generating changelog from commits since v0.1.38...
+## [0.1.39] - 2026-06-17
+
+### Added
+
+- Enhance LOC per Week chart with zero-value gaps and multi-row legend
+- Add custom tooltips to LOC per Week chart
+
 [0;34m[INFO][0m Generating changelog from commits since v0.1.37...
 ## [0.1.38] - 2026-06-16
 
