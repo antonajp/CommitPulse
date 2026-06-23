@@ -107,14 +107,15 @@ export class VelocityDataService {
 
     // Query all filter options in parallel
     // GITX-129: Use 'repository' column name (not 'repo')
+    // GITX-178: Query now returns 'contributor' (COALESCE(full_name, login)) instead of 'login'
     const [teamsResult, membersResult, reposResult] = await Promise.all([
       this.db.query<{ team: string }>(QUERY_VELOCITY_UNIQUE_TEAMS),
-      this.db.query<{ login: string }>(QUERY_VELOCITY_UNIQUE_CONTRIBUTORS),
+      this.db.query<{ contributor: string }>(QUERY_VELOCITY_UNIQUE_CONTRIBUTORS),
       this.db.query<{ repository: string }>(QUERY_VELOCITY_UNIQUE_REPOSITORIES),
     ]);
 
     const teams = teamsResult.rows.map(row => row.team);
-    const teamMembers = membersResult.rows.map(row => row.login);
+    const teamMembers = membersResult.rows.map(row => row.contributor);
     const repositories = reposResult.rows.map(row => row.repository);
 
     this.logger.debug(

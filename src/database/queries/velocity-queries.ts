@@ -274,15 +274,17 @@ export const QUERY_VELOCITY_UNIQUE_TEAMS = `
 
 /**
  * Query to get unique contributors from commit_contributors for filter dropdown.
- * Returns distinct login values sorted alphabetically.
+ * GITX-178: Returns COALESCE(full_name, login) to group all logins under one identity.
+ * This ensures the dropdown shows full_name (e.g., "John Doe") instead of login (e.g., "jdoe").
+ * Falls back to login when full_name is NULL (e.g., bots, service accounts).
  * Limited to 5000 results for safety (GITX-129).
- * Ticket: GITX-121, GITX-129
+ * Ticket: GITX-121, GITX-129, GITX-178
  */
 export const QUERY_VELOCITY_UNIQUE_CONTRIBUTORS = `
-  SELECT DISTINCT login
-  FROM commit_contributors
-  WHERE login IS NOT NULL AND login <> ''
-  ORDER BY login ASC
+  SELECT DISTINCT COALESCE(cc.full_name, cc.login) AS contributor
+  FROM commit_contributors cc
+  WHERE cc.login IS NOT NULL AND cc.login <> ''
+  ORDER BY contributor ASC
   LIMIT 5000
 `;
 
@@ -307,10 +309,11 @@ export const QUERY_VELOCITY_UNIQUE_REPOSITORIES = `
 /**
  * Query to fetch sprint velocity vs LOC data with team member filter.
  * Requires JOIN to commit_history to match contributor login with author.
+ * GITX-178: Uses COALESCE(full_name, login) to match by full_name with login fallback.
  * Parameters:
- *   $1 - teamMember (TEXT) - contributor login to filter by
+ *   $1 - teamMember (TEXT) - contributor full_name or login to filter by
  *
- * Ticket: GITX-121
+ * Ticket: GITX-121, GITX-178
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER = `
   SELECT
@@ -330,7 +333,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER = `
   INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
-  WHERE cc.login = $1
+  WHERE COALESCE(cc.full_name, cc.login) = $1
   GROUP BY v.week_start, v.team, v.project, v.repository,
     v.human_story_points, v.ai_story_points, v.total_story_points,
     v.issue_count, v.total_loc_changed, v.total_lines_added,
@@ -341,11 +344,12 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER = `
 
 /**
  * Query to fetch sprint velocity vs LOC data with team AND team member filter.
+ * GITX-178: Uses COALESCE(full_name, login) to match by full_name with login fallback.
  * Parameters:
  *   $1 - team (TEXT) - team name to filter by
- *   $2 - teamMember (TEXT) - contributor login to filter by
+ *   $2 - teamMember (TEXT) - contributor full_name or login to filter by
  *
- * Ticket: GITX-121
+ * Ticket: GITX-121, GITX-178
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_COMBINED = `
   SELECT
@@ -365,7 +369,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_COMBINED = `
   INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
-  WHERE v.team = $1 AND cc.login = $2
+  WHERE v.team = $1 AND COALESCE(cc.full_name, cc.login) = $2
   GROUP BY v.week_start, v.team, v.project, v.repository,
     v.human_story_points, v.ai_story_points, v.total_story_points,
     v.issue_count, v.total_loc_changed, v.total_lines_added,
@@ -376,11 +380,12 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_COMBINED = `
 
 /**
  * Query to fetch sprint velocity vs LOC data with team member AND repository filter.
+ * GITX-178: Uses COALESCE(full_name, login) to match by full_name with login fallback.
  * Parameters:
- *   $1 - teamMember (TEXT) - contributor login to filter by
+ *   $1 - teamMember (TEXT) - contributor full_name or login to filter by
  *   $2 - repository (TEXT) - repository name to filter by
  *
- * Ticket: GITX-121
+ * Ticket: GITX-121, GITX-178
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_REPOSITORY = `
   SELECT
@@ -400,7 +405,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_REPOSITORY = `
   INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
-  WHERE cc.login = $1 AND v.repository = $2
+  WHERE COALESCE(cc.full_name, cc.login) = $1 AND v.repository = $2
   GROUP BY v.week_start, v.team, v.project, v.repository,
     v.human_story_points, v.ai_story_points, v.total_story_points,
     v.issue_count, v.total_loc_changed, v.total_lines_added,
@@ -411,12 +416,13 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_TEAM_MEMBER_REPOSITORY = `
 
 /**
  * Query to fetch sprint velocity vs LOC data with team, team member, AND repository filter.
+ * GITX-178: Uses COALESCE(full_name, login) to match by full_name with login fallback.
  * Parameters:
  *   $1 - team (TEXT) - team name to filter by
- *   $2 - teamMember (TEXT) - contributor login to filter by
+ *   $2 - teamMember (TEXT) - contributor full_name or login to filter by
  *   $3 - repository (TEXT) - repository name to filter by
  *
- * Ticket: GITX-121
+ * Ticket: GITX-121, GITX-178
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_ALL_FILTERS = `
   SELECT
@@ -436,7 +442,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_ALL_FILTERS = `
   INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
-  WHERE v.team = $1 AND cc.login = $2 AND v.repository = $3
+  WHERE v.team = $1 AND COALESCE(cc.full_name, cc.login) = $2 AND v.repository = $3
   GROUP BY v.week_start, v.team, v.project, v.repository,
     v.human_story_points, v.ai_story_points, v.total_story_points,
     v.issue_count, v.total_loc_changed, v.total_lines_added,
@@ -447,12 +453,13 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_ALL_FILTERS = `
 
 /**
  * Query to fetch sprint velocity vs LOC data with date range AND team member filter.
+ * GITX-178: Uses COALESCE(full_name, login) to match by full_name with login fallback.
  * Parameters:
  *   $1 - start_date (DATE) - beginning of date range
  *   $2 - end_date (DATE) - end of date range
- *   $3 - teamMember (TEXT) - contributor login to filter by
+ *   $3 - teamMember (TEXT) - contributor full_name or login to filter by
  *
- * Ticket: GITX-121
+ * Ticket: GITX-121, GITX-178
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER = `
   SELECT
@@ -472,7 +479,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER = `
   INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
-  WHERE v.week_start >= $1 AND v.week_start <= $2 AND cc.login = $3
+  WHERE v.week_start >= $1 AND v.week_start <= $2 AND COALESCE(cc.full_name, cc.login) = $3
   GROUP BY v.week_start, v.team, v.project, v.repository,
     v.human_story_points, v.ai_story_points, v.total_story_points,
     v.issue_count, v.total_loc_changed, v.total_lines_added,
@@ -483,13 +490,14 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER = `
 
 /**
  * Query to fetch sprint velocity vs LOC data with date range, team, AND team member filter.
+ * GITX-178: Uses COALESCE(full_name, login) to match by full_name with login fallback.
  * Parameters:
  *   $1 - start_date (DATE) - beginning of date range
  *   $2 - end_date (DATE) - end of date range
  *   $3 - team (TEXT) - team name to filter by
- *   $4 - teamMember (TEXT) - contributor login to filter by
+ *   $4 - teamMember (TEXT) - contributor full_name or login to filter by
  *
- * Ticket: GITX-121
+ * Ticket: GITX-121, GITX-178
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_COMBINED = `
   SELECT
@@ -509,7 +517,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_COMBINED = `
   INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
-  WHERE v.week_start >= $1 AND v.week_start <= $2 AND v.team = $3 AND cc.login = $4
+  WHERE v.week_start >= $1 AND v.week_start <= $2 AND v.team = $3 AND COALESCE(cc.full_name, cc.login) = $4
   GROUP BY v.week_start, v.team, v.project, v.repository,
     v.human_story_points, v.ai_story_points, v.total_story_points,
     v.issue_count, v.total_loc_changed, v.total_lines_added,
@@ -520,13 +528,14 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_COMBINED = `
 
 /**
  * Query to fetch sprint velocity vs LOC data with date range, team member, AND repository filter.
+ * GITX-178: Uses COALESCE(full_name, login) to match by full_name with login fallback.
  * Parameters:
  *   $1 - start_date (DATE) - beginning of date range
  *   $2 - end_date (DATE) - end of date range
- *   $3 - teamMember (TEXT) - contributor login to filter by
+ *   $3 - teamMember (TEXT) - contributor full_name or login to filter by
  *   $4 - repository (TEXT) - repository name to filter by
  *
- * Ticket: GITX-121
+ * Ticket: GITX-121, GITX-178
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_REPOSITORY = `
   SELECT
@@ -546,7 +555,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_REPOSITORY = `
   INNER JOIN commit_history ch ON v.repository = ch.repository
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
-  WHERE v.week_start >= $1 AND v.week_start <= $2 AND cc.login = $3 AND v.repository = $4
+  WHERE v.week_start >= $1 AND v.week_start <= $2 AND COALESCE(cc.full_name, cc.login) = $3 AND v.repository = $4
   GROUP BY v.week_start, v.team, v.project, v.repository,
     v.human_story_points, v.ai_story_points, v.total_story_points,
     v.issue_count, v.total_loc_changed, v.total_lines_added,
@@ -557,14 +566,15 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_TEAM_MEMBER_REPOSITORY = `
 
 /**
  * Query to fetch sprint velocity vs LOC data with date range, team, team member, AND repository filter.
+ * GITX-178: Uses COALESCE(full_name, login) to match by full_name with login fallback.
  * Parameters:
  *   $1 - start_date (DATE) - beginning of date range
  *   $2 - end_date (DATE) - end of date range
  *   $3 - team (TEXT) - team name to filter by
- *   $4 - teamMember (TEXT) - contributor login to filter by
+ *   $4 - teamMember (TEXT) - contributor full_name or login to filter by
  *   $5 - repository (TEXT) - repository name to filter by
  *
- * Ticket: GITX-121
+ * Ticket: GITX-121, GITX-178
  */
 export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_ALL_FILTERS = `
   SELECT
@@ -585,7 +595,7 @@ export const QUERY_SPRINT_VELOCITY_VS_LOC_DATE_RANGE_ALL_FILTERS = `
     AND DATE_TRUNC('week', ch.commit_date)::DATE = v.week_start
   INNER JOIN commit_contributors cc ON ch.author = cc.login
   WHERE v.week_start >= $1 AND v.week_start <= $2
-    AND v.team = $3 AND cc.login = $4 AND v.repository = $5
+    AND v.team = $3 AND COALESCE(cc.full_name, cc.login) = $4 AND v.repository = $5
   GROUP BY v.week_start, v.team, v.project, v.repository,
     v.human_story_points, v.ai_story_points, v.total_story_points,
     v.issue_count, v.total_loc_changed, v.total_lines_added,
