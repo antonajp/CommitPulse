@@ -10,15 +10,14 @@
  * Uses FULL OUTER JOIN to capture weeks with only commits or only issues.
  * Filters by full_name with fallback to login for NULL full_name.
  *
- * GITX-170: For Jira, uses jira_history.assignee (assignee at completion time)
- * instead of jira_detail.assignee (current assignee). This correctly attributes
- * story points to the developer who actually completed the work, not the current
- * assignee who may have been reassigned later.
+ * GITX-179: For Jira, uses jira_detail.assignee (current assignee) matched against
+ * commit_contributors.full_name. The jira_history.assignee column was always NULL
+ * (not populated during changelog extraction), causing NO DATA to display.
  *
  * Parameters:
  *   $1 - developer full_name (TEXT)
  *   $2 - start date (DATE)
- * Ticket: GITX-157, GITX-169, GITX-170
+ * Ticket: GITX-157, GITX-169, GITX-179
  */
 export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
   WITH dev_commits AS (
@@ -49,17 +48,16 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
     GROUP BY week_start
   ),
   dev_jira_points AS (
-    -- GITX-170: Use jira_history to attribute story points to the assignee
-    -- at completion time, not the current assignee (who may have been reassigned)
+    -- GITX-179: Use jira_detail.assignee instead of jira_history.assignee
+    -- because jira_history.assignee is always NULL (not populated during extraction).
+    -- Match against cc.full_name for consistent contributor identity.
     SELECT
       DATE_TRUNC('week', jh.change_date)::date AS week_start,
       COALESCE(SUM(jd.calculated_story_points), 0)::int AS story_points,
       COUNT(DISTINCT jd.jira_key)::int AS issue_count
     FROM jira_history jh
     JOIN jira_detail jd ON jh.jira_key = jd.jira_key
-    JOIN commit_contributors cc ON (
-      jh.assignee = cc.email OR jh.assignee = cc.login OR jh.assignee = cc.full_name
-    )
+    JOIN commit_contributors cc ON jd.assignee = cc.full_name
     WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND jh.change_date >= $2
       AND jh.field = 'status'
@@ -96,13 +94,13 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
  * Returns true if the developer has any Linear/Jira issues they completed.
  * Filters by full_name with fallback to login for NULL full_name.
  *
- * GITX-170: For Jira, checks jira_history for issues the developer completed
- * (was assigned when status changed to Done/Closed/Resolved), consistent with
- * the QUERY_DEV_PROFILE_VELOCITY_VS_LOC query.
+ * GITX-179: For Jira, uses jira_detail.assignee instead of jira_history.assignee
+ * because jira_history.assignee is always NULL (not populated during extraction).
+ * Match against cc.full_name for consistent contributor identity.
  *
  * Parameters:
  *   $1 - developer full_name (TEXT)
- * Ticket: GITX-157, GITX-169, GITX-170
+ * Ticket: GITX-157, GITX-169, GITX-179
  */
 export const QUERY_DEV_PROFILE_HAS_VELOCITY_DATA = `
   SELECT EXISTS (
@@ -113,11 +111,10 @@ export const QUERY_DEV_PROFILE_HAS_VELOCITY_DATA = `
     WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND ld.state IN ('Done', 'Completed')
     UNION
-    -- GITX-170: Use jira_history to check for completion (assignee at completion time)
+    -- GITX-179: Use jira_detail.assignee (jira_history.assignee is always NULL)
     SELECT 1 FROM jira_history jh
-    JOIN commit_contributors cc ON (
-      jh.assignee = cc.email OR jh.assignee = cc.login OR jh.assignee = cc.full_name
-    )
+    JOIN jira_detail jd ON jh.jira_key = jd.jira_key
+    JOIN commit_contributors cc ON jd.assignee = cc.full_name
     WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND jh.field = 'status'
       AND jh.to_value IN ('Done', 'Closed', 'Resolved')
