@@ -14,10 +14,14 @@
  * commit_contributors.full_name. The jira_history.assignee column was always NULL
  * (not populated during changelog extraction), causing NO DATA to display.
  *
+ * GITX-180: For LOC, join commit_history.author (git author name) to
+ * commit_contributors.full_name instead of login. The git author name is typically
+ * the developer's full name (e.g., "John Doe"), not their GitHub username.
+ *
  * Parameters:
  *   $1 - developer full_name (TEXT)
  *   $2 - start date (DATE)
- * Ticket: GITX-157, GITX-169, GITX-179
+ * Ticket: GITX-157, GITX-169, GITX-179, GITX-180
  */
 export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
   WITH dev_commits AS (
@@ -27,7 +31,11 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
       COUNT(DISTINCT ch.sha)::int AS commit_count
     FROM commit_history ch
     LEFT JOIN commit_files cf ON cf.sha = ch.sha
-    JOIN commit_contributors cc ON ch.author = cc.login
+    -- GITX-180: Join on full_name (git author name) with login fallback
+    JOIN commit_contributors cc ON (
+      ch.author = cc.full_name
+      OR (cc.full_name IS NULL AND ch.author = cc.login)
+    )
     WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND ch.commit_date >= $2
       AND ch.is_merge = FALSE
