@@ -532,8 +532,9 @@ describe('VelocityDataService', () => {
       const service = new VelocityDataService(mockDb);
       await service.getSprintVelocityVsLoc({ teamMember: 'johndoe' });
 
+      // GITX-178: Changed from cc.login = $1 to COALESCE(cc.full_name, cc.login) = $1
       expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('cc.login = $1'),
+        expect.stringContaining('COALESCE(cc.full_name, cc.login) = $1'),
         ['johndoe'],
       );
     });
@@ -554,8 +555,9 @@ describe('VelocityDataService', () => {
         expect.stringContaining('v.team = $1'),
         ['Engineering', 'johndoe'],
       );
+      // GITX-178: Changed from cc.login = $2 to COALESCE(cc.full_name, cc.login) = $2
       expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('cc.login = $2'),
+        expect.stringContaining('COALESCE(cc.full_name, cc.login) = $2'),
         ['Engineering', 'johndoe'],
       );
     });
@@ -572,8 +574,9 @@ describe('VelocityDataService', () => {
         repository: 'gitr',
       });
 
+      // GITX-178: Changed from cc.login = $1 to COALESCE(cc.full_name, cc.login) = $1
       expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('cc.login = $1'),
+        expect.stringContaining('COALESCE(cc.full_name, cc.login) = $1'),
         ['johndoe', 'gitr'],
       );
       expect(mockDb.query).toHaveBeenCalledWith(
@@ -625,8 +628,9 @@ describe('VelocityDataService', () => {
       const service = new VelocityDataService(mockDb);
       await service.getSprintVelocityVsLoc({ teamMember: 'john.doe-123' });
 
+      // GITX-178: Changed from cc.login = $1 to COALESCE(cc.full_name, cc.login) = $1
       expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('cc.login = $1'),
+        expect.stringContaining('COALESCE(cc.full_name, cc.login) = $1'),
         ['john.doe-123'],
       );
     });
@@ -636,13 +640,14 @@ describe('VelocityDataService', () => {
   describe('getFilterOptions', () => {
     it('should return teams, teamMembers, and repositories arrays', async () => {
       // Mock parallel queries
+      // GITX-178: Changed from 'login' column to 'contributor' column (COALESCE(full_name, login))
       (mockDb.query as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce({
           rows: [{ team: 'Engineering' }, { team: 'Platform' }],
           rowCount: 2,
         })
         .mockResolvedValueOnce({
-          rows: [{ login: 'johndoe' }, { login: 'janedoe' }],
+          rows: [{ contributor: 'John Doe' }, { contributor: 'Jane Doe' }],
           rowCount: 2,
         })
         // GITX-129: Use 'repository' column name (not 'repo')
@@ -655,7 +660,7 @@ describe('VelocityDataService', () => {
       const result = await service.getFilterOptions();
 
       expect(result.teams).toEqual(['Engineering', 'Platform']);
-      expect(result.teamMembers).toEqual(['johndoe', 'janedoe']);
+      expect(result.teamMembers).toEqual(['John Doe', 'Jane Doe']);
       expect(result.repositories).toEqual(['gitr', 'other-repo']);
     });
 
@@ -684,8 +689,9 @@ describe('VelocityDataService', () => {
 
       expect(mockDb.query).toHaveBeenCalledTimes(3);
       expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining('DISTINCT team'));
-      expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining('DISTINCT login'));
-      expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining('DISTINCT repo'));
+      // GITX-178: Changed from 'DISTINCT login' to 'COALESCE(cc.full_name, cc.login) AS contributor'
+      expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining('COALESCE(cc.full_name, cc.login)'));
+      expect(mockDb.query).toHaveBeenCalledWith(expect.stringContaining('DISTINCT repository'));
     });
   });
 

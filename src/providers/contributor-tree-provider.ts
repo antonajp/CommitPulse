@@ -484,11 +484,13 @@ export class ContributorTreeProvider
     node.iconPath = isCompany ? ICONS.contributorCompany : ICONS.contributor;
 
     // Set command for click to open Developer Profile dashboard (GITX-155)
-    // Use the primary login for the command
+    // GITX-178: Pass full_name (with login fallback) to match Developer Profile query pattern
+    // The Developer Profile queries use: WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+    const contributorIdentifier = contributor.fullName ?? primaryLogin;
     node.command = {
       command: 'gitrx.openDeveloperProfile',
       title: 'Open Developer Profile',
-      arguments: [primaryLogin],
+      arguments: [contributorIdentifier],
     };
 
     return node;
