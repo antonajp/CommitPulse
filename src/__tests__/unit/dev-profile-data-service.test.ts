@@ -843,7 +843,7 @@ describe('DevProfileDataService', () => {
         expect(sql).toContain('jira_detail jd ON jh.jira_key = jd.jira_key');
       });
 
-      it('should use jh.assignee instead of jd.assignee for attribution', async () => {
+      it('should use jd.assignee matched against cc.full_name for attribution (GITX-179)', async () => {
         await service.getVelocityVsLoc({
           developer: 'john.doe',
           timeframeDays: '90',
@@ -853,11 +853,10 @@ describe('DevProfileDataService', () => {
         expect(call).toBeDefined();
         const sql = call![0] as string;
 
-        // The dev_jira_points CTE should join on jh.assignee (history snapshot)
-        // not jd.assignee (current assignee)
-        expect(sql).toContain('jh.assignee = cc.email');
-        expect(sql).toContain('jh.assignee = cc.login');
-        expect(sql).toContain('jh.assignee = cc.full_name');
+        // GITX-179: The dev_jira_points CTE should join on jd.assignee (from jira_detail)
+        // matched against cc.full_name. The jira_history.assignee column was always NULL
+        // (not populated during changelog extraction), which caused NO DATA to display.
+        expect(sql).toContain('jd.assignee = cc.full_name');
       });
 
       it('should filter by status field and completion statuses', async () => {
