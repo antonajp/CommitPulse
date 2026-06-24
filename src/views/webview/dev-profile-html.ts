@@ -155,11 +155,11 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
 
     <main class="devprofile-grid" id="mainContent">
       <!-- LOC per Week Chart -->
-      <section class="card card-wide" id="locWeekCard" aria-label="LOC per Week Chart">
-        <h2>Lines of Code per Week</h2>
+      <section class="card card-wide" id="locWeekCard" aria-label="Lines of Code Chart">
+        <h2>Lines of Code</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="locWeekSkeleton" aria-hidden="true"></div>
-          <div id="locWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing lines of code per week by repository"></div>
+          <div id="locWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing lines of code by repository"></div>
         </div>
         <p class="card-empty hidden" id="locWeekEmpty">No LOC data available for the selected timeframe.</p>
       </section>

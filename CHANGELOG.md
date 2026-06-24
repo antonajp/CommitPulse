@@ -5,22 +5,44 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.43...
+## [0.1.45] - 2026-06-24
+
+### Changed
+
+- Document contributor name alignment for Jira-Git joins
+
+### Fixed
+
+- Fix CHANGELOG corruption from publish script log output
+
 ## [0.1.44] - 2026-06-24
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.42...
+_No user-facing changes - version bump only._
+
 ## [0.1.43] - 2026-06-24
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.41...
+### Added
+
+- Developer Profile Dashboard UX improvements
+
 ## [0.1.42] - 2026-06-23
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.40...
+### Fixed
+
+- Join commit author to full_name for Developer Profile LOC
+
 ## [0.1.41] - 2026-06-23
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.39...
+### Fixed
+
+- Use jira_detail.assignee for Developer Profile velocity data
+
 ## [0.1.40] - 2026-06-23
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.38...
+### Fixed
+
+- Standardize contributor filtering on full_name across charts
+
 ## [0.1.39] - 2026-06-17
 
 ### Added
@@ -28,10 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhance LOC per Week chart with zero-value gaps and multi-row legend
 - Add custom tooltips to LOC per Week chart
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.37...
 ## [0.1.38] - 2026-06-16
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.36...
+### Fixed
+
+- Fix database pool lifecycle race condition
+
 ## [0.1.37] - 2026-06-15
 
 ### Added
@@ -44,7 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix missing complexity metrics for AWS and WSO2 repositories
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.35...
 ## [0.1.36] - 2026-06-14
 
 ### Added
@@ -57,7 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Update README with architecture command and contributor maintenance
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.34...
 ## [0.1.35] - 2026-06-09
 
 ### Fixed
@@ -65,10 +87,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix Sprint Velocity chart not rendering with filters; remove Repository filter
 - Fix Developer Profile dashboard not rendering due to CSS important override failure
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.33...
 ## [0.1.34] - 2026-06-09
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.32...
+_No user-facing changes - version bump only._
+
 ## [0.1.33] - 2026-06-09
 
 ### Added
@@ -79,13 +101,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix Developer Profile dashboard loading failures
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.31...
 ## [0.1.32] - 2026-06-09
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.30...
+_No user-facing changes - version bump only._
+
 ## [0.1.31] - 2026-06-09
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.29...
+_No user-facing changes - version bump only._
+
 ## [0.1.30] - 2026-06-08
 
 ### Added
@@ -112,13 +135,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add integration tests for LOC drill-down flow
 - Add docs/test-plans/ to .gitignore
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.28...
 ## [0.1.29] - 2026-04-01
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.27...
+_No user-facing changes - version bump only._
+
 ## [0.1.28] - 2026-03-31
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.26...
+_No user-facing changes - version bump only._
+
 ## [0.1.27] - 2026-03-30
 
 ### Added
@@ -140,43 +164,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix Cloud Function CPU requirement and API Keys quota project
 - Use Internet NEG for API Gateway load balancing
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.25...
 ## [0.1.26] - 2026-03-30
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.24...
+_No user-facing changes - version bump only._
+
 ## [0.1.25] - 2026-03-29
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.23...
+_No user-facing changes - version bump only._
+
 ## [0.1.24] - 2026-03-29
 
 ### Fixed
 
 - Fix Technology Stack pie chart repository filtering
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.22...
 ## [0.1.23] - 2026-03-28
 
 ### Added
 
 - Add multi-series Complexity Trend chart
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.21...
 ## [0.1.22] - 2026-03-28
 
 ### Fixed
 
 - Fix Complexity Trend chart JS syntax error
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.20...
 ## [0.1.21] - 2026-03-26
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.19...
+_No user-facing changes - version bump only._
+
 ## [0.1.20] - 2026-03-24
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.18...
+_No user-facing changes - version bump only._
+
 ## [0.1.19] - 2026-03-23
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.17...
+_No user-facing changes - version bump only._
+
 ## [0.1.18] - 2026-03-21
 
 ### Added
@@ -188,13 +213,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix empty dropdown filters and add date range selection
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.16...
 ## [0.1.17] - 2026-03-20
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.15...
+_No user-facing changes - version bump only._
+
 ## [0.1.16] - 2026-03-19
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.14...
+_No user-facing changes - version bump only._
+
 ## [0.1.15] - 2026-03-19
 
 ### Added
@@ -209,7 +235,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add unit tests for extraction mode Quick Pick functions
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.13...
 ## [0.1.14] - 2026-03-16
 
 ### Added
@@ -220,7 +245,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Use fixed dates in velocity-jira-support tests
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.12...
 ## [0.1.13] - 2026-03-15
 
 ### Added
@@ -235,10 +259,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add repository indexes and per-repo incremental extraction
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.11...
 ## [0.1.12] - 2026-03-13
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.10...
+_No user-facing changes - version bump only._
+
 ## [0.1.11] - 2026-03-13
 
 ### Changed
@@ -249,10 +273,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix profile badge contrast for dark VS Code themes
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.9...
 ## [0.1.10] - 2026-03-13
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.8...
+_No user-facing changes - version bump only._
+
 ## [0.1.9] - 2026-03-13
 
 ### Added
@@ -270,14 +294,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expand commit hygiene prefix detection and add Issues tooltip
 - Support Bitbucket and GitLab commit URL formats
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.7...
 ## [0.1.8] - 2026-03-11
 
 ### Added
 
 - Add configurable log level for Git history extraction
 
-[0;34m[INFO][0m Generating changelog from commits since v0.1.5...
 ## [0.1.7] - 2026-03-11
 
 ### Fixed

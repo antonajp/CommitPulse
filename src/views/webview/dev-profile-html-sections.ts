@@ -75,21 +75,21 @@ export function generateGitx156HtmlSections(): string {
       </section>
 
       <!-- Comments Per Week Line Chart (GITX-156) -->
-      <section class="card" id="commentsWeekCard" aria-label="Comments Per Week">
-        <h2>Comments Added per Week</h2>
+      <section class="card" id="commentsWeekCard" aria-label="Comments Added">
+        <h2>Comments Added</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="commentsWeekSkeleton" aria-hidden="true"></div>
-          <div id="commentsWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing comments added per week"></div>
+          <div id="commentsWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing comments added"></div>
         </div>
         <p class="card-empty hidden" id="commentsWeekEmpty">No comment data available for the selected timeframe.</p>
       </section>
 
       <!-- Tests Per Week Line Chart (GITX-156) -->
-      <section class="card" id="testsWeekCard" aria-label="Tests Per Week">
-        <h2>Test Files Modified per Week</h2>
+      <section class="card" id="testsWeekCard" aria-label="Test Files Modified">
+        <h2>Test Files Modified</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="testsWeekSkeleton" aria-hidden="true"></div>
-          <div id="testsWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing test files modified per week"></div>
+          <div id="testsWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing test files modified"></div>
         </div>
         <p class="card-empty hidden" id="testsWeekEmpty">No test data available for the selected timeframe.</p>
       </section>
