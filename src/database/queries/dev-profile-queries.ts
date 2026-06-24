@@ -1,18 +1,20 @@
 /**
  * SQL queries for Developer Profile Dashboard.
- * All queries use parameterized placeholders ($1, $2) - zero string interpolation.
- * Ticket: GITX-155, GITX-156, GITX-157, GITX-170
+ * All queries use parameterized placeholders ($1, $2, $3) - zero string interpolation.
+ * Ticket: GITX-155, GITX-156, GITX-157, GITX-170, GITX-179, GITX-180
  */
 
 /**
  * Query to fetch sprint velocity vs LOC data for a developer.
  * Correlates story points from Linear/Jira with lines of code committed.
- * Uses FULL OUTER JOIN to capture weeks with only commits or only issues.
+ * Uses FULL OUTER JOIN to capture periods with only commits or only issues.
  * Filters by full_name with fallback to login for NULL full_name.
  *
  * GITX-179: For Jira, uses jira_detail.assignee (current assignee) matched against
  * commit_contributors.full_name. The jira_history.assignee column was always NULL
  * (not populated during changelog extraction), causing NO DATA to display.
+ *
+ * GITX-179: Added $3 parameter for dynamic aggregation period ('week' or 'month').
  *
  * GITX-180: For LOC, join commit_history.author (git author name) to
  * commit_contributors.full_name instead of login. The git author name is typically
@@ -21,12 +23,13 @@
  * Parameters:
  *   $1 - developer full_name (TEXT)
  *   $2 - start date (DATE)
+ *   $3 - aggregation period ('week' or 'month') (TEXT)
  * Ticket: GITX-157, GITX-169, GITX-179, GITX-180
  */
 export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
   WITH dev_commits AS (
     SELECT
-      DATE_TRUNC('week', ch.commit_date)::date AS week_start,
+      DATE_TRUNC($3, ch.commit_date)::date AS week_start,
       COALESCE(SUM(cf.line_inserts - COALESCE(cf.line_deletes, 0)), 0)::bigint AS lines_of_code,
       COUNT(DISTINCT ch.sha)::int AS commit_count
     FROM commit_history ch
@@ -43,7 +46,7 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
   ),
   dev_linear_points AS (
     SELECT
-      DATE_TRUNC('week', ld.completed_date)::date AS week_start,
+      DATE_TRUNC($3, ld.completed_date)::date AS week_start,
       COALESCE(SUM(ld.calculated_story_points), 0)::int AS story_points,
       COUNT(DISTINCT ld.linear_key)::int AS issue_count
     FROM linear_detail ld
@@ -60,7 +63,7 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
     -- because jira_history.assignee is always NULL (not populated during extraction).
     -- Match against cc.full_name for consistent contributor identity.
     SELECT
-      DATE_TRUNC('week', jh.change_date)::date AS week_start,
+      DATE_TRUNC($3, jh.change_date)::date AS week_start,
       COALESCE(SUM(jd.calculated_story_points), 0)::int AS story_points,
       COUNT(DISTINCT jd.jira_key)::int AS issue_count
     FROM jira_history jh

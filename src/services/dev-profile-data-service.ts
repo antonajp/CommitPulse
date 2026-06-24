@@ -1,6 +1,6 @@
 /**
  * Data service for Developer Profile Dashboard. Queries commit data for developer metrics.
- * Security: CWE-89 (SQL Injection), CWE-20 (Input validation). Ticket: GITX-155, GITX-156
+ * Security: CWE-89 (SQL Injection), CWE-20 (Input validation). Ticket: GITX-155, GITX-156, GITX-179
  */
 
 import { DatabaseService } from '../database/database-service.js';
@@ -103,6 +103,55 @@ export class DevProfileDataService {
   }
 
   /**
+   * Determine aggregation period based on timeframe.
+   * GITX-179: For timeframes < 365 days, aggregate by week. For >= 365 days, aggregate by month.
+   *
+   * @param timeframeDays - The timeframe value (30, 60, 90, 180, 365, 730)
+   * @returns 'week' or 'month'
+   */
+  getAggregationPeriod(timeframeDays: string): 'week' | 'month' {
+    const days = parseInt(timeframeDays, 10);
+    return days >= 365 ? 'month' : 'week';
+  }
+
+  /**
+   * Validate aggregation period parameter before SQL execution.
+   * Security: CWE-89 defense-in-depth - ensures only valid PostgreSQL DATE_TRUNC values.
+   *
+   * @param period - The aggregation period ('week' or 'month')
+   * @param methodName - The calling method name for error reporting
+   * @throws Error if period is not 'week' or 'month'
+   */
+  private validateAggregationPeriod(period: string, methodName: string): void {
+    const allowedPeriods = ['week', 'month'];
+    if (!allowedPeriods.includes(period)) {
+      this.logger.error(CLASS_NAME, methodName, `Invalid aggregation period: ${period}`);
+      throw new Error('Invalid aggregation period. Must be "week" or "month".');
+    }
+  }
+
+  /**
+   * Calculate the number of periods (weeks or months) in a timeframe.
+   * GITX-179: Used for calculating average metrics per period.
+   *
+   * @param timeframeDays - Number of days in the timeframe
+   * @returns Number of complete periods
+   */
+  /** Average days per month (365.25 / 12). Used for period calculations. */
+  private static readonly AVERAGE_DAYS_PER_MONTH = 30.44;
+
+  private getPeriodsCount(timeframeDays: string): number {
+    const days = parseInt(timeframeDays, 10);
+    const period = this.getAggregationPeriod(timeframeDays);
+    if (period === 'month') {
+      // Use ceil for consistency - ensures periods always cover the full timeframe
+      return Math.max(1, Math.ceil(days / DevProfileDataService.AVERAGE_DAYS_PER_MONTH));
+    }
+    // Weeks
+    return Math.max(1, Math.ceil(days / 7));
+  }
+
+  /**
    * Get list of all developers for the dropdown selector.
    * Groups by full_name and aggregates logins.
    * Sorted by commit count descending.
@@ -141,9 +190,10 @@ export class DevProfileDataService {
   /**
    * Get summary statistics for a developer.
    * Filters by full_name with fallback to login for NULL full_name.
+   * GITX-179: Added average LOC per period and average story points per period.
    *
    * @param filters - Developer and timeframe filters (developer is full_name)
-   * @returns Summary statistics
+   * @returns Summary statistics including averages per week/month
    */
   async getSummary(filters: DevProfileFilters): Promise<DevProfileSummary> {
     this.validateDeveloper(filters.developer, 'getSummary');
@@ -152,6 +202,9 @@ export class DevProfileDataService {
     this.logger.debug(CLASS_NAME, 'getSummary', `Fetching summary for ${filters.developer}`);
 
     const startDate = this.getStartDate(filters.timeframeDays);
+    const aggregationPeriod = this.getAggregationPeriod(filters.timeframeDays);
+    this.validateAggregationPeriod(aggregationPeriod, 'getSummary');
+    const periodsCount = this.getPeriodsCount(filters.timeframeDays);
 
     const sql = `
       SELECT
@@ -181,37 +234,107 @@ export class DevProfileDataService {
         totalLoc: 0,
         avgComplexity: 0,
         repositoriesWorkedOn: 0,
+        avgLocPerPeriod: 0,
+        avgStoryPointsPerPeriod: null,
+        aggregationPeriod,
       };
     }
 
-    this.logger.debug(CLASS_NAME, 'getSummary', `Summary: ${row.total_commits} commits, ${row.total_loc_added} LOC`);
+    const totalLoc = Number(row.total_loc_added);
+    const avgLocPerPeriod = Math.round(totalLoc / periodsCount);
+
+    // GITX-179: Get story points for average calculation
+    const storyPointsTotal = await this.getTotalStoryPoints(filters.developer, startDate);
+    const avgStoryPointsPerPeriod = storyPointsTotal !== null
+      ? Math.round((storyPointsTotal / periodsCount) * 10) / 10
+      : null;
+
+    this.logger.debug(CLASS_NAME, 'getSummary', `Summary: ${row.total_commits} commits, ${row.total_loc_added} LOC, avgLoc/${aggregationPeriod}: ${avgLocPerPeriod}`);
 
     return {
       totalCommits: row.total_commits,
-      totalLoc: Number(row.total_loc_added),
+      totalLoc,
       avgComplexity: Number(parseFloat(row.avg_complexity).toFixed(2)),
       repositoriesWorkedOn: row.repos_worked_on,
+      avgLocPerPeriod,
+      avgStoryPointsPerPeriod,
+      aggregationPeriod,
     };
   }
 
   /**
-   * Get LOC per week data for the stacked bar chart.
+   * Get total story points for a developer in a timeframe.
+   * GITX-179: Helper for calculating average story points per period.
+   *
+   * @param developer - Developer full_name or login
+   * @param startDate - Start date for the timeframe
+   * @returns Total story points or null if no data
+   */
+  private async getTotalStoryPoints(developer: string, startDate: string): Promise<number | null> {
+    const sql = `
+      WITH linear_points AS (
+        SELECT COALESCE(SUM(ld.calculated_story_points), 0)::int AS points
+        FROM linear_detail ld
+        JOIN commit_contributors cc ON (
+          ld.assignee = cc.email OR ld.assignee = cc.login OR ld.assignee = cc.full_name
+        )
+        WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+          AND ld.completed_date >= $2
+          AND ld.state IN ('Done', 'Completed')
+      ),
+      jira_points AS (
+        SELECT COALESCE(SUM(jd.calculated_story_points), 0)::int AS points
+        FROM jira_history jh
+        JOIN jira_detail jd ON jh.jira_key = jd.jira_key
+        JOIN commit_contributors cc ON jd.assignee = cc.full_name
+        WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+          AND jh.change_date >= $2
+          AND jh.field = 'status'
+          AND jh.to_value IN ('Done', 'Closed', 'Resolved')
+      ),
+      total AS (
+        SELECT (SELECT points FROM linear_points) + (SELECT points FROM jira_points) AS total_points,
+               EXISTS (SELECT 1 FROM linear_points WHERE points > 0) OR
+               EXISTS (SELECT 1 FROM jira_points WHERE points > 0) AS has_data
+      )
+      SELECT total_points, has_data FROM total
+    `;
+
+    const result = await this.db.query<{
+      total_points: number;
+      has_data: boolean;
+    }>(sql, [developer, startDate]);
+
+    const row = result.rows[0];
+    if (!row || !row.has_data) {
+      return null;
+    }
+
+    return row.total_points;
+  }
+
+  /**
+   * Get LOC per period data for the line chart.
    * Filters by full_name with fallback to login for NULL full_name.
+   * GITX-179: Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
    *
    * @param filters - Developer and timeframe filters (developer is full_name)
-   * @returns Array of weekly LOC data points by repository
+   * @returns Array of LOC data points by repository per period (week or month)
    */
   async getLocPerWeek(filters: DevProfileFilters): Promise<DevProfileLocWeekly[]> {
     this.validateDeveloper(filters.developer, 'getLocPerWeek');
     this.validateTimeframe(filters.timeframeDays, 'getLocPerWeek');
 
-    this.logger.debug(CLASS_NAME, 'getLocPerWeek', `Fetching LOC per week for ${filters.developer}`);
+    const aggregationPeriod = this.getAggregationPeriod(filters.timeframeDays);
+    this.validateAggregationPeriod(aggregationPeriod, 'getLocPerWeek');
+    this.logger.debug(CLASS_NAME, 'getLocPerWeek', `Fetching LOC per ${aggregationPeriod} for ${filters.developer}`);
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-179: Dynamic aggregation based on timeframe
     const sql = `
       SELECT
-        DATE_TRUNC('week', ch.commit_date)::date AS week_start,
+        DATE_TRUNC($3, ch.commit_date)::date AS week_start,
         ch.repository,
         COALESCE(SUM(cf.line_inserts), 0)::bigint AS lines_added,
         COALESCE(SUM(cf.line_deletes), 0)::bigint AS lines_removed,
@@ -233,9 +356,9 @@ export class DevProfileDataService {
       lines_added: string;
       lines_removed: string;
       net_lines: string;
-    }>(sql, [filters.developer, startDate]);
+    }>(sql, [filters.developer, startDate, aggregationPeriod]);
 
-    this.logger.debug(CLASS_NAME, 'getLocPerWeek', `Found ${result.rowCount} weekly data points`);
+    this.logger.debug(CLASS_NAME, 'getLocPerWeek', `Found ${result.rowCount} ${aggregationPeriod}ly data points`);
 
     return result.rows.map((row) => ({
       weekStart: row.week_start.toISOString().split('T')[0] ?? '',
@@ -300,9 +423,10 @@ export class DevProfileDataService {
   /**
    * Get top 20 most frequently modified files by the developer.
    * Filters by full_name with fallback to login for NULL full_name.
+   * GITX-179: Replaced repository with lastModified date column.
    *
    * @param filters - Developer and timeframe filters (developer is full_name)
-   * @returns Array of frequent file data points
+   * @returns Array of frequent file data points with lastModified date
    */
   async getTopFrequentFiles(filters: DevProfileFilters): Promise<DevProfileFrequentFile[]> {
     this.validateDeveloper(filters.developer, 'getTopFrequentFiles');
@@ -312,19 +436,20 @@ export class DevProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-179: Replaced repository with MAX(commit_date) as last_modified
     const sql = `
       SELECT
         cf.filename AS file_path,
         COUNT(DISTINCT cf.sha)::int AS modification_count,
         COALESCE(SUM(ABS(cf.line_inserts) + ABS(COALESCE(cf.line_deletes, 0))), 0)::bigint AS total_loc_changed,
-        ch.repository
+        MAX(ch.commit_date)::date AS last_modified
       FROM commit_files cf
       JOIN commit_history ch ON ch.sha = cf.sha
       JOIN commit_contributors cc ON ch.author = cc.login
       WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ch.commit_date >= $2
         AND ch.is_merge = FALSE
-      GROUP BY cf.filename, ch.repository
+      GROUP BY cf.filename
       ORDER BY modification_count DESC
       LIMIT 20
     `;
@@ -333,7 +458,7 @@ export class DevProfileDataService {
       file_path: string;
       modification_count: number;
       total_loc_changed: string;
-      repository: string;
+      last_modified: Date;
     }>(sql, [filters.developer, startDate]);
 
     this.logger.debug(CLASS_NAME, 'getTopFrequentFiles', `Found ${result.rowCount} frequent files`);
@@ -342,7 +467,7 @@ export class DevProfileDataService {
       filePath: row.file_path,
       modificationCount: row.modification_count,
       totalLocChanged: Number(row.total_loc_changed),
-      repository: row.repository,
+      lastModified: row.last_modified.toISOString().split('T')[0] ?? '',
     }));
   }
 
@@ -414,26 +539,30 @@ export class DevProfileDataService {
   }
 
   /**
-   * Get comments added per week for the line chart.
+   * Get comments added per period for the line chart.
    * Filters by full_name with fallback to login for NULL full_name.
    * Uses comments_change column with fallback to total_comment_lines for older commits.
-   * Ticket: GITX-156
+   * Ticket: GITX-156, GITX-179
+   * GITX-179: Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
    *
    * @param filters - Developer and timeframe filters (developer is full_name)
-   * @returns Array of weekly comment data points
+   * @returns Array of comment data points per period (week or month)
    */
   async getCommentsPerWeek(filters: DevProfileFilters): Promise<DevProfileCommentsWeekly[]> {
     this.validateDeveloper(filters.developer, 'getCommentsPerWeek');
     this.validateTimeframe(filters.timeframeDays, 'getCommentsPerWeek');
 
-    this.logger.debug(CLASS_NAME, 'getCommentsPerWeek', `Fetching comments per week for ${filters.developer}`);
+    const aggregationPeriod = this.getAggregationPeriod(filters.timeframeDays);
+    this.validateAggregationPeriod(aggregationPeriod, 'getCommentsPerWeek');
+    this.logger.debug(CLASS_NAME, 'getCommentsPerWeek', `Fetching comments per ${aggregationPeriod} for ${filters.developer}`);
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-179: Dynamic aggregation based on timeframe
     // Use COALESCE to handle NULL comments_change (from older commits before migration 026)
     const sql = `
       SELECT
-        DATE_TRUNC('week', ch.commit_date)::date AS week_start,
+        DATE_TRUNC($3, ch.commit_date)::date AS week_start,
         COALESCE(SUM(COALESCE(cf.comments_change, 0)), 0)::int AS comments_added
       FROM commit_files cf
       JOIN commit_history ch ON cf.sha = ch.sha
@@ -448,9 +577,9 @@ export class DevProfileDataService {
     const result = await this.db.query<{
       week_start: Date;
       comments_added: number;
-    }>(sql, [filters.developer, startDate]);
+    }>(sql, [filters.developer, startDate, aggregationPeriod]);
 
-    this.logger.debug(CLASS_NAME, 'getCommentsPerWeek', `Found ${result.rowCount} weekly comment data points`);
+    this.logger.debug(CLASS_NAME, 'getCommentsPerWeek', `Found ${result.rowCount} ${aggregationPeriod}ly comment data points`);
 
     return result.rows.map((row) => ({
       weekStart: row.week_start.toISOString().split('T')[0] ?? '',
@@ -459,25 +588,29 @@ export class DevProfileDataService {
   }
 
   /**
-   * Get tests modified per week for the line chart.
+   * Get tests modified per period for the line chart.
    * Filters by full_name with fallback to login for NULL full_name.
    * Filters by is_test_file = TRUE.
-   * Ticket: GITX-156
+   * Ticket: GITX-156, GITX-179
+   * GITX-179: Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
    *
    * @param filters - Developer and timeframe filters (developer is full_name)
-   * @returns Array of weekly test data points
+   * @returns Array of test data points per period (week or month)
    */
   async getTestsPerWeek(filters: DevProfileFilters): Promise<DevProfileTestsWeekly[]> {
     this.validateDeveloper(filters.developer, 'getTestsPerWeek');
     this.validateTimeframe(filters.timeframeDays, 'getTestsPerWeek');
 
-    this.logger.debug(CLASS_NAME, 'getTestsPerWeek', `Fetching tests per week for ${filters.developer}`);
+    const aggregationPeriod = this.getAggregationPeriod(filters.timeframeDays);
+    this.validateAggregationPeriod(aggregationPeriod, 'getTestsPerWeek');
+    this.logger.debug(CLASS_NAME, 'getTestsPerWeek', `Fetching tests per ${aggregationPeriod} for ${filters.developer}`);
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-179: Dynamic aggregation based on timeframe
     const sql = `
       SELECT
-        DATE_TRUNC('week', ch.commit_date)::date AS week_start,
+        DATE_TRUNC($3, ch.commit_date)::date AS week_start,
         COUNT(DISTINCT cf.filename)::int AS test_files_modified,
         COALESCE(SUM(cf.line_inserts), 0)::int AS test_lines_added
       FROM commit_files cf
@@ -495,9 +628,9 @@ export class DevProfileDataService {
       week_start: Date;
       test_files_modified: number;
       test_lines_added: number;
-    }>(sql, [filters.developer, startDate]);
+    }>(sql, [filters.developer, startDate, aggregationPeriod]);
 
-    this.logger.debug(CLASS_NAME, 'getTestsPerWeek', `Found ${result.rowCount} weekly test data points`);
+    this.logger.debug(CLASS_NAME, 'getTestsPerWeek', `Found ${result.rowCount} ${aggregationPeriod}ly test data points`);
 
     return result.rows.map((row) => ({
       weekStart: row.week_start.toISOString().split('T')[0] ?? '',
@@ -621,28 +754,32 @@ export class DevProfileDataService {
    * Get sprint velocity vs LOC data for the dual-axis chart.
    * Correlates story points from Linear/Jira with lines of code committed.
    * Uses commit_contributors.email -> Linear/Jira assignee mapping.
-   * Ticket: GITX-157
+   * Ticket: GITX-157, GITX-179
+   * GITX-179: Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
    *
    * @param filters - Developer and timeframe filters
-   * @returns Array of velocity data points per week
+   * @returns Array of velocity data points per period (week or month)
    */
   async getVelocityVsLoc(filters: DevProfileFilters): Promise<DevProfileVelocityPoint[]> {
     this.validateDeveloper(filters.developer, 'getVelocityVsLoc');
     this.validateTimeframe(filters.timeframeDays, 'getVelocityVsLoc');
 
-    this.logger.debug(CLASS_NAME, 'getVelocityVsLoc', `Fetching velocity vs LOC for ${filters.developer}`);
+    const aggregationPeriod = this.getAggregationPeriod(filters.timeframeDays);
+    this.validateAggregationPeriod(aggregationPeriod, 'getVelocityVsLoc');
+    this.logger.debug(CLASS_NAME, 'getVelocityVsLoc', `Fetching velocity vs LOC per ${aggregationPeriod} for ${filters.developer}`);
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-179: Pass aggregation period as third parameter
     const result = await this.db.query<{
       week_start: Date;
       story_points: number;
       lines_of_code: string;
       issue_count: number;
       commit_count: number;
-    }>(QUERY_DEV_PROFILE_VELOCITY_VS_LOC, [filters.developer, startDate]);
+    }>(QUERY_DEV_PROFILE_VELOCITY_VS_LOC, [filters.developer, startDate, aggregationPeriod]);
 
-    this.logger.debug(CLASS_NAME, 'getVelocityVsLoc', `Found ${result.rowCount} weekly velocity data points`);
+    this.logger.debug(CLASS_NAME, 'getVelocityVsLoc', `Found ${result.rowCount} ${aggregationPeriod}ly velocity data points`);
 
     return result.rows.map((row) => ({
       weekStart: row.week_start.toISOString().split('T')[0] ?? '',
@@ -678,18 +815,21 @@ export class DevProfileDataService {
 
   /**
    * Get test debt metrics for a developer.
-   * Returns weekly breakdown of commits by test coverage tier and ROI calculation.
+   * Returns period breakdown of commits by test coverage tier and ROI calculation.
    * Uses vw_commit_test_ratio and vw_subsequent_bugs views.
-   * Ticket: GITX-172
+   * Ticket: GITX-172, GITX-179
+   * GITX-179: Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
    *
    * @param filters - Developer and timeframe filters (developer is full_name)
-   * @returns Test debt metrics with weekly data and ROI multiplier
+   * @returns Test debt metrics with period data and ROI multiplier
    */
   async getTestDebtMetrics(filters: DevProfileFilters): Promise<DevProfileTestDebtMetrics> {
     this.validateDeveloper(filters.developer, 'getTestDebtMetrics');
     this.validateTimeframe(filters.timeframeDays, 'getTestDebtMetrics');
 
-    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `Fetching test debt metrics for ${filters.developer}`);
+    const aggregationPeriod = this.getAggregationPeriod(filters.timeframeDays);
+    this.validateAggregationPeriod(aggregationPeriod, 'getTestDebtMetrics');
+    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `Fetching test debt metrics per ${aggregationPeriod} for ${filters.developer}`);
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
@@ -714,11 +854,12 @@ export class DevProfileDataService {
       };
     }
 
-    // Query weekly test debt breakdown by tier
+    // GITX-179: Dynamic aggregation based on timeframe
+    // Query period test debt breakdown by tier
     // Filter by full_name with login fallback (GITX-169 pattern)
     const weeklyQuery = `
       SELECT
-        DATE_TRUNC('week', ctr.commit_date)::DATE AS week_start,
+        DATE_TRUNC($3, ctr.commit_date)::DATE AS week_start,
         COUNT(*) FILTER (WHERE ctr.test_ratio IS NULL OR ctr.test_ratio < 0.1)::int AS low_test_commits,
         COUNT(*) FILTER (WHERE ctr.test_ratio >= 0.1 AND ctr.test_ratio < 0.5)::int AS medium_test_commits,
         COUNT(*) FILTER (WHERE ctr.test_ratio >= 0.5)::int AS high_test_commits,
@@ -728,7 +869,7 @@ export class DevProfileDataService {
       WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ctr.commit_date >= $2
         AND ctr.prod_loc_changed >= 50
-      GROUP BY DATE_TRUNC('week', ctr.commit_date)
+      GROUP BY DATE_TRUNC($3, ctr.commit_date)
       ORDER BY week_start ASC
     `;
 
@@ -738,9 +879,9 @@ export class DevProfileDataService {
       medium_test_commits: number;
       high_test_commits: number;
       total_commits: number;
-    }>(weeklyQuery, [filters.developer, startDate]);
+    }>(weeklyQuery, [filters.developer, startDate, aggregationPeriod]);
 
-    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `Found ${weeklyResult.rowCount} weekly data points`);
+    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `Found ${weeklyResult.rowCount} ${aggregationPeriod}ly data points`);
 
     // Query bug rates by tier for ROI calculation
     // Check if subsequent bugs view exists

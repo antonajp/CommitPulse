@@ -120,10 +120,10 @@ export function generateVelocityChartScript(): string {
             return d.weekStart + '\\nLOC: ' + formatNumber(d.linesOfCode) + '\\nCommits: ' + d.commitCount;
           });
 
-        // X axis
+        // X axis - GITX-179: Use formatXAxisDate for dynamic week/month formatting
         svg.append('g')
           .attr('transform', 'translate(0,' + height + ')')
-          .call(d3.axisBottom(x).tickFormat(function(d) { return d.slice(5); }))
+          .call(d3.axisBottom(x).tickFormat(function(d) { return formatXAxisDate(d); }))
           .selectAll('text')
           .attr('transform', 'rotate(-45)')
           .style('text-anchor', 'end');

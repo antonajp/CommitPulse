@@ -3,24 +3,32 @@
  * Separated from the data service for better modularity and
  * to keep the service file under 600 lines.
  *
- * Ticket: GITX-155, GITX-156
+ * Ticket: GITX-155, GITX-156, GITX-179
  */
 
 /**
  * Summary statistics for a developer.
+ * GITX-179: Added avgLocPerPeriod and avgStoryPointsPerPeriod for averages per week/month.
  */
 export interface DevProfileSummary {
   readonly totalCommits: number;
   readonly totalLoc: number;
   readonly avgComplexity: number;
   readonly repositoriesWorkedOn: number;
+  /** Average LOC per week (timeframe < 365 days) or month (timeframe >= 365 days). GITX-179 */
+  readonly avgLocPerPeriod: number;
+  /** Average story points per week/month. Null if no Jira/Linear data. GITX-179 */
+  readonly avgStoryPointsPerPeriod: number | null;
+  /** Aggregation period: 'week' for < 365 days, 'month' for >= 365 days. GITX-179 */
+  readonly aggregationPeriod: 'week' | 'month';
 }
 
 /**
- * LOC per week data point for stacked bar chart.
+ * LOC per period data point for stacked bar chart.
+ * GITX-179: Can represent weekly or monthly data depending on timeframe.
  */
 export interface DevProfileLocWeekly {
-  readonly weekStart: string; // YYYY-MM-DD (Monday of the week)
+  readonly weekStart: string; // YYYY-MM-DD (start of week or month)
   readonly repository: string;
   readonly linesAdded: number;
   readonly linesRemoved: number;
@@ -39,12 +47,14 @@ export interface DevProfileComplexFile {
 
 /**
  * Frequently modified file data point.
+ * GITX-179: Replaced repository with lastModified date.
  */
 export interface DevProfileFrequentFile {
   readonly filePath: string;
   readonly modificationCount: number;
   readonly totalLocChanged: number;
-  readonly repository: string;
+  /** Last modified date in YYYY-MM-DD format. GITX-179 */
+  readonly lastModified: string;
 }
 
 /**
@@ -59,20 +69,22 @@ export interface DevProfileTechStack {
 }
 
 /**
- * Comments per week data point for line chart.
- * Ticket: GITX-156
+ * Comments per period data point for line chart.
+ * Ticket: GITX-156, GITX-179
+ * GITX-179: Can represent weekly or monthly data depending on timeframe.
  */
 export interface DevProfileCommentsWeekly {
-  readonly weekStart: string; // YYYY-MM-DD (Monday of the week)
+  readonly weekStart: string; // YYYY-MM-DD (start of week or month)
   readonly commentsAdded: number;
 }
 
 /**
- * Tests per week data point for line chart.
- * Ticket: GITX-156
+ * Tests per period data point for line chart.
+ * Ticket: GITX-156, GITX-179
+ * GITX-179: Can represent weekly or monthly data depending on timeframe.
  */
 export interface DevProfileTestsWeekly {
-  readonly weekStart: string; // YYYY-MM-DD (Monday of the week)
+  readonly weekStart: string; // YYYY-MM-DD (start of week or month)
   readonly testFilesModified: number;
   readonly testLinesAdded: number;
 }
@@ -114,11 +126,12 @@ export interface DevProfileFilters {
 
 /**
  * Sprint velocity vs LOC data point for dual-axis chart.
- * Correlates story points completed with lines of code committed per week.
- * Ticket: GITX-157
+ * Correlates story points completed with lines of code committed per period.
+ * Ticket: GITX-157, GITX-179
+ * GITX-179: Can represent weekly or monthly data depending on timeframe.
  */
 export interface DevProfileVelocityPoint {
-  readonly weekStart: string; // YYYY-MM-DD (Monday of the week)
+  readonly weekStart: string; // YYYY-MM-DD (start of week or month)
   readonly storyPoints: number; // Story points from Linear/Jira
   readonly linesOfCode: number; // Lines of code committed
   readonly issueCount: number; // Number of issues completed
@@ -126,12 +139,13 @@ export interface DevProfileVelocityPoint {
 }
 
 /**
- * Weekly test debt data point for stacked bar chart.
+ * Test debt data point per period for stacked bar chart.
  * Shows commits by test coverage tier (low/medium/high).
- * Ticket: GITX-172
+ * Ticket: GITX-172, GITX-179
+ * GITX-179: Can represent weekly or monthly data depending on timeframe.
  */
 export interface DevProfileTestDebtWeekly {
-  readonly weekStart: string; // YYYY-MM-DD (Monday of the week)
+  readonly weekStart: string; // YYYY-MM-DD (start of week or month)
   readonly lowTestCommits: number; // test_ratio NULL or < 0.1
   readonly mediumTestCommits: number; // test_ratio 0.1 - 0.5
   readonly highTestCommits: number; // test_ratio >= 0.5

@@ -2,7 +2,7 @@
  * D3.js chart rendering functions for the Developer Profile Dashboard.
  * Contains inline JavaScript code for rendering charts in the webview.
  * Extracted from dev-profile-html.ts to keep files under 600 lines.
- * Ticket: GITX-155, GITX-156, GITX-157, GITX-172, GITX-174, GITX-176
+ * Ticket: GITX-155, GITX-156, GITX-157, GITX-172, GITX-174, GITX-176, GITX-179
  */
 
 /**
@@ -220,11 +220,11 @@ export function generateLocWeekChartScript(): string {
             });
         });
 
-        // X axis
+        // X axis - GITX-179: Use formatXAxisDate for dynamic week/month formatting
         svg.append('g')
           .attr('transform', 'translate(0,' + height + ')')
           .call(d3.axisBottom(x).tickFormat(function(d) {
-            return d.slice(5); // MM-DD
+            return formatXAxisDate(d);
           }))
           .selectAll('text')
           .attr('transform', 'rotate(-45)')
@@ -328,15 +328,16 @@ export function generateTableRenderingScripts(): string {
         renderFrequentFilesRows();
       }
 
+      // GITX-179: Replaced repository with lastModified in frequent files table
       function renderFrequentFilesRows() {
         var sortedData = sortTableData(cachedFrequentFiles, frequentFilesSortKey, frequentFilesSortDir);
         var tbody = document.getElementById('frequentFilesBody');
         tbody.innerHTML = sortedData.map(function(row) {
-          return '<tr class="clickable-row" data-filepath="' + escapeHtml(row.filePath) + '" data-repo="' + escapeHtml(row.repository) + '" tabindex="0" role="button" aria-label="Open ' + escapeHtml(row.filePath) + ' in editor">' +
+          return '<tr class="clickable-row" data-filepath="' + escapeHtml(row.filePath) + '" tabindex="0" role="button" aria-label="Open ' + escapeHtml(row.filePath) + ' in editor">' +
             '<td title="' + escapeHtml(row.filePath) + '">' + escapeHtml(truncatePath(row.filePath, 50)) + '</td>' +
             '<td class="numeric">' + formatNumber(row.modificationCount) + '</td>' +
             '<td class="numeric">' + formatNumber(row.totalLocChanged) + '</td>' +
-            '<td>' + escapeHtml(row.repository) + '</td>' +
+            '<td>' + escapeHtml(row.lastModified || '—') + '</td>' +
           '</tr>';
         }).join('');
         attachRowClickHandlers('frequentFilesBody');
@@ -606,10 +607,10 @@ export function generateGitx156ChartScripts(): string {
           .append('title')
           .text(function(d) { return d.weekStart + '\\n' + formatNumber(d.commentsAdded) + ' comments'; });
 
-        // X axis
+        // X axis - GITX-179: Use formatXAxisDate for dynamic week/month formatting
         svg.append('g')
           .attr('transform', 'translate(0,' + height + ')')
-          .call(d3.axisBottom(x).tickFormat(function(d) { return d.slice(5); }))
+          .call(d3.axisBottom(x).tickFormat(function(d) { return formatXAxisDate(d); }))
           .selectAll('text')
           .attr('transform', 'rotate(-45)')
           .style('text-anchor', 'end');
@@ -696,10 +697,10 @@ export function generateGitx156ChartScripts(): string {
           .append('title')
           .text(function(d) { return d.weekStart + '\\n' + d.testFilesModified + ' test files\\n' + formatNumber(d.testLinesAdded) + ' lines'; });
 
-        // X axis
+        // X axis - GITX-179: Use formatXAxisDate for dynamic week/month formatting
         svg.append('g')
           .attr('transform', 'translate(0,' + height + ')')
-          .call(d3.axisBottom(x).tickFormat(function(d) { return d.slice(5); }))
+          .call(d3.axisBottom(x).tickFormat(function(d) { return formatXAxisDate(d); }))
           .selectAll('text')
           .attr('transform', 'rotate(-45)')
           .style('text-anchor', 'end');
