@@ -141,11 +141,11 @@ export function generateTestDebtChartScript(): string {
             return d.data.weekStart + '\\n' + tierLabels[d.key] + ' test: ' + count + ' commits';
           });
 
-        // X axis
+        // X axis - GITX-179: Use formatXAxisDate for dynamic week/month formatting
         svg.append('g')
           .attr('transform', 'translate(0,' + height + ')')
           .call(d3.axisBottom(x).tickFormat(function(d) {
-            return d.slice(5); // MM-DD
+            return formatXAxisDate(d);
           }))
           .selectAll('text')
           .attr('transform', 'rotate(-45)')

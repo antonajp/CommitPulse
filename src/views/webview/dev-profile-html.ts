@@ -106,6 +106,20 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
           <span class="summary-value" id="summaryLocValue">0</span>
         </div>
       </div>
+      <div class="summary-card" id="summaryAvgLoc">
+        <div class="summary-card-skeleton" aria-hidden="true"></div>
+        <div class="summary-card-content hidden">
+          <span class="summary-label" id="summaryAvgLocLabel">Avg LOC/Week</span>
+          <span class="summary-value" id="summaryAvgLocValue">—</span>
+        </div>
+      </div>
+      <div class="summary-card" id="summaryAvgSp">
+        <div class="summary-card-skeleton" aria-hidden="true"></div>
+        <div class="summary-card-content hidden">
+          <span class="summary-label" id="summaryAvgSpLabel">Avg SP/Week</span>
+          <span class="summary-value" id="summaryAvgSpValue">—</span>
+        </div>
+      </div>
       <div class="summary-card" id="summaryComplexity">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
         <div class="summary-card-content hidden">
@@ -182,7 +196,7 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
         <p class="card-empty hidden" id="complexFilesEmpty">No complex files found for the selected timeframe.</p>
       </section>
 
-      <!-- Top Frequent Files Table -->
+      <!-- Top Frequent Files Table (GITX-179: Replaced Repository with Last Modified Date) -->
       <section class="card" id="frequentFilesCard" aria-label="Top Frequent Files">
         <h2>Top 20 Frequently Modified Files</h2>
         <div class="table-container">
@@ -202,8 +216,8 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
                   <span class="header-text">Total LOC Changed</span>
                   <span class="sort-indicator" aria-hidden="true">⇅</span>
                 </th>
-                <th class="sortable-header" data-sort-key="repository" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Repository</span>
+                <th class="sortable-header" data-sort-key="lastModified" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
+                  <span class="header-text">Last Modified</span>
                   <span class="sort-indicator" aria-hidden="true">⇅</span>
                 </th>
               </tr>
@@ -246,6 +260,8 @@ ${generateGitx156HtmlSections()}
       let frequentFilesSortKey = 'modificationCount';
       let frequentFilesSortDir = 'desc';
       let initialStateReceived = false;
+      // GITX-179: Track aggregation period for X-axis formatting
+      let currentAggregationPeriod = 'week';
 
       // Okabe-Ito colorblind-safe palette for charts (GITX-156)
       var CHART_COLORS = ['#E69F00', '#56B4E9', '#009E73', '#D4C800', '#0072B2', '#D55E00', '#CC79A7', '#999999'];
@@ -271,6 +287,23 @@ ${generateGitx156HtmlSections()}
       function truncatePath(path, maxLen) {
         if (!path || path.length <= maxLen) { return path; }
         return '...' + path.slice(-(maxLen - 3));
+      }
+
+      // GITX-179: Format X-axis date label based on aggregation period
+      function formatXAxisDate(dateStr) {
+        if (!dateStr) { return ''; }
+        if (currentAggregationPeriod === 'month') {
+          // Monthly: "MMM YYYY" format
+          try {
+            var date = new Date(dateStr + 'T00:00:00');
+            var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return months[date.getMonth()] + ' ' + date.getFullYear().toString().slice(2);
+          } catch (e) {
+            return dateStr.slice(0, 7);
+          }
+        }
+        // Weekly: "MM-DD" format
+        return dateStr.slice(5);
       }
 
       // ======================================================================
@@ -405,6 +438,28 @@ ${generateGitx156HtmlSections()}
         document.getElementById('summaryLocValue').textContent = formatNumber(summary.totalLoc);
         document.getElementById('summaryComplexityValue').textContent = summary.avgComplexity.toFixed(2);
         document.getElementById('summaryReposValue').textContent = formatNumber(summary.repositoriesWorkedOn);
+
+        // GITX-179: Store aggregation period for X-axis formatting
+        currentAggregationPeriod = summary.aggregationPeriod || 'week';
+
+        // GITX-179: Update average metrics labels based on aggregation period
+        var periodLabel = summary.aggregationPeriod === 'month' ? 'Month' : 'Week';
+        document.getElementById('summaryAvgLocLabel').textContent = 'Avg LOC/' + periodLabel;
+        document.getElementById('summaryAvgSpLabel').textContent = 'Avg SP/' + periodLabel;
+
+        // GITX-179: Display average LOC per period
+        if (summary.avgLocPerPeriod !== undefined && summary.avgLocPerPeriod > 0) {
+          document.getElementById('summaryAvgLocValue').textContent = formatNumber(summary.avgLocPerPeriod);
+        } else {
+          document.getElementById('summaryAvgLocValue').textContent = '—';
+        }
+
+        // GITX-179: Display average story points per period (null means no Jira/Linear data)
+        if (summary.avgStoryPointsPerPeriod !== null && summary.avgStoryPointsPerPeriod !== undefined) {
+          document.getElementById('summaryAvgSpValue').textContent = summary.avgStoryPointsPerPeriod.toFixed(1);
+        } else {
+          document.getElementById('summaryAvgSpValue').textContent = '—';
+        }
 
         if (summary.totalCommits === 0) {
           // Find developer by either fullName or login

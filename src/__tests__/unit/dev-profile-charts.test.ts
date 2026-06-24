@@ -318,7 +318,7 @@ describe('dev-profile-charts (GITX-174, GITX-176)', () => {
 
       it('should format X axis ticks as MM-DD', () => {
         const script = generateLocWeekChartScript();
-        expect(script).toContain('return d.slice(5)'); // Skip YYYY- prefix
+        expect(script).toContain('formatXAxisDate(d)'); // Skip YYYY- prefix
       });
 
       it('should rotate X axis labels 45 degrees', () => {

@@ -165,7 +165,7 @@ describe('dev-profile-charts edge cases (GITX-174, GITX-176)', () => {
 
     it('should format week labels consistently', () => {
       // Slice(5) removes YYYY- prefix (e.g., "2024-06-17" -> "06-17")
-      expect(script).toContain('return d.slice(5);');
+      expect(script).toContain('formatXAxisDate(d)');
     });
 
     it('should rotate labels to prevent overlap', () => {
