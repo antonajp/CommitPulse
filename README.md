@@ -702,6 +702,139 @@ After updating contributor data, refresh the Contributors TreeView:
 
 Or click the refresh icon in the Contributors TreeView title bar.
 
+### Contributor Name Alignment for Jira-Git Joins
+
+Several dashboards combine data from both Jira and Git sources to show comprehensive analytics:
+
+- **Productivity > Sprint Velocity vs LOC** — Correlates story points completed with lines of code contributed
+- **Developer Profile > Sprint Velocity vs Lines of Code** — Shows individual contributor productivity across both metrics
+
+These dashboards rely on SQL joins between Jira tables and Git tables. For the joins to work correctly, **contributor names must be aligned across the data sources**.
+
+#### Column Relationships
+
+| Source | Table | Column(s) | Purpose |
+|--------|-------|-----------|---------|
+| **Git** | `commit_contributors` | `full_name` | Canonical display name for the contributor |
+| **Git** | `commit_contributors` | `jira_name` | Jira display name (for cross-source joins) |
+| **Jira** | `jira_detail` | `assignee` | Current assignee display name |
+| **Jira** | `jira_history` | `to_value`, `from_value` | Assignee values when `field = 'assignee'` |
+
+The `jira_name` column in `commit_contributors` exists specifically to map Git authors to their corresponding Jira display names. Without this mapping, a contributor known as "Jane Doe" in Git but "jane.doe@company.com" in Jira would be excluded from combined charts.
+
+**Best Practice:** The `full_name` and `jira_name` values should ideally be the same. When you set `jira_name`, also update `full_name` to match. This ensures consistency across all dashboards — Git-only views use `full_name`, Jira-only views use `assignee`, and combined views join on `jira_name = assignee`. Keeping all three values identical eliminates confusion and ensures data appears correctly everywhere.
+
+#### Why Alignment Matters
+
+When the dashboards join Git and Jira data, they match on contributor names:
+
+```sql
+-- Example join pattern used by Sprint Velocity dashboards
+SELECT cc.full_name, SUM(jd.points), SUM(ch.lines_added)
+FROM commit_contributors cc
+JOIN commit_history ch ON ch.author = cc.username
+JOIN jira_detail jd ON jd.assignee = cc.jira_name  -- This join fails if jira_name is NULL or mismatched
+...
+```
+
+If `jira_name` is `NULL` or doesn't match the exact value in `jira_detail.assignee`, the contributor's Jira data (story points, issue counts) will be excluded from the combined metrics — even though their Git data is present.
+
+#### Alignment Process (Manual SQL Required)
+
+**Important:** The `jira_detail` and `jira_history` tables must be populated BEFORE you can perform alignment. Run the pipeline first to load Jira data.
+
+**Step 1: Run the pipeline to populate all tables**
+
+```bash
+# Via Command Palette: Gitr: Run Pipeline
+# Or wait for scheduled pipeline execution
+```
+
+**Step 2: Identify mismatches between Git contributors and Jira assignees**
+
+```sql
+-- Find Git contributors without Jira name alignment
+SELECT cc.login, cc.username, cc.full_name, cc.jira_name
+FROM commit_contributors cc
+WHERE cc.jira_name IS NULL
+ORDER BY cc.full_name;
+
+-- List distinct Jira assignee names (what you need to match)
+SELECT DISTINCT assignee
+FROM jira_detail
+WHERE assignee IS NOT NULL
+ORDER BY assignee;
+
+-- Find potential matches (fuzzy comparison)
+SELECT DISTINCT
+    cc.full_name AS git_name,
+    cc.jira_name AS current_jira_name,
+    jd.assignee AS jira_assignee
+FROM commit_contributors cc
+CROSS JOIN (SELECT DISTINCT assignee FROM jira_detail WHERE assignee IS NOT NULL) jd
+WHERE cc.jira_name IS NULL
+  AND (
+      LOWER(cc.full_name) LIKE '%' || LOWER(SPLIT_PART(jd.assignee, ' ', 1)) || '%'
+      OR LOWER(jd.assignee) LIKE '%' || LOWER(SPLIT_PART(cc.full_name, ' ', 1)) || '%'
+  )
+ORDER BY cc.full_name, jd.assignee;
+```
+
+**Step 3: Update `full_name` and `jira_name` to match Jira assignee values**
+
+Set both columns to the same value — this ensures consistency across all dashboard types.
+
+```sql
+-- Example: Map a Git contributor to their Jira identity
+-- Set both full_name and jira_name to the exact value from jira_detail.assignee
+UPDATE commit_contributors
+SET full_name = 'Jane Doe',
+    jira_name = 'Jane Doe'  -- Must match exactly what appears in jira_detail.assignee
+WHERE login = 'jdoe';
+
+-- Bulk update for multiple contributors (always set both columns)
+UPDATE commit_contributors SET full_name = 'Alice Smith', jira_name = 'Alice Smith' WHERE login = 'asmith';
+UPDATE commit_contributors SET full_name = 'Bob Johnson', jira_name = 'Bob Johnson' WHERE login = 'bjohnson';
+UPDATE commit_contributors SET full_name = 'Charlie Brown', jira_name = 'Charlie Brown' WHERE login IN ('cbrown', 'charlie.brown');
+```
+
+**Step 4: Verify alignment with a test join**
+
+```sql
+-- Verify contributors now join correctly to Jira data
+SELECT
+    cc.full_name,
+    cc.jira_name,
+    COUNT(DISTINCT jd.jira_key) AS jira_issues,
+    SUM(jd.points) AS total_points
+FROM commit_contributors cc
+LEFT JOIN jira_detail jd ON jd.assignee = cc.jira_name
+WHERE cc.jira_name IS NOT NULL
+GROUP BY cc.full_name, cc.jira_name
+ORDER BY total_points DESC NULLS LAST;
+
+-- Check for any remaining unaligned contributors with commits
+SELECT cc.full_name, COUNT(ch.sha) AS commit_count
+FROM commit_contributors cc
+JOIN commit_history ch ON ch.author = cc.username
+WHERE cc.jira_name IS NULL
+GROUP BY cc.full_name
+HAVING COUNT(ch.sha) > 10  -- Only show active contributors
+ORDER BY commit_count DESC;
+```
+
+#### Workflow Summary
+
+```
+1. Run Pipeline          → Populates commit_contributors (Git) and jira_detail/jira_history (Jira)
+2. Query Both Sources    → Identify name mismatches using SELECT queries above
+3. Update jira_name      → Set commit_contributors.jira_name to match jira_detail.assignee exactly
+4. Verify Alignment      → Run test join query to confirm data links correctly
+5. Refresh Dashboards    → Sprint Velocity and Developer Profile charts now show combined metrics
+```
+
+**Note:** This is a one-time setup per contributor. Once `jira_name` is set, it persists across pipeline runs. You only need to revisit alignment when new contributors join or Jira display names change.
+
 ---
 
 ## Further Reference
