@@ -5,7 +5,22 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.47] - 2026-06-26
+
+### Fixed
+
+- Fix publish script not generating changelog for single-commit releases
+- Fix Developer Profile story points + Diagnostic Tool queries
+
+### Technical
+
+- Add seed script for test Jira data
+
 ## [0.1.46] - 2026-06-26
+
+### Added
+
+- Fix Developer Profile story points + Add Join Diagnostic Tool
 
 ## [0.1.45] - 2026-06-24
 
@@ -16,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix CHANGELOG corruption from publish script log output
+- Remove hardcoded 'per Week' from Developer Profile chart labels
 
 ## [0.1.44] - 2026-06-24
 

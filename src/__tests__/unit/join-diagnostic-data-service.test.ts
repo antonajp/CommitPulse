@@ -87,7 +87,8 @@ describe('JoinDiagnosticDataService', () => {
           full_name: 'John Doe',
           jira_name: 'John Doe',
           email: 'john.doe@example.com',
-          alignment_status: 'Aligned (Same Value)',
+          jira_identity: 'John Doe',
+          alignment_status: 'Aligned (jira_name = full_name)',
         }],
         rowCount: 1,
       } as never);
@@ -98,7 +99,8 @@ describe('JoinDiagnosticDataService', () => {
         fullName: 'John Doe',
         jiraName: 'John Doe',
         email: 'john.doe@example.com',
-        alignmentStatus: 'Aligned (Same Value)',
+        jiraIdentity: 'John Doe',
+        alignmentStatus: 'Aligned (jira_name = full_name)',
       });
     });
 
@@ -109,7 +111,8 @@ describe('JoinDiagnosticDataService', () => {
           full_name: 'Jane Smith',
           jira_name: null,
           email: 'jane.smith@example.com',
-          alignment_status: 'Not Aligned',
+          jira_identity: 'Jane Smith',
+          alignment_status: 'Not Aligned (using full_name)',
         }],
         rowCount: 1,
       } as never);
@@ -120,7 +123,8 @@ describe('JoinDiagnosticDataService', () => {
         fullName: 'Jane Smith',
         jiraName: null,
         email: 'jane.smith@example.com',
-        alignmentStatus: 'Not Aligned',
+        jiraIdentity: 'Jane Smith',
+        alignmentStatus: 'Not Aligned (using full_name)',
       });
     });
 
@@ -266,15 +270,17 @@ describe('JoinDiagnosticDataService', () => {
             login: 'john.doe',
             full_name: 'John Doe',
             jira_name: 'John Doe',
+            jira_identity: 'John Doe',
             alignment_status: 'Aligned (Same)',
-            commit_count: 150,
+            matched_issue_count: 15,
           },
           {
             login: 'jane.smith',
             full_name: 'Jane Smith',
             jira_name: null,
+            jira_identity: 'Jane Smith',
             alignment_status: 'Not Aligned',
-            commit_count: 100,
+            matched_issue_count: 0,
           },
         ],
         rowCount: 2,
@@ -286,15 +292,17 @@ describe('JoinDiagnosticDataService', () => {
         login: 'john.doe',
         fullName: 'John Doe',
         jiraName: 'John Doe',
+        jiraIdentity: 'John Doe',
         alignmentStatus: 'Aligned (Same)',
-        commitCount: 150,
+        matchedIssueCount: 15,
       });
       expect(result[1]).toEqual({
         login: 'jane.smith',
         fullName: 'Jane Smith',
         jiraName: null,
+        jiraIdentity: 'Jane Smith',
         alignmentStatus: 'Not Aligned',
-        commitCount: 100,
+        matchedIssueCount: 0,
       });
     });
 

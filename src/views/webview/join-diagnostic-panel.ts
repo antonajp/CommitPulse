@@ -23,7 +23,7 @@ import type { SecretStorageService } from '../../config/secret-storage.js';
 import type {
   JoinDiagnosticWebviewToHost,
   JoinDiagnosticHostToWebview,
-  ContributorSummary,
+  ContributorDropdownItem,
   JiraMatchStats,
   UnmatchedIssue,
 } from './join-diagnostic-protocol.js';
@@ -205,13 +205,14 @@ export class JoinDiagnosticPanel implements vscode.Disposable {
       switch (message.type) {
         case 'requestAllContributors': {
           const contributors = await this.dataService.getAllContributors();
-          // Map to protocol format (camelCase)
-          const mappedContributors: ContributorSummary[] = contributors.map(c => ({
+          // Map to protocol format - use jiraIdentity as the selection key
+          const mappedContributors: ContributorDropdownItem[] = contributors.map(c => ({
             login: c.login,
             fullName: c.fullName,
             jiraName: c.jiraName,
-            email: '', // Not available in getAllContributors
+            jiraIdentity: c.jiraIdentity,
             alignmentStatus: c.alignmentStatus,
+            matchedIssueCount: c.matchedIssueCount,
           }));
           this.postMessage({ type: 'allContributors', contributors: mappedContributors });
           break;

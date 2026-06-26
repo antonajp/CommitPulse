@@ -3,6 +3,9 @@
  * Executes diagnostic queries to identify join failures between
  * commit_contributors and jira_detail tables.
  *
+ * Key concept: The join uses COALESCE(jira_name, full_name) as "jira_identity"
+ * to match against jira_detail.assignee.
+ *
  * Ticket: GITX-183
  */
 
@@ -33,7 +36,8 @@ export interface ContributorSummary {
   fullName: string;
   jiraName: string | null;
   email: string;
-  alignmentStatus: 'Not Aligned' | 'Aligned (Same Value)' | 'Aligned (Different Value)';
+  jiraIdentity: string;
+  alignmentStatus: string;
 }
 
 export interface JiraMatchStats {
@@ -51,15 +55,16 @@ export interface UnmatchedIssue {
   contributorJiraName: string | null;
   calculatedStoryPoints: number;
   status: string;
-  mismatchReason: 'jira_name not set' | 'Assignee mismatch' | 'Unknown';
+  mismatchReason: string;
 }
 
 export interface ContributorAlignment {
   login: string;
   fullName: string;
   jiraName: string | null;
-  alignmentStatus: 'Not Aligned' | 'Aligned (Same)' | 'Aligned (Different)';
-  commitCount: number;
+  jiraIdentity: string;
+  alignmentStatus: string;
+  matchedIssueCount: number;
 }
 
 export interface OrphanedAssignee {
@@ -89,7 +94,7 @@ export class JoinDiagnosticDataService {
    * Validate developer identifier at runtime.
    * Security: CWE-20 input validation for SQL injection prevention (defense-in-depth).
    *
-   * @param developer - The developer identifier (full_name or login) to validate
+   * @param developer - The developer jira_identity to validate
    * @param methodName - Calling method name for log context
    */
   private validateDeveloper(developer: string, methodName: string): void {
@@ -107,7 +112,7 @@ export class JoinDiagnosticDataService {
    * Get contributor summary including alignment status.
    * Shows how a contributor's Git identity maps to their Jira identity.
    *
-   * @param developer - Developer identifier (full_name or login)
+   * @param developer - Developer jira_identity (COALESCE of jira_name, full_name)
    * @returns Contributor summary or null if not found
    */
   async getContributorSummary(developer: string): Promise<ContributorSummary | null> {
@@ -126,13 +131,14 @@ export class JoinDiagnosticDataService {
       }
 
       const row = result.rows[0];
-      this.logger.debug(CLASS_NAME, 'getContributorSummary', `Found contributor: ${row.full_name}, status: ${row.alignment_status}`);
+      this.logger.debug(CLASS_NAME, 'getContributorSummary', `Found contributor: ${row.jira_identity}, status: ${row.alignment_status}`);
 
       return {
         login: row.login,
         fullName: row.full_name,
         jiraName: row.jira_name,
         email: row.email,
+        jiraIdentity: row.jira_identity,
         alignmentStatus: row.alignment_status,
       };
     } catch (error) {
@@ -145,7 +151,7 @@ export class JoinDiagnosticDataService {
    * Get Jira join match statistics for a developer.
    * Compares matched vs unmatched Jira issues to reveal missing story points.
    *
-   * @param developer - Developer identifier (full_name or login)
+   * @param developer - Developer jira_identity (COALESCE of jira_name, full_name)
    * @returns Match statistics with matched/unmatched counts and story points
    */
   async getJiraMatchStats(developer: string): Promise<JiraMatchStats> {
@@ -172,7 +178,7 @@ export class JoinDiagnosticDataService {
       this.logger.debug(
         CLASS_NAME,
         'getJiraMatchStats',
-        `Matched: ${row.matched_count} issues (${row.matched_story_points} pts), Unmatched: ${row.unmatched_count} issues (${row.unmatched_story_points} pts)`
+        `Matched: ${row.matched_count} issues (${row.matched_story_points} pts), Potential: ${row.unmatched_count} issues (${row.unmatched_story_points} pts)`
       );
 
       return {
@@ -188,12 +194,12 @@ export class JoinDiagnosticDataService {
   }
 
   /**
-   * Get list of unmatched Jira issues for a developer.
-   * Shows issues where assignee matches full_name but not jira_name.
+   * Get list of potential Jira issues for a developer that don't currently match.
+   * Shows issues where assignee might be for this contributor but join fails.
    * Limited to 50 issues for UI performance.
    *
-   * @param developer - Developer identifier (full_name or login)
-   * @returns Array of unmatched issues with mismatch reasons
+   * @param developer - Developer jira_identity (COALESCE of jira_name, full_name)
+   * @returns Array of potential unmatched issues with mismatch reasons
    */
   async getUnmatchedIssues(developer: string): Promise<UnmatchedIssue[]> {
     this.validateDeveloper(developer, 'getUnmatchedIssues');
@@ -205,7 +211,7 @@ export class JoinDiagnosticDataService {
         [developer]
       );
 
-      this.logger.debug(CLASS_NAME, 'getUnmatchedIssues', `Found ${result.rowCount} unmatched issues`);
+      this.logger.debug(CLASS_NAME, 'getUnmatchedIssues', `Found ${result.rowCount} potential unmatched issues`);
 
       return result.rows.map((row) => ({
         jiraKey: row.jira_key,
@@ -213,7 +219,7 @@ export class JoinDiagnosticDataService {
         jiraAssignee: row.jira_assignee,
         contributorFullName: row.contributor_full_name,
         contributorJiraName: row.contributor_jira_name,
-        calculatedStoryPoints: row.calculated_story_points,
+        calculatedStoryPoints: row.calculated_story_points ?? 0,
         status: row.status,
         mismatchReason: row.mismatch_reason,
       }));
@@ -225,10 +231,11 @@ export class JoinDiagnosticDataService {
 
   /**
    * Get all contributors with alignment status.
-   * Useful for team-wide audit to identify which contributors need alignment.
-   * Ordered by full_name for easy scanning.
+   * Returns jira_identity (COALESCE of jira_name, full_name) which is the
+   * value used for Jira joins and should be used for dropdown selection.
+   * Ordered by jira_identity for easy scanning.
    *
-   * @returns Array of all contributors with alignment status and commit count
+   * @returns Array of all contributors with jira_identity, alignment status, and matched issue count
    */
   async getAllContributors(): Promise<ContributorAlignment[]> {
     this.logger.debug(CLASS_NAME, 'getAllContributors', 'Fetching all contributors');
@@ -244,8 +251,9 @@ export class JoinDiagnosticDataService {
         login: row.login,
         fullName: row.full_name,
         jiraName: row.jira_name,
+        jiraIdentity: row.jira_identity,
         alignmentStatus: row.alignment_status,
-        commitCount: row.commit_count,
+        matchedIssueCount: row.matched_issue_count,
       }));
     } catch (error) {
       this.logger.error(CLASS_NAME, 'getAllContributors', `Failed to fetch all contributors: ${error instanceof Error ? error.message : String(error)}`);
@@ -255,7 +263,7 @@ export class JoinDiagnosticDataService {
 
   /**
    * Get orphaned Jira assignees not in commit_contributors.
-   * These are assignees with completed Jira issues but no Git commits.
+   * These are assignees with completed Jira issues but no matching Git contributor.
    * Limited to top 20 by story points for UI performance.
    *
    * @returns Array of orphaned assignees with issue count and story points
