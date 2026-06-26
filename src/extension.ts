@@ -29,6 +29,7 @@ import { StoryPointsTrendPanel } from './views/webview/story-points-trend-panel.
 import { FileAuthorLocPanel } from './views/webview/file-author-loc-panel.js';
 import { ComplexityTrendPanel } from './views/webview/complexity-trend-panel.js';
 import { DevProfilePanel } from './views/webview/dev-profile-panel.js';
+import { TeamProfilePanel } from './views/webview/team-profile-panel.js';
 import { JoinDiagnosticPanel } from './views/webview/join-diagnostic-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 
@@ -806,6 +807,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     DevProfilePanel.createOrShow(context.extensionUri, secretService, developer);
   });
   disposables.push(openDevProfileDisposable);
+
+  // gitrx.openTeamProfile - Open the Team Profile dashboard (GITX-185)
+  const openTeamProfileDisposable = vscode.commands.registerCommand('gitrx.openTeamProfile', (team?: string) => {
+    logger?.info(CLASS_NAME, 'openTeamProfile', `Command executed: gitrx.openTeamProfile${team ? ` for team ${team}` : ''}`);
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'openTeamProfile', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    TeamProfilePanel.createOrShow(context.extensionUri, secretService, team);
+  });
+  disposables.push(openTeamProfileDisposable);
 
   // gitrx.openJoinDiagnostic - Open the Join Diagnostics panel (GITX-183)
   const openJoinDiagnosticDisposable = vscode.commands.registerCommand('gitrx.openJoinDiagnostic', () => {

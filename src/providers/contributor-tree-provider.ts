@@ -257,6 +257,17 @@ export class ContributorTreeProvider
         vscode.TreeItemCollapsibleState.Collapsed,
       );
       node.iconPath = ICONS.team;
+
+      // Add click command for team nodes (GITX-185)
+      // Exclude "(Unassigned)" team from Team Profile (no click action)
+      if (teamName !== UNASSIGNED_TEAM_LABEL) {
+        node.command = {
+          command: 'gitrx.openTeamProfile',
+          title: 'Open Team Profile',
+          arguments: [teamName],
+        };
+      }
+
       rootNodes.push(node);
     }
 
