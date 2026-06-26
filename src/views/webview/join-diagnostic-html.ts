@@ -310,19 +310,23 @@ export function generateJoinDiagnosticHtml(nonce: string, cspSource: string): st
     <div id="resultsContainer" class="hidden" aria-live="polite">
       <!-- Contributor Info -->
       <div class="card" style="margin-bottom: 24px;">
-        <div class="card-title">Contributor Information</div>
+        <div class="card-title">Contributor Identity Mapping</div>
         <table>
           <tbody>
             <tr>
-              <td><strong>Login:</strong></td>
+              <td><strong>Jira Identity (Join Key):</strong></td>
+              <td id="contributorJiraIdentity" class="monospace" style="font-weight: bold;"></td>
+            </tr>
+            <tr>
+              <td><strong>Login (GitHub):</strong></td>
               <td id="contributorLogin" class="monospace"></td>
             </tr>
             <tr>
-              <td><strong>Full Name:</strong></td>
+              <td><strong>Full Name (Git Author):</strong></td>
               <td id="contributorFullName"></td>
             </tr>
             <tr>
-              <td><strong>Jira Name:</strong></td>
+              <td><strong>Jira Name (Aligned Value):</strong></td>
               <td id="contributorJiraName" class="monospace"></td>
             </tr>
             <tr>
@@ -335,6 +339,10 @@ export function generateJoinDiagnosticHtml(nonce: string, cspSource: string): st
             </tr>
           </tbody>
         </table>
+        <p style="margin-top: 12px; font-size: 12px; color: var(--vscode-descriptionForeground);">
+          <strong>How it works:</strong> The join uses <code>COALESCE(jira_name, full_name)</code> to match against <code>jira_detail.assignee</code>.
+          If jira_name is set, it's used; otherwise full_name is used.
+        </p>
       </div>
 
       <!-- Summary Cards -->
@@ -350,17 +358,21 @@ export function generateJoinDiagnosticHtml(nonce: string, cspSource: string): st
           <div class="card-subtitle"><span id="matchedPoints">0</span> story points</div>
         </div>
         <div class="card">
-          <div class="card-title">Unmatched Issues</div>
-          <span id="unmatchedIssues" class="card-value card-error">0</span>
-          <div class="card-subtitle"><span id="unmatchedPoints">0</span> story points at risk</div>
+          <div class="card-title">Potential Unmatched</div>
+          <span id="unmatchedIssues" class="card-value card-warning">0</span>
+          <div class="card-subtitle"><span id="unmatchedPoints">0</span> story points may be missing</div>
         </div>
       </div>
 
-      <!-- Unmatched Issues Table -->
+      <!-- Potential Unmatched Issues Table -->
       <div class="section">
         <div class="section-header">
-          <h2 class="section-title">Unmatched Issues</h2>
+          <h2 class="section-title">Potential Unmatched Issues</h2>
         </div>
+        <p style="margin-bottom: 12px; color: var(--vscode-descriptionForeground); font-size: 13px;">
+          These issues have assignees that look like they might belong to this contributor but don't match the Jira Identity join key.
+          If the Jira Assignee should match, update <code>commit_contributors.jira_name</code> to match the Jira Assignee value.
+        </p>
         <div id="unmatchedTableContainer">
           <table id="unmatchedTable">
             <thead>
@@ -368,18 +380,18 @@ export function generateJoinDiagnosticHtml(nonce: string, cspSource: string): st
                 <th scope="col">Jira Key</th>
                 <th scope="col">Summary</th>
                 <th scope="col">Jira Assignee</th>
-                <th scope="col">Contributor Name</th>
-                <th scope="col">Contributor Jira Name</th>
+                <th scope="col">Full Name</th>
+                <th scope="col">Jira Name</th>
                 <th scope="col">Story Points</th>
                 <th scope="col">Status</th>
-                <th scope="col">Mismatch Reason</th>
+                <th scope="col">Why Not Matched</th>
               </tr>
             </thead>
             <tbody id="unmatchedTableBody">
             </tbody>
           </table>
           <div id="emptyUnmatched" class="empty-state hidden" role="status">
-            No unmatched issues found. All Jira issues are properly aligned.
+            No potential matches found. The Jira Identity join is working correctly for this contributor.
           </div>
         </div>
       </div>
@@ -465,12 +477,23 @@ export function generateJoinDiagnosticHtml(nonce: string, cspSource: string): st
       function populateDeveloperSelect(contributors) {
         developerSelect.innerHTML = '<option value="">-- Select a developer --</option>';
 
+        // Use jiraIdentity as the selection value (COALESCE of jira_name, full_name)
+        // This is the actual value used in the Jira join
         contributors
-          .sort((a, b) => a.fullName.localeCompare(b.fullName))
+          .sort((a, b) => (a.jiraIdentity || '').localeCompare(b.jiraIdentity || ''))
           .forEach(contributor => {
             const option = document.createElement('option');
-            option.value = contributor.fullName;
-            option.textContent = contributor.fullName + (contributor.login ? ' (' + contributor.login + ')' : '');
+            // Use jiraIdentity as the value - this is what the join uses
+            option.value = contributor.jiraIdentity;
+            // Display format: jiraIdentity (login) [N issues]
+            let displayText = contributor.jiraIdentity;
+            if (contributor.login && contributor.login !== contributor.jiraIdentity) {
+              displayText += ' (' + contributor.login + ')';
+            }
+            if (contributor.matchedIssueCount > 0) {
+              displayText += ' [' + contributor.matchedIssueCount + ' issues]';
+            }
+            option.textContent = displayText;
             developerSelect.appendChild(option);
           });
 
@@ -484,6 +507,7 @@ export function generateJoinDiagnosticHtml(nonce: string, cspSource: string): st
         exportCsvBtn.classList.remove('hidden');
 
         // Render contributor info
+        document.getElementById('contributorJiraIdentity').textContent = currentContributor.jiraIdentity || '(not available)';
         document.getElementById('contributorLogin').textContent = currentContributor.login;
         document.getElementById('contributorFullName').textContent = currentContributor.fullName;
         document.getElementById('contributorJiraName').textContent = currentContributor.jiraName || '(not set)';
@@ -492,12 +516,12 @@ export function generateJoinDiagnosticHtml(nonce: string, cspSource: string): st
         const alignmentEl = document.getElementById('contributorAlignment');
         alignmentEl.textContent = currentContributor.alignmentStatus;
         alignmentEl.className = '';
-        if (currentContributor.alignmentStatus === 'Not Aligned') {
-          alignmentEl.innerHTML = '<span class="badge badge-error">Not Aligned</span>';
-        } else if (currentContributor.alignmentStatus.includes('Same')) {
-          alignmentEl.innerHTML = '<span class="badge badge-info">Aligned (Same Value)</span>';
+        if (currentContributor.alignmentStatus.includes('Not Aligned') || currentContributor.alignmentStatus.includes('using full_name')) {
+          alignmentEl.innerHTML = '<span class="badge badge-warning">Using full_name (jira_name not set)</span>';
+        } else if (currentContributor.alignmentStatus.includes('= full_name') || currentContributor.alignmentStatus.includes('Same')) {
+          alignmentEl.innerHTML = '<span class="badge badge-info">jira_name = full_name</span>';
         } else {
-          alignmentEl.innerHTML = '<span class="badge badge-warning">Aligned (Different Value)</span>';
+          alignmentEl.innerHTML = '<span class="badge badge-info">jira_name differs from full_name</span>';
         }
 
         // Render stats
@@ -531,15 +555,22 @@ export function generateJoinDiagnosticHtml(nonce: string, cspSource: string): st
         document.getElementById('unmatchedTable').classList.remove('hidden');
 
         unmatchedTableBody.innerHTML = currentUnmatchedIssues.map(issue => {
-          const reasonBadge = issue.mismatchReason === 'jira_name not set'
-            ? '<span class="badge badge-error">jira_name not set</span>'
-            : '<span class="badge badge-warning">Assignee mismatch</span>';
+          // Dynamic badge based on mismatch reason
+          let reasonBadge;
+          const reason = issue.mismatchReason || '';
+          if (reason.includes('need to set jira_name')) {
+            reasonBadge = '<span class="badge badge-error">' + escapeHtml(reason) + '</span>';
+          } else if (reason.includes('contains')) {
+            reasonBadge = '<span class="badge badge-warning">' + escapeHtml(reason) + '</span>';
+          } else {
+            reasonBadge = '<span class="badge badge-info">' + escapeHtml(reason) + '</span>';
+          }
 
           return '<tr>' +
             '<td class="monospace">' + escapeHtml(issue.jiraKey) + '</td>' +
-            '<td>' + escapeHtml(issue.summary) + '</td>' +
+            '<td>' + escapeHtml(issue.summary || '') + '</td>' +
             '<td class="monospace">' + escapeHtml(issue.jiraAssignee) + '</td>' +
-            '<td>' + escapeHtml(issue.contributorFullName) + '</td>' +
+            '<td>' + escapeHtml(issue.contributorFullName || '') + '</td>' +
             '<td class="monospace text-muted">' + (issue.contributorJiraName ? escapeHtml(issue.contributorJiraName) : '(not set)') + '</td>' +
             '<td>' + (issue.storyPoints ?? '-') + '</td>' +
             '<td>' + escapeHtml(issue.status) + '</td>' +

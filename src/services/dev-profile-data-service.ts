@@ -283,10 +283,12 @@ export class DevProfileDataService {
           AND ld.state IN ('Done', 'Completed')
       ),
       jira_points AS (
+        -- GITX-183: Join on COALESCE(cc.jira_name, cc.full_name) for proper name alignment.
+        -- The jira_name column is the canonical field for matching contributors to Jira assignees.
         SELECT COALESCE(SUM(jd.calculated_story_points), 0)::int AS points
         FROM jira_history jh
         JOIN jira_detail jd ON jh.jira_key = jd.jira_key
-        JOIN commit_contributors cc ON jd.assignee = cc.full_name
+        JOIN commit_contributors cc ON jd.assignee = COALESCE(cc.jira_name, cc.full_name)
         WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
           AND jh.change_date >= $2
           AND jh.field = 'status'
