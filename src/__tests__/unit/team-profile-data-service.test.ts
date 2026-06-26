@@ -64,6 +64,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -80,6 +81,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -104,6 +106,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -120,6 +123,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -136,6 +140,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -152,6 +157,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -168,6 +174,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -184,6 +191,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -200,6 +208,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -305,6 +314,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '1000',
           avg_complexity: '5.5',
           repos_worked_on: 2,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -322,6 +332,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '1300',
           avg_complexity: '5.5',
           repos_worked_on: 2,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -339,6 +350,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '12000',
           avg_complexity: '5.5',
           repos_worked_on: 2,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -357,6 +369,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '24000',
           avg_complexity: '5.5',
           repos_worked_on: 2,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -375,6 +388,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '500',
           avg_complexity: '3.0',
           repos_worked_on: 1,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -408,6 +422,7 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 1,
+          active_contributors: 1,
         }],
         rowCount: 1,
       });
