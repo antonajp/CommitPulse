@@ -212,7 +212,14 @@ export class TeamProfileDataService {
     this.validateAggregationPeriod(aggregationPeriod, 'getSummary');
     const periodsCount = this.getPeriodsCount(filters.timeframeDays);
 
+    // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name),
+    // not login. Match dev-profile-data-service pattern for consistency.
     const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      )
       SELECT
         COUNT(DISTINCT ch.sha)::int AS total_commits,
         COALESCE(SUM(cf.line_inserts), 0)::bigint AS total_loc_added,
@@ -220,9 +227,11 @@ export class TeamProfileDataService {
         COUNT(DISTINCT ch.repository)::int AS repos_worked_on
       FROM commit_history ch
       LEFT JOIN commit_files cf ON cf.sha = ch.sha
-      JOIN commit_contributors cc ON ch.author = cc.login
-      WHERE cc.team = $1
-        AND ch.commit_date >= $2
+      JOIN team_members tm ON (
+        ch.author = tm.full_name
+        OR (tm.full_name IS NULL AND ch.author = tm.login)
+      )
+      WHERE ch.commit_date >= $2
         AND ch.is_merge = FALSE
     `;
 
@@ -339,7 +348,13 @@ export class TeamProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name)
     const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      )
       SELECT
         DATE_TRUNC($3, ch.commit_date)::date AS week_start,
         ch.repository,
@@ -348,9 +363,11 @@ export class TeamProfileDataService {
         COALESCE(SUM(cf.line_inserts - cf.line_deletes), 0)::bigint AS net_lines
       FROM commit_history ch
       LEFT JOIN commit_files cf ON cf.sha = ch.sha
-      JOIN commit_contributors cc ON ch.author = cc.login
-      WHERE cc.team = $1
-        AND ch.commit_date >= $2
+      JOIN team_members tm ON (
+        ch.author = tm.full_name
+        OR (tm.full_name IS NULL AND ch.author = tm.login)
+      )
+      WHERE ch.commit_date >= $2
         AND ch.is_merge = FALSE
         AND cf.line_inserts IS NOT NULL
       GROUP BY week_start, ch.repository
@@ -391,7 +408,13 @@ export class TeamProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name)
     const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      )
       SELECT
         cf.filename AS file_path,
         MAX(cf.complexity)::int AS complexity_score,
@@ -399,9 +422,11 @@ export class TeamProfileDataService {
         MAX(ch.commit_date)::date AS last_modified
       FROM commit_files cf
       JOIN commit_history ch ON ch.sha = cf.sha
-      JOIN commit_contributors cc ON ch.author = cc.login
-      WHERE cc.team = $1
-        AND ch.commit_date >= $2
+      JOIN team_members tm ON (
+        ch.author = tm.full_name
+        OR (tm.full_name IS NULL AND ch.author = tm.login)
+      )
+      WHERE ch.commit_date >= $2
         AND ch.is_merge = FALSE
         AND cf.complexity IS NOT NULL
         AND cf.complexity > 0
@@ -442,7 +467,13 @@ export class TeamProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name)
     const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      )
       SELECT
         cf.filename AS file_path,
         COUNT(DISTINCT cf.sha)::int AS modification_count,
@@ -450,9 +481,11 @@ export class TeamProfileDataService {
         MAX(ch.commit_date)::date AS last_modified
       FROM commit_files cf
       JOIN commit_history ch ON ch.sha = cf.sha
-      JOIN commit_contributors cc ON ch.author = cc.login
-      WHERE cc.team = $1
-        AND ch.commit_date >= $2
+      JOIN team_members tm ON (
+        ch.author = tm.full_name
+        OR (tm.full_name IS NULL AND ch.author = tm.login)
+      )
+      WHERE ch.commit_date >= $2
         AND ch.is_merge = FALSE
       GROUP BY cf.filename
       ORDER BY modification_count DESC
@@ -491,19 +524,27 @@ export class TeamProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name)
     // Query aggregates LOC by technology stack category using the view
     const sql = `
-      WITH team_contributions AS (
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      ),
+      team_contributions AS (
         SELECT
           vtsc.category,
           ch.repository,
           COALESCE(SUM(cf.line_inserts), 0)::bigint AS loc_count
         FROM commit_files cf
         JOIN commit_history ch ON cf.sha = ch.sha
-        JOIN commit_contributors cc ON ch.author = cc.login
+        JOIN team_members tm ON (
+          ch.author = tm.full_name
+          OR (tm.full_name IS NULL AND ch.author = tm.login)
+        )
         JOIN vw_technology_stack_category vtsc ON cf.file_extension = vtsc.file_extension
-        WHERE cc.team = $1
-          AND ch.commit_date >= $2
+        WHERE ch.commit_date >= $2
           AND ch.is_merge = FALSE
           AND cf.line_inserts IS NOT NULL
         GROUP BY vtsc.category, ch.repository
@@ -560,15 +601,23 @@ export class TeamProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name)
     const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      )
       SELECT
         DATE_TRUNC($3, ch.commit_date)::date AS week_start,
         COALESCE(SUM(COALESCE(cf.comments_change, 0)), 0)::int AS comments_added
       FROM commit_files cf
       JOIN commit_history ch ON cf.sha = ch.sha
-      JOIN commit_contributors cc ON ch.author = cc.login
-      WHERE cc.team = $1
-        AND ch.commit_date >= $2
+      JOIN team_members tm ON (
+        ch.author = tm.full_name
+        OR (tm.full_name IS NULL AND ch.author = tm.login)
+      )
+      WHERE ch.commit_date >= $2
         AND ch.is_merge = FALSE
       GROUP BY week_start
       ORDER BY week_start ASC
@@ -605,16 +654,24 @@ export class TeamProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name)
     const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      )
       SELECT
         DATE_TRUNC($3, ch.commit_date)::date AS week_start,
         COUNT(DISTINCT cf.filename)::int AS test_files_modified,
         COALESCE(SUM(cf.line_inserts), 0)::int AS test_lines_added
       FROM commit_files cf
       JOIN commit_history ch ON cf.sha = ch.sha
-      JOIN commit_contributors cc ON ch.author = cc.login
-      WHERE cc.team = $1
-        AND ch.commit_date >= $2
+      JOIN team_members tm ON (
+        ch.author = tm.full_name
+        OR (tm.full_name IS NULL AND ch.author = tm.login)
+      )
+      WHERE ch.commit_date >= $2
         AND ch.is_merge = FALSE
         AND cf.is_test_file = TRUE
       GROUP BY week_start
@@ -652,9 +709,15 @@ export class TeamProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
+    // GITX-186: Use consistent join pattern - vch.author stores git author name (full_name)
     // Query the vw_commit_hygiene view and calculate component percentages
     const sql = `
-      WITH hygiene_stats AS (
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      ),
+      hygiene_stats AS (
         SELECT
           COUNT(*)::int AS total_commits,
           ROUND(AVG(vch.hygiene_score)::numeric, 2) AS avg_hygiene_score,
@@ -668,9 +731,11 @@ export class TeamProfileDataService {
           COUNT(*) FILTER (WHERE vch.quality_tier = 'fair') AS fair_count,
           COUNT(*) FILTER (WHERE vch.quality_tier = 'poor') AS poor_count
         FROM vw_commit_hygiene vch
-        JOIN commit_contributors cc ON vch.author = cc.login
-        WHERE cc.team = $1
-          AND vch.commit_date >= $2
+        JOIN team_members tm ON (
+          vch.author = tm.full_name
+          OR (tm.full_name IS NULL AND vch.author = tm.login)
+        )
+        WHERE vch.commit_date >= $2
       )
       SELECT
         total_commits,
@@ -846,8 +911,14 @@ export class TeamProfileDataService {
       };
     }
 
+    // GITX-186: Use consistent join pattern - ctr.author stores git author name (full_name)
     // Query period test debt breakdown by tier
     const weeklyQuery = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      )
       SELECT
         DATE_TRUNC($3, ctr.commit_date)::DATE AS week_start,
         COUNT(*) FILTER (WHERE ctr.test_ratio IS NULL OR ctr.test_ratio < 0.1)::int AS low_test_commits,
@@ -855,9 +926,11 @@ export class TeamProfileDataService {
         COUNT(*) FILTER (WHERE ctr.test_ratio >= 0.5)::int AS high_test_commits,
         COUNT(*)::int AS total_commits
       FROM vw_commit_test_ratio ctr
-      JOIN commit_contributors cc ON ctr.author = cc.login
-      WHERE cc.team = $1
-        AND ctr.commit_date >= $2
+      JOIN team_members tm ON (
+        ctr.author = tm.full_name
+        OR (tm.full_name IS NULL AND ctr.author = tm.login)
+      )
+      WHERE ctr.commit_date >= $2
         AND ctr.prod_loc_changed >= 50
       GROUP BY DATE_TRUNC($3, ctr.commit_date)
       ORDER BY week_start ASC
@@ -889,18 +962,26 @@ export class TeamProfileDataService {
     let orgAvgRoiMultiplier: number | null = null;
 
     if (bugsViewExistsResult.rows[0]?.view_exists) {
+      // GITX-186: Use consistent join pattern - ctr.author stores git author name (full_name)
       // Query team's bug rates by tier
       const bugRateQuery = `
-        WITH team_commits AS (
+        WITH team_members AS (
+          SELECT DISTINCT login, full_name
+          FROM commit_contributors
+          WHERE team = $1
+        ),
+        team_commits AS (
           SELECT
             ctr.sha,
             ctr.test_ratio,
             COALESCE(sb.jira_bugs_filed, 0) + COALESCE(sb.linear_bugs_filed, 0) AS subsequent_bugs
           FROM vw_commit_test_ratio ctr
           LEFT JOIN vw_subsequent_bugs sb ON ctr.sha = sb.original_sha
-          JOIN commit_contributors cc ON ctr.author = cc.login
-          WHERE cc.team = $1
-            AND ctr.commit_date >= $2
+          JOIN team_members tm ON (
+            ctr.author = tm.full_name
+            OR (tm.full_name IS NULL AND ctr.author = tm.login)
+          )
+          WHERE ctr.commit_date >= $2
             AND ctr.prod_loc_changed >= 50
         )
         SELECT
