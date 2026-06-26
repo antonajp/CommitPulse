@@ -29,6 +29,7 @@ import { StoryPointsTrendPanel } from './views/webview/story-points-trend-panel.
 import { FileAuthorLocPanel } from './views/webview/file-author-loc-panel.js';
 import { ComplexityTrendPanel } from './views/webview/complexity-trend-panel.js';
 import { DevProfilePanel } from './views/webview/dev-profile-panel.js';
+import { JoinDiagnosticPanel } from './views/webview/join-diagnostic-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 
 /**
@@ -805,6 +806,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     DevProfilePanel.createOrShow(context.extensionUri, secretService, developer);
   });
   disposables.push(openDevProfileDisposable);
+
+  // gitrx.openJoinDiagnostic - Open the Join Diagnostics panel (GITX-183)
+  const openJoinDiagnosticDisposable = vscode.commands.registerCommand('gitrx.openJoinDiagnostic', () => {
+    logger?.info(CLASS_NAME, 'openJoinDiagnostic', 'Command executed: gitrx.openJoinDiagnostic');
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'openJoinDiagnostic', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    JoinDiagnosticPanel.createOrShow(context.extensionUri, secretService);
+  });
+  disposables.push(openJoinDiagnosticDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }

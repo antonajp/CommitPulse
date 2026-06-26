@@ -219,6 +219,14 @@ export const CHART_CATALOG: readonly ChartDefinition[] = [
     description: 'Code complexity over time by contributor',
     icon: 'graph-line',
   },
+  {
+    type: 'joinDiagnostic',
+    label: 'Join Diagnostics',
+    category: 'Diagnostics',
+    command: 'gitrx.openJoinDiagnostic',
+    description: 'Debug chart data join issues',
+    icon: 'search',
+  },
 ] as const;
 
 /**
@@ -228,6 +236,7 @@ export const CHART_CATALOG: readonly ChartDefinition[] = [
  * Team category added in IQS-904 for knowledge/contributor charts.
  * Process category added in IQS-906 for workflow analysis charts.
  * Architecture category re-added in IQS-910 for team coupling analysis.
+ * Diagnostics category added in GITX-183 for debugging tools.
  */
 const CATEGORY_ORDER: readonly ChartCategory[] = [
   'Overview',
@@ -237,6 +246,7 @@ const CATEGORY_ORDER: readonly ChartCategory[] = [
   'Process',
   'Architecture',
   'Traceability',
+  'Diagnostics',
 ] as const;
 
 /**
@@ -244,6 +254,7 @@ const CATEGORY_ORDER: readonly ChartCategory[] = [
  * Note: Architecture category removed in IQS-893, re-added in IQS-910.
  * Team category added in IQS-904.
  * Process category added in IQS-906.
+ * Diagnostics category added in GITX-183.
  */
 const CATEGORY_ICONS: Record<ChartCategory, string> = {
   Overview: 'layout',
@@ -253,6 +264,7 @@ const CATEGORY_ICONS: Record<ChartCategory, string> = {
   Process: 'workflow',
   Architecture: 'symbol-structure',
   Traceability: 'git-pull-request',
+  Diagnostics: 'search',
 };
 
 /**
