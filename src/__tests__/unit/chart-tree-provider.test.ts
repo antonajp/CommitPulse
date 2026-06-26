@@ -59,7 +59,8 @@ describe('ChartTreeProvider', () => {
     it('should have valid categories for all charts', () => {
       // Note: Architecture category removed in IQS-893, re-added in IQS-910.
       // Team category added in IQS-904, Process category added in IQS-906.
-      const validCategories = ['Overview', 'Productivity', 'Quality', 'Team', 'Process', 'Architecture', 'Traceability'];
+      // Diagnostics category added in GITX-183.
+      const validCategories = ['Overview', 'Productivity', 'Quality', 'Team', 'Process', 'Architecture', 'Traceability', 'Diagnostics'];
       for (const chart of CHART_CATALOG) {
         expect(validCategories).toContain(chart.category);
       }
@@ -78,8 +79,8 @@ describe('ChartTreeProvider', () => {
       const provider = new ChartTreeProvider();
       const children = provider.getChildren();
 
-      // Should have 7 categories (Architecture re-added in IQS-910, Team added in IQS-904, Process added in IQS-906)
-      expect(children.length).toBe(7);
+      // Should have 8 categories (Architecture re-added in IQS-910, Team added in IQS-904, Process added in IQS-906, Diagnostics added in GITX-183)
+      expect(children.length).toBe(8);
 
       const labels = children.map(c => c.nodeData.label);
       expect(labels).toContain('Overview');
@@ -89,6 +90,7 @@ describe('ChartTreeProvider', () => {
       expect(labels).toContain('Process');
       expect(labels).toContain('Architecture');
       expect(labels).toContain('Traceability');
+      expect(labels).toContain('Diagnostics');
 
       // Categories should be expanded by default
       for (const child of children) {

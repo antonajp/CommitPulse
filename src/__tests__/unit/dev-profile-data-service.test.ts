@@ -1023,10 +1023,11 @@ describe('DevProfileDataService', () => {
         expect(call).toBeDefined();
         const sql = call![0] as string;
 
-        // GITX-179: The dev_jira_points CTE should join on jd.assignee (from jira_detail)
-        // matched against cc.full_name. The jira_history.assignee column was always NULL
-        // (not populated during changelog extraction), which caused NO DATA to display.
-        expect(sql).toContain('jd.assignee = cc.full_name');
+        // GITX-179: The dev_jira_points CTE should join on jd.assignee (from jira_detail).
+        // GITX-183: Use COALESCE(cc.jira_name, cc.full_name) for proper name alignment.
+        // The jira_name column is the canonical field for matching contributors to Jira.
+        // Falls back to full_name if jira_name is NULL (backwards compatibility).
+        expect(sql).toContain('jd.assignee = COALESCE(cc.jira_name, cc.full_name)');
       });
 
       it('should filter by status field and completion statuses', async () => {

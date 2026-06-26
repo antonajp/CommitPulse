@@ -14,6 +14,7 @@
  * 'ticketLifecycle' added in IQS-906 for status transition Sankey diagram.
  * 'teamCoupling' added in IQS-910 for cross-team coupling chord diagram.
  * 'architectureDrift' added in IQS-918 for architecture drift heat map.
+ * 'joinDiagnostic' added in GITX-183 for debugging chart data joins.
  */
 export type ChartType =
   | 'allMetricsDashboard'
@@ -39,7 +40,8 @@ export type ChartType =
   | 'architectureDrift'
   | 'storyPointsTrend'
   | 'fileContributionReport'
-  | 'complexityTrend';
+  | 'complexityTrend'
+  | 'joinDiagnostic';
 
 /**
  * Chart category for grouping in the TreeView.
@@ -47,6 +49,7 @@ export type ChartType =
  * 'Team' category added in IQS-904 for knowledge/contributor charts.
  * 'Process' category added in IQS-906 for workflow analysis charts.
  * 'Architecture' category re-added in IQS-910 for team coupling analysis.
+ * 'Diagnostics' category added in GITX-183 for debugging tools.
  */
 export type ChartCategory =
   | 'Overview'
@@ -55,7 +58,8 @@ export type ChartCategory =
   | 'Team'
   | 'Process'
   | 'Architecture'
-  | 'Traceability';
+  | 'Traceability'
+  | 'Diagnostics';
 
 /**
  * Definition for a single chart entry in the catalog.

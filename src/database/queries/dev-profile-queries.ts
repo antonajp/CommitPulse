@@ -1,7 +1,7 @@
 /**
  * SQL queries for Developer Profile Dashboard.
  * All queries use parameterized placeholders ($1, $2, $3) - zero string interpolation.
- * Ticket: GITX-155, GITX-156, GITX-157, GITX-170, GITX-179, GITX-180
+ * Ticket: GITX-155, GITX-156, GITX-157, GITX-170, GITX-179, GITX-180, GITX-183
  */
 
 /**
@@ -20,11 +20,16 @@
  * commit_contributors.full_name instead of login. The git author name is typically
  * the developer's full name (e.g., "John Doe"), not their GitHub username.
  *
+ * GITX-183: For Jira, join on COALESCE(cc.jira_name, cc.full_name) instead of just
+ * cc.full_name. The jira_name column is the canonical alignment field for matching
+ * commit contributors to Jira assignees. Falls back to full_name for backwards
+ * compatibility when jira_name is NULL.
+ *
  * Parameters:
  *   $1 - developer full_name (TEXT)
  *   $2 - start date (DATE)
  *   $3 - aggregation period ('week' or 'month') (TEXT)
- * Ticket: GITX-157, GITX-169, GITX-179, GITX-180
+ * Ticket: GITX-157, GITX-169, GITX-179, GITX-180, GITX-183
  */
 export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
   WITH dev_commits AS (
@@ -61,14 +66,15 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
   dev_jira_points AS (
     -- GITX-179: Use jira_detail.assignee instead of jira_history.assignee
     -- because jira_history.assignee is always NULL (not populated during extraction).
-    -- Match against cc.full_name for consistent contributor identity.
+    -- GITX-183: Join on COALESCE(cc.jira_name, cc.full_name) for proper name alignment.
+    -- The jira_name column is the canonical field for matching contributors to Jira.
     SELECT
       DATE_TRUNC($3, jh.change_date)::date AS week_start,
       COALESCE(SUM(jd.calculated_story_points), 0)::int AS story_points,
       COUNT(DISTINCT jd.jira_key)::int AS issue_count
     FROM jira_history jh
     JOIN jira_detail jd ON jh.jira_key = jd.jira_key
-    JOIN commit_contributors cc ON jd.assignee = cc.full_name
+    JOIN commit_contributors cc ON jd.assignee = COALESCE(cc.jira_name, cc.full_name)
     WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND jh.change_date >= $2
       AND jh.field = 'status'
@@ -109,9 +115,14 @@ export const QUERY_DEV_PROFILE_VELOCITY_VS_LOC = `
  * because jira_history.assignee is always NULL (not populated during extraction).
  * Match against cc.full_name for consistent contributor identity.
  *
+ * GITX-183: For Jira, join on COALESCE(cc.jira_name, cc.full_name) instead of just
+ * cc.full_name. The jira_name column is the canonical alignment field for matching
+ * commit contributors to Jira assignees. Falls back to full_name for backwards
+ * compatibility when jira_name is NULL.
+ *
  * Parameters:
  *   $1 - developer full_name (TEXT)
- * Ticket: GITX-157, GITX-169, GITX-179
+ * Ticket: GITX-157, GITX-169, GITX-179, GITX-183
  */
 export const QUERY_DEV_PROFILE_HAS_VELOCITY_DATA = `
   SELECT EXISTS (
@@ -123,9 +134,10 @@ export const QUERY_DEV_PROFILE_HAS_VELOCITY_DATA = `
       AND ld.state IN ('Done', 'Completed')
     UNION
     -- GITX-179: Use jira_detail.assignee (jira_history.assignee is always NULL)
+    -- GITX-183: Join on COALESCE(cc.jira_name, cc.full_name) for proper name alignment
     SELECT 1 FROM jira_history jh
     JOIN jira_detail jd ON jh.jira_key = jd.jira_key
-    JOIN commit_contributors cc ON jd.assignee = cc.full_name
+    JOIN commit_contributors cc ON jd.assignee = COALESCE(cc.jira_name, cc.full_name)
     WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
       AND jh.field = 'status'
       AND jh.to_value IN ('Done', 'Closed', 'Resolved')
