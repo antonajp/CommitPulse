@@ -214,7 +214,6 @@ export class TeamProfileDataService {
 
     // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name),
     // not login. Match dev-profile-data-service pattern for consistency.
-    // GITX-186: Also count active contributors for calculating per-member averages.
     const sql = `
       WITH team_members AS (
         SELECT DISTINCT login, full_name
@@ -225,8 +224,7 @@ export class TeamProfileDataService {
         COUNT(DISTINCT ch.sha)::int AS total_commits,
         COALESCE(SUM(cf.line_inserts), 0)::bigint AS total_loc_added,
         COALESCE(AVG(NULLIF(cf.complexity, 0)), 0)::numeric AS avg_complexity,
-        COUNT(DISTINCT ch.repository)::int AS repos_worked_on,
-        COUNT(DISTINCT ch.author)::int AS active_contributors
+        COUNT(DISTINCT ch.repository)::int AS repos_worked_on
       FROM commit_history ch
       LEFT JOIN commit_files cf ON cf.sha = ch.sha
       JOIN team_members tm ON (
@@ -242,7 +240,6 @@ export class TeamProfileDataService {
       total_loc_added: string;
       avg_complexity: string;
       repos_worked_on: number;
-      active_contributors: number;
     }>(sql, [filters.team, startDate]);
 
     const row = result.rows[0];
@@ -259,16 +256,21 @@ export class TeamProfileDataService {
     }
 
     const totalLoc = Number(row.total_loc_added);
-    const activeContributors = Math.max(1, row.active_contributors); // Avoid division by zero
+
+    // GITX-186: Get contributor counts for proper per-member averaging
+    const commitContributorCount = await this.getActiveCommitContributorCount(filters.team, startDate);
+    const spContributorCount = await this.getActiveStoryPointContributorCount(filters.team, startDate);
 
     // GITX-186: avgLocPerPeriod should be average per team member, not team total
-    const avgLocPerPeriod = Math.round(totalLoc / periodsCount / activeContributors);
+    const avgLocPerPeriod = commitContributorCount > 0
+      ? Math.round(totalLoc / periodsCount / commitContributorCount)
+      : 0;
 
     // Get story points for average calculation
-    // GITX-186: Get both total and contributor count for proper averaging
-    const storyPointsResult = await this.getTotalStoryPointsWithContributorCount(filters.team, startDate);
-    const avgStoryPointsPerPeriod = storyPointsResult !== null
-      ? Math.round((storyPointsResult.total / periodsCount / Math.max(1, storyPointsResult.contributorCount)) * 10) / 10
+    const storyPointsTotal = await this.getTotalStoryPoints(filters.team, startDate);
+    // GITX-186: avgStoryPointsPerPeriod should be average per team member
+    const avgStoryPointsPerPeriod = storyPointsTotal !== null && spContributorCount > 0
+      ? Math.round((storyPointsTotal / periodsCount / spContributorCount) * 10) / 10
       : null;
 
     this.logger.debug(CLASS_NAME, 'getSummary', `Summary: ${row.total_commits} commits, ${row.total_loc_added} LOC, avgLoc/${aggregationPeriod}: ${avgLocPerPeriod}`);
@@ -285,24 +287,19 @@ export class TeamProfileDataService {
   }
 
   /**
-   * Get total story points and contributor count for a team in a timeframe.
-   * GITX-186: Returns both total and contributor count for proper per-member averaging.
+   * Get total story points for a team in a timeframe.
+   * Helper for calculating average story points per period.
    *
    * @param team - Team name
    * @param startDate - Start date for the timeframe
-   * @returns Object with total story points and contributor count, or null if no data
+   * @returns Total story points or null if no data
    */
-  private async getTotalStoryPointsWithContributorCount(
-    team: string,
-    startDate: string
-  ): Promise<{ total: number; contributorCount: number } | null> {
+  private async getTotalStoryPoints(team: string, startDate: string): Promise<number | null> {
     // Defense-in-depth: Validate team even though callers should validate
-    this.validateTeam(team, 'getTotalStoryPointsWithContributorCount');
+    this.validateTeam(team, 'getTotalStoryPoints');
     const sql = `
-      WITH linear_assignees AS (
-        SELECT
-          ld.calculated_story_points,
-          cc.full_name AS contributor
+      WITH linear_points AS (
+        SELECT COALESCE(SUM(ld.calculated_story_points), 0)::int AS points
         FROM linear_detail ld
         JOIN commit_contributors cc ON (
           ld.assignee = cc.email OR ld.assignee = cc.login OR ld.assignee = cc.full_name
@@ -311,10 +308,8 @@ export class TeamProfileDataService {
           AND ld.completed_date >= $2
           AND ld.state IN ('Done', 'Completed')
       ),
-      jira_assignees AS (
-        SELECT
-          jd.calculated_story_points,
-          cc.full_name AS contributor
+      jira_points AS (
+        SELECT COALESCE(SUM(jd.calculated_story_points), 0)::int AS points
         FROM jira_history jh
         JOIN jira_detail jd ON jh.jira_key = jd.jira_key
         JOIN commit_contributors cc ON jd.assignee = COALESCE(cc.jira_name, cc.full_name)
@@ -323,21 +318,16 @@ export class TeamProfileDataService {
           AND jh.field = 'status'
           AND jh.to_value IN ('Done', 'Closed', 'Resolved')
       ),
-      all_assignees AS (
-        SELECT calculated_story_points, contributor FROM linear_assignees
-        UNION ALL
-        SELECT calculated_story_points, contributor FROM jira_assignees
+      total AS (
+        SELECT (SELECT points FROM linear_points) + (SELECT points FROM jira_points) AS total_points,
+               EXISTS (SELECT 1 FROM linear_points WHERE points > 0) OR
+               EXISTS (SELECT 1 FROM jira_points WHERE points > 0) AS has_data
       )
-      SELECT
-        COALESCE(SUM(calculated_story_points), 0)::int AS total_points,
-        COUNT(DISTINCT contributor)::int AS contributor_count,
-        COUNT(*) > 0 AS has_data
-      FROM all_assignees
+      SELECT total_points, has_data FROM total
     `;
 
     const result = await this.db.query<{
       total_points: number;
-      contributor_count: number;
       has_data: boolean;
     }>(sql, [team, startDate]);
 
@@ -346,10 +336,83 @@ export class TeamProfileDataService {
       return null;
     }
 
-    return {
-      total: row.total_points,
-      contributorCount: row.contributor_count,
-    };
+    return row.total_points;
+  }
+
+  /**
+   * Count team members who have commits in the timeframe.
+   * GITX-186: Used for calculating per-member averages.
+   *
+   * @param team - Team name
+   * @param startDate - Start date for the timeframe
+   * @returns Number of active commit contributors
+   */
+  private async getActiveCommitContributorCount(team: string, startDate: string): Promise<number> {
+    this.validateTeam(team, 'getActiveCommitContributorCount');
+    const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      )
+      SELECT COUNT(DISTINCT ch.author)::int AS contributor_count
+      FROM commit_history ch
+      JOIN team_members tm ON (
+        ch.author = tm.full_name
+        OR (tm.full_name IS NULL AND ch.author = tm.login)
+      )
+      WHERE ch.commit_date >= $2
+        AND ch.is_merge = FALSE
+    `;
+
+    const result = await this.db.query<{ contributor_count: number }>(sql, [team, startDate]);
+    return result.rows[0]?.contributor_count ?? 0;
+  }
+
+  /**
+   * Count team members who have completed story points in the timeframe.
+   * GITX-186: Used for calculating per-member SP averages.
+   *
+   * @param team - Team name
+   * @param startDate - Start date for the timeframe
+   * @returns Number of contributors with story points
+   */
+  private async getActiveStoryPointContributorCount(team: string, startDate: string): Promise<number> {
+    this.validateTeam(team, 'getActiveStoryPointContributorCount');
+    const sql = `
+      WITH linear_contributors AS (
+        SELECT DISTINCT cc.full_name AS contributor
+        FROM linear_detail ld
+        JOIN commit_contributors cc ON (
+          ld.assignee = cc.email OR ld.assignee = cc.login OR ld.assignee = cc.full_name
+        )
+        WHERE cc.team = $1
+          AND ld.completed_date >= $2
+          AND ld.state IN ('Done', 'Completed')
+          AND ld.calculated_story_points > 0
+      ),
+      jira_contributors AS (
+        SELECT DISTINCT cc.full_name AS contributor
+        FROM jira_history jh
+        JOIN jira_detail jd ON jh.jira_key = jd.jira_key
+        JOIN commit_contributors cc ON jd.assignee = COALESCE(cc.jira_name, cc.full_name)
+        WHERE cc.team = $1
+          AND jh.change_date >= $2
+          AND jh.field = 'status'
+          AND jh.to_value IN ('Done', 'Closed', 'Resolved')
+          AND jd.calculated_story_points > 0
+      ),
+      all_contributors AS (
+        SELECT contributor FROM linear_contributors
+        UNION
+        SELECT contributor FROM jira_contributors
+      )
+      SELECT COUNT(DISTINCT contributor)::int AS contributor_count
+      FROM all_contributors
+    `;
+
+    const result = await this.db.query<{ contributor_count: number }>(sql, [team, startDate]);
+    return result.rows[0]?.contributor_count ?? 0;
   }
 
   /**

@@ -64,7 +64,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -81,7 +80,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -106,7 +104,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -123,7 +120,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -140,7 +136,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -157,7 +152,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -174,7 +168,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -191,7 +184,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -208,7 +200,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 0,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
@@ -308,90 +299,70 @@ describe('TeamProfileDataService', () => {
   describe('getPeriodsCount', () => {
     it('should return correct count for 30 days (weeks)', async () => {
       // 30 days = ~4.3 weeks, rounded up to 5
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [{
-          total_commits: 100,
-          total_loc_added: '1000',
-          avg_complexity: '5.5',
-          repos_worked_on: 2,
-          active_contributors: 1,
-        }],
-        rowCount: 1,
-      });
+      // GITX-186: Now divides by contributor count for per-member average
+      vi.mocked(mockDb.query)
+        .mockResolvedValueOnce({ rows: [{ total_commits: 100, total_loc_added: '1000', avg_complexity: '5.5', repos_worked_on: 2 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 }) // commit contributors
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 }) // SP contributors
+        .mockResolvedValueOnce({ rows: [{ total_points: 0, has_data: false }], rowCount: 1 }); // story points
 
       const result = await service.getSummary({ team: 'CRMREO', timeframeDays: '30' });
-      // 1000 LOC / 5 weeks = 200 LOC/week
+      // 1000 LOC / 5 weeks / 1 contributor = 200 LOC/week
       expect(result.avgLocPerPeriod).toBe(200);
     });
 
     it('should return correct count for 90 days (weeks)', async () => {
       // 90 days = ~12.9 weeks, rounded up to 13
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [{
-          total_commits: 100,
-          total_loc_added: '1300',
-          avg_complexity: '5.5',
-          repos_worked_on: 2,
-          active_contributors: 1,
-        }],
-        rowCount: 1,
-      });
+      // GITX-186: Now divides by contributor count for per-member average
+      vi.mocked(mockDb.query)
+        .mockResolvedValueOnce({ rows: [{ total_commits: 100, total_loc_added: '1300', avg_complexity: '5.5', repos_worked_on: 2 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ total_points: 0, has_data: false }], rowCount: 1 });
 
       const result = await service.getSummary({ team: 'CRMREO', timeframeDays: '90' });
-      // 1300 LOC / 13 weeks = 100 LOC/week
+      // 1300 LOC / 13 weeks / 1 contributor = 100 LOC/week
       expect(result.avgLocPerPeriod).toBe(100);
     });
 
     it('should return correct count for 365 days (months)', async () => {
       // 365 days = 12 months
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [{
-          total_commits: 100,
-          total_loc_added: '12000',
-          avg_complexity: '5.5',
-          repos_worked_on: 2,
-          active_contributors: 1,
-        }],
-        rowCount: 1,
-      });
+      // GITX-186: Now divides by contributor count for per-member average
+      vi.mocked(mockDb.query)
+        .mockResolvedValueOnce({ rows: [{ total_commits: 100, total_loc_added: '12000', avg_complexity: '5.5', repos_worked_on: 2 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ total_points: 0, has_data: false }], rowCount: 1 });
 
       const result = await service.getSummary({ team: 'CRMREO', timeframeDays: '365' });
-      // 12000 LOC / 12 months = 1000 LOC/month
+      // 12000 LOC / 12 months / 1 contributor = 1000 LOC/month
       expect(result.avgLocPerPeriod).toBe(1000);
       expect(result.aggregationPeriod).toBe('month');
     });
 
     it('should return correct count for 730 days (months)', async () => {
       // 730 days = ~24 months
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [{
-          total_commits: 100,
-          total_loc_added: '24000',
-          avg_complexity: '5.5',
-          repos_worked_on: 2,
-          active_contributors: 1,
-        }],
-        rowCount: 1,
-      });
+      // GITX-186: Now divides by contributor count for per-member average
+      vi.mocked(mockDb.query)
+        .mockResolvedValueOnce({ rows: [{ total_commits: 100, total_loc_added: '24000', avg_complexity: '5.5', repos_worked_on: 2 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ total_points: 0, has_data: false }], rowCount: 1 });
 
       const result = await service.getSummary({ team: 'CRMREO', timeframeDays: '730' });
-      // 24000 LOC / 24 months = 1000 LOC/month
+      // 24000 LOC / 24 months / 1 contributor = 1000 LOC/month
       expect(result.avgLocPerPeriod).toBe(1000);
       expect(result.aggregationPeriod).toBe('month');
     });
 
     it('should never return zero periods', async () => {
       // Even for very small timeframes, should return at least 1
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [{
-          total_commits: 10,
-          total_loc_added: '500',
-          avg_complexity: '3.0',
-          repos_worked_on: 1,
-          active_contributors: 1,
-        }],
-        rowCount: 1,
-      });
+      // GITX-186: Now divides by contributor count for per-member average
+      vi.mocked(mockDb.query)
+        .mockResolvedValueOnce({ rows: [{ total_commits: 10, total_loc_added: '500', avg_complexity: '3.0', repos_worked_on: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ contributor_count: 1 }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ total_points: 0, has_data: false }], rowCount: 1 });
 
       const result = await service.getSummary({ team: 'CRMREO', timeframeDays: '30' });
       // Should have at least 1 period
@@ -422,7 +393,6 @@ describe('TeamProfileDataService', () => {
           total_loc_added: '0',
           avg_complexity: '0',
           repos_worked_on: 1,
-          active_contributors: 1,
         }],
         rowCount: 1,
       });
