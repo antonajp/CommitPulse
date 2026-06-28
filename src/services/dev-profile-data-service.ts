@@ -543,9 +543,10 @@ export class DevProfileDataService {
   /**
    * Get comments added per period for the line chart.
    * Filters by full_name with fallback to login for NULL full_name.
-   * Uses comments_change column with fallback to total_comment_lines for older commits.
-   * Ticket: GITX-156, GITX-179
+   * Uses total_comment_lines column (always populated during commit ingestion).
+   * Ticket: GITX-156, GITX-179, GITX-187
    * GITX-179: Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
+   * GITX-187: Fixed column from comments_change (NULL) to total_comment_lines, fixed JOIN.
    *
    * @param filters - Developer and timeframe filters (developer is full_name)
    * @returns Array of comment data points per period (week or month)
@@ -561,14 +562,18 @@ export class DevProfileDataService {
     const startDate = this.getStartDate(filters.timeframeDays);
 
     // GITX-179: Dynamic aggregation based on timeframe
-    // Use COALESCE to handle NULL comments_change (from older commits before migration 026)
+    // GITX-187: Use total_comment_lines (populated column) instead of comments_change (NULL column)
+    // GITX-187: Fix JOIN - ch.author stores full_name, not login. Use consistent pattern with team service.
     const sql = `
       SELECT
         DATE_TRUNC($3, ch.commit_date)::date AS week_start,
-        COALESCE(SUM(COALESCE(cf.comments_change, 0)), 0)::int AS comments_added
+        COALESCE(SUM(cf.total_comment_lines), 0)::int AS comments_added
       FROM commit_files cf
       JOIN commit_history ch ON cf.sha = ch.sha
-      JOIN commit_contributors cc ON ch.author = cc.login
+      JOIN commit_contributors cc ON (
+        ch.author = cc.full_name
+        OR (cc.full_name IS NULL AND ch.author = cc.login)
+      )
       WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
         AND ch.commit_date >= $2
         AND ch.is_merge = FALSE

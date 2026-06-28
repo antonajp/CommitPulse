@@ -402,4 +402,85 @@ describe('TeamProfileDataService', () => {
       expect(result.avgComplexity).toBe(0);
     });
   });
+
+  // ==========================================================================
+  // GITX-187: getCommentsPerWeek
+  // ==========================================================================
+  describe('getCommentsPerWeek', () => {
+    it('should return empty array when no data', async () => {
+      const result = await service.getCommentsPerWeek({
+        team: 'CRMREO',
+        timeframeDays: '90',
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('should return comments per week data', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [
+          { week_start: new Date('2025-01-06'), comments_added: 150 },
+          { week_start: new Date('2025-01-13'), comments_added: 200 },
+        ],
+        rowCount: 2,
+      });
+
+      const result = await service.getCommentsPerWeek({
+        team: 'CRMREO',
+        timeframeDays: '90',
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        weekStart: '2025-01-06',
+        commentsAdded: 150,
+      });
+      expect(result[1]).toEqual({
+        weekStart: '2025-01-13',
+        commentsAdded: 200,
+      });
+    });
+
+    it('should use total_comment_lines column (GITX-187)', async () => {
+      await service.getCommentsPerWeek({
+        team: 'CRMREO',
+        timeframeDays: '90',
+      });
+
+      const call = vi.mocked(mockDb.query).mock.calls[0];
+      expect(call).toBeDefined();
+      const sql = call![0] as string;
+      // GITX-187: Use total_comment_lines (populated) instead of comments_change (NULL)
+      expect(sql).toContain('COALESCE');
+      expect(sql).toContain('total_comment_lines');
+      // Verify NOT using the old comments_change column
+      expect(sql).not.toContain('comments_change');
+    });
+
+    it('should use correct JOIN pattern for team members', async () => {
+      await service.getCommentsPerWeek({
+        team: 'CRMREO',
+        timeframeDays: '90',
+      });
+
+      const call = vi.mocked(mockDb.query).mock.calls[0];
+      expect(call).toBeDefined();
+      const sql = call![0] as string;
+      // Verify CTE for team members
+      expect(sql).toContain('WITH team_members AS');
+      // Verify ch.author matches full_name (not login)
+      expect(sql).toContain('ch.author = tm.full_name');
+    });
+
+    it('should reject invalid team names', async () => {
+      await expect(
+        service.getCommentsPerWeek({ team: '', timeframeDays: '90' })
+      ).rejects.toThrow('Team name is required');
+    });
+
+    it('should reject invalid timeframes', async () => {
+      await expect(
+        service.getCommentsPerWeek({ team: 'CRMREO', timeframeDays: '999' as '7' | '30' | '90' | '365' })
+      ).rejects.toThrow('Invalid timeframe');
+    });
+  });
 });

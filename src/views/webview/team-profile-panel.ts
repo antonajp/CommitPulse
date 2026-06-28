@@ -297,36 +297,42 @@ export class TeamProfilePanel implements vscode.Disposable {
 
         case 'requestTeamAllData': {
           // Request all data in parallel (matching DevProfilePanel pattern)
+          // GITX-186: Added per-author contribution chart data
+          // GITX-188: Added hot spots and knowledge concentration, removed test debt
           this.selectedTeam = message.team;
           this.selectedTimeframe = message.timeframeDays;
           const filters = {
             team: message.team,
             timeframeDays: message.timeframeDays,
           };
-          const [summary, locPerWeek, complexFiles, frequentFiles, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, hasVelocityData, testDebtMetrics] = await Promise.all([
+          const [summary, locPerWeek, complexFilesChart, frequentFilesChart, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, hasVelocityData, hotSpots, knowledgeConcentration] = await Promise.all([
             this.dataService.getSummary(filters),
             this.dataService.getLocPerWeek(filters),
-            this.dataService.getTopComplexFiles(filters),
-            this.dataService.getTopFrequentFiles(filters),
+            this.dataService.getTopComplexFilesWithContributors(filters),
+            this.dataService.getTopFrequentFilesWithContributors(filters),
             this.dataService.getTechStack(filters),
             this.dataService.getCommentsPerWeek(filters),
             this.dataService.getTestsPerWeek(filters),
             this.dataService.getHygieneScore(filters),
             this.dataService.getVelocityVsLoc(filters),
             this.dataService.hasVelocityData(filters.team),
-            this.dataService.getTestDebtMetrics(filters),
+            this.dataService.getTeamHotSpots(filters.team),
+            this.dataService.getTeamKnowledgeConcentration(filters.team),
           ]);
           this.postMessage({ type: 'teamSummaryData', data: summary });
           this.postMessage({ type: 'teamLocPerWeekData', data: locPerWeek });
-          this.postMessage({ type: 'teamTopComplexFilesData', data: complexFiles });
-          this.postMessage({ type: 'teamTopFrequentFilesData', data: frequentFiles });
+          // GITX-186: Send chart data with per-author contributions
+          this.postMessage({ type: 'teamComplexFilesChartData', data: complexFilesChart });
+          this.postMessage({ type: 'teamFrequentFilesChartData', data: frequentFilesChart });
           this.postMessage({ type: 'teamTechStackData', data: techStack });
           this.postMessage({ type: 'teamCommentsPerWeekData', data: commentsPerWeek });
           this.postMessage({ type: 'teamTestsPerWeekData', data: testsPerWeek });
           this.postMessage({ type: 'teamHygieneScoreData', data: hygieneScore });
           this.postMessage({ type: 'teamVelocityVsLocData', data: velocityVsLoc });
           this.postMessage({ type: 'teamHasVelocityData', hasData: hasVelocityData });
-          this.postMessage({ type: 'teamTestDebtMetricsData', data: testDebtMetrics });
+          // GITX-188: Send hot spots and knowledge concentration data
+          this.postMessage({ type: 'teamHotSpotsData', data: hotSpots });
+          this.postMessage({ type: 'teamKnowledgeConcentrationData', data: knowledgeConcentration });
           break;
         }
 
@@ -381,12 +387,35 @@ export class TeamProfilePanel implements vscode.Disposable {
           break;
         }
 
-        case 'requestTeamTestDebtMetrics': {
-          const testDebtData = await this.dataService.getTestDebtMetrics({
+        // GITX-186: Chart data with per-author contributions
+        case 'requestTeamComplexFilesChart': {
+          const chartData = await this.dataService.getTopComplexFilesWithContributors({
             team: message.team,
             timeframeDays: message.timeframeDays,
           });
-          this.postMessage({ type: 'teamTestDebtMetricsData', data: testDebtData });
+          this.postMessage({ type: 'teamComplexFilesChartData', data: chartData });
+          break;
+        }
+
+        case 'requestTeamFrequentFilesChart': {
+          const chartData = await this.dataService.getTopFrequentFilesWithContributors({
+            team: message.team,
+            timeframeDays: message.timeframeDays,
+          });
+          this.postMessage({ type: 'teamFrequentFilesChartData', data: chartData });
+          break;
+        }
+
+        // GITX-188: Hot Spots and Knowledge Concentration charts
+        case 'requestTeamHotSpots': {
+          const hotSpotsData = await this.dataService.getTeamHotSpots(message.team);
+          this.postMessage({ type: 'teamHotSpotsData', data: hotSpotsData });
+          break;
+        }
+
+        case 'requestTeamKnowledgeConcentration': {
+          const knowledgeData = await this.dataService.getTeamKnowledgeConcentration(message.team);
+          this.postMessage({ type: 'teamKnowledgeConcentrationData', data: knowledgeData });
           break;
         }
 

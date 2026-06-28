@@ -129,18 +129,19 @@ describe('team-profile-html', () => {
       expect(html).toContain('id="locWeekChart"');
     });
 
-    it('should include top complex files table', () => {
+    // GITX-186: Changed from tables to horizontal stacked bar charts
+    it('should include top complex files chart', () => {
       const html = generateTeamProfileHtml(mockConfig);
       expect(html).toContain('id="complexFilesCard"');
       expect(html).toContain('Top 15 Complex Files');
-      expect(html).toContain('id="complexFilesTable"');
+      expect(html).toContain('id="complexFilesChart"');
     });
 
-    it('should include top frequent files table', () => {
+    it('should include top frequent files chart', () => {
       const html = generateTeamProfileHtml(mockConfig);
       expect(html).toContain('id="frequentFilesCard"');
       expect(html).toContain('Top 20 Frequently Modified Files');
-      expect(html).toContain('id="frequentFilesTable"');
+      expect(html).toContain('id="frequentFilesChart"');
     });
 
     it('should include empty state section', () => {
@@ -157,6 +158,7 @@ describe('team-profile-html', () => {
       expect(html).toContain('id="errorRetryBtn"');
     });
 
+    // GITX-186: Updated state variables list (removed cachedComplexFiles, cachedFrequentFiles)
     it('should have state variables declared only once', () => {
       const html = generateTeamProfileHtml(mockConfig);
       const stateVars = [
@@ -164,8 +166,6 @@ describe('team-profile-html', () => {
         'currentTimeframe',
         'cachedTeams',
         'cachedLocData',
-        'cachedComplexFiles',
-        'cachedFrequentFiles',
         'cachedTechStack',
         'cachedCommentsWeek',
         'cachedTestsWeek',
@@ -185,6 +185,7 @@ describe('team-profile-html', () => {
       }
     });
 
+    // GITX-186: Updated to include chart data message handlers
     it('should include message handler for webview communication', () => {
       const html = generateTeamProfileHtml(mockConfig);
       expect(html).toContain("window.addEventListener('message'");
@@ -192,8 +193,8 @@ describe('team-profile-html', () => {
       expect(html).toContain("case 'teamsData':");
       expect(html).toContain("case 'teamSummaryData':");
       expect(html).toContain("case 'teamLocPerWeekData':");
-      expect(html).toContain("case 'teamTopComplexFilesData':");
-      expect(html).toContain("case 'teamTopFrequentFilesData':");
+      expect(html).toContain("case 'teamComplexFilesChartData':");
+      expect(html).toContain("case 'teamFrequentFilesChartData':");
       expect(html).toContain("case 'error':");
     });
 
