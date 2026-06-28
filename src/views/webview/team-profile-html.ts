@@ -21,8 +21,11 @@
  */
 
 import * as vscode from 'vscode';
-import { generateLocWeekChartScript, generateTableRenderingScripts, generateGitx156ChartScripts, generateVelocityChartScript, generateTestDebtChartScript } from './dev-profile-charts.js';
-import { generateGitx156HtmlSections } from './dev-profile-html-sections.js';
+import { generateLocWeekChartScript, generateGitx156ChartScripts, generateVelocityChartScript } from './dev-profile-charts.js';
+import { generateGitx156HtmlSectionsForTeamProfile } from './dev-profile-html-sections.js';
+import { generateTeamProfileFileChartsScript } from './d3-team-profile-file-charts.js';
+import { generateTeamProfileRiskChartsScript } from './d3-team-profile-risk-charts.js';
+import { generateTeamProfileChartSections } from './team-profile-html-sections.js';
 
 /**
  * Configuration for generating the team profile HTML.
@@ -164,74 +167,33 @@ export function generateTeamProfileHtml(config: TeamProfileHtmlConfig): string {
         <p class="card-empty hidden" id="locWeekEmpty">No LOC data available for the selected timeframe.</p>
       </section>
 
-      <!-- Top Complex Files Table -->
-      <section class="card" id="complexFilesCard" aria-label="Top Complex Files">
+      <!-- GITX-186: Top Complex Files Horizontal Stacked Bar Chart -->
+      <section class="card card-wide" id="complexFilesCard" aria-label="Top Complex Files Chart">
         <h2>Top 15 Complex Files</h2>
-        <div class="table-container">
-          <div class="table-skeleton" id="complexFilesSkeleton" aria-hidden="true"></div>
-          <table class="data-table hidden" id="complexFilesTable" aria-label="Complex files table with sortable columns">
-            <thead>
-              <tr>
-                <th class="sortable-header" data-sort-key="filePath" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">File Path</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="complexityScore" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="descending">
-                  <span class="header-text">Complexity</span>
-                  <span class="sort-indicator" aria-hidden="true">▼</span>
-                </th>
-                <th class="sortable-header" data-sort-key="repository" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Repository</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="lastModified" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Last Modified</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody id="complexFilesBody"></tbody>
-          </table>
+        <div class="chart-container">
+          <div class="chart-skeleton" id="complexFilesSkeleton" aria-hidden="true"></div>
+          <div id="complexFilesChart" class="d3-chart hidden" role="img" aria-label="Horizontal stacked bar chart showing complex files by team member LOC contributions"></div>
         </div>
         <p class="card-empty hidden" id="complexFilesEmpty">No complex files found for the selected timeframe.</p>
       </section>
 
-      <!-- Top Frequent Files Table -->
-      <section class="card" id="frequentFilesCard" aria-label="Top Frequent Files">
+      <!-- GITX-186: Top Frequent Files Horizontal Stacked Bar Chart -->
+      <section class="card card-wide" id="frequentFilesCard" aria-label="Top Frequent Files Chart">
         <h2>Top 20 Frequently Modified Files</h2>
-        <div class="table-container">
-          <div class="table-skeleton" id="frequentFilesSkeleton" aria-hidden="true"></div>
-          <table class="data-table hidden" id="frequentFilesTable" aria-label="Frequent files table with sortable columns">
-            <thead>
-              <tr>
-                <th class="sortable-header" data-sort-key="filePath" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">File Path</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="modificationCount" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="descending">
-                  <span class="header-text">Modifications</span>
-                  <span class="sort-indicator" aria-hidden="true">▼</span>
-                </th>
-                <th class="sortable-header" data-sort-key="totalLocChanged" data-sort-type="number" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Total LOC Changed</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-                <th class="sortable-header" data-sort-key="lastModified" data-sort-type="text" tabindex="0" role="columnheader" aria-sort="none">
-                  <span class="header-text">Last Modified</span>
-                  <span class="sort-indicator" aria-hidden="true">⇅</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody id="frequentFilesBody"></tbody>
-          </table>
+        <div class="chart-container">
+          <div class="chart-skeleton" id="frequentFilesSkeleton" aria-hidden="true"></div>
+          <div id="frequentFilesChart" class="d3-chart hidden" role="img" aria-label="Horizontal stacked bar chart showing frequently modified files by team member LOC contributions"></div>
         </div>
         <p class="card-empty hidden" id="frequentFilesEmpty">No frequently modified files found for the selected timeframe.</p>
       </section>
-${generateGitx156HtmlSections()}
+${generateGitx156HtmlSectionsForTeamProfile()}
+${generateTeamProfileChartSections()}
     </main>
 
     <!-- Custom tooltip for LOC chart -->
     <div id="locTooltip" class="chart-tooltip" role="tooltip" aria-hidden="true"></div>
+    <!-- GITX-186: Tooltip for team file charts -->
+    <div id="teamFileTooltip" class="chart-tooltip" role="tooltip" aria-hidden="true"></div>
   </div>
 
   <script nonce="${nonce}" src="${d3Uri.toString()}"></script>
@@ -246,19 +208,16 @@ ${generateGitx156HtmlSections()}
       let currentTimeframe = '90';
       let cachedTeams = [];
       let cachedLocData = [];
-      let cachedComplexFiles = [];
-      let cachedFrequentFiles = [];
       let cachedTechStack = [];
       let cachedCommentsWeek = [];
       let cachedTestsWeek = [];
       let cachedHygieneScore = null;
       let cachedVelocityData = [];
       let velocityDataAvailable = false;
-      let cachedTestDebtMetrics = null;
-      let complexFilesSortKey = 'complexityScore';
-      let complexFilesSortDir = 'desc';
-      let frequentFilesSortKey = 'modificationCount';
-      let frequentFilesSortDir = 'desc';
+      // GITX-188: Hot Spots and Knowledge Concentration
+      let cachedHotSpotsData = [];
+      let cachedKnowledgeData = [];
+      // GITX-186: Removed table sort state - now using horizontal stacked bar charts
       let initialStateReceived = false;
       let currentAggregationPeriod = 'week';
 
@@ -373,18 +332,22 @@ ${generateGitx156HtmlSections()}
         showSkeleton('commentsWeekSkeleton');
         showSkeleton('testsWeekSkeleton');
         showSkeleton('velocitySkeleton');
-        showSkeleton('testDebtSkeleton');
+        // GITX-188: Hot Spots and Knowledge Concentration
+        showSkeleton('hotSpotsSkeleton');
+        showSkeleton('knowledgeSkeleton');
         document.getElementById('locWeekChart').classList.add('hidden');
-        document.getElementById('complexFilesTable').classList.add('hidden');
-        document.getElementById('frequentFilesTable').classList.add('hidden');
+        // GITX-186: Use chart containers instead of table elements
+        document.getElementById('complexFilesChart').classList.add('hidden');
+        document.getElementById('frequentFilesChart').classList.add('hidden');
         document.getElementById('techStackChart').classList.add('hidden');
         document.getElementById('hygieneGauge').classList.add('hidden');
         document.getElementById('hygieneBreakdown').classList.add('hidden');
         document.getElementById('commentsWeekChart').classList.add('hidden');
         document.getElementById('testsWeekChart').classList.add('hidden');
         document.getElementById('velocityChart').classList.add('hidden');
-        document.getElementById('testDebtChart').classList.add('hidden');
-        document.getElementById('testDebtMetrics').classList.add('hidden');
+        // GITX-188: Hot Spots and Knowledge Concentration
+        document.getElementById('hotSpotsChart').classList.add('hidden');
+        document.getElementById('knowledgeChart').classList.add('hidden');
         document.getElementById('locWeekEmpty').classList.add('hidden');
         document.getElementById('complexFilesEmpty').classList.add('hidden');
         document.getElementById('frequentFilesEmpty').classList.add('hidden');
@@ -394,8 +357,9 @@ ${generateGitx156HtmlSections()}
         document.getElementById('testsWeekEmpty').classList.add('hidden');
         document.getElementById('velocityEmpty').classList.add('hidden');
         document.getElementById('velocityHint').classList.add('hidden');
-        document.getElementById('testDebtEmpty').classList.add('hidden');
-        document.getElementById('testDebtSuccess').classList.add('hidden');
+        // GITX-188: Hot Spots and Knowledge Concentration
+        document.getElementById('hotSpotsEmpty').classList.add('hidden');
+        document.getElementById('knowledgeEmpty').classList.add('hidden');
         hideEmptyState();
         vscode.postMessage({
           type: 'requestTeamAllData',
@@ -457,10 +421,10 @@ ${generateGitx156HtmlSections()}
       }
 
 ${generateLocWeekChartScript()}
-${generateTableRenderingScripts()}
+${generateTeamProfileFileChartsScript()}
+${generateTeamProfileRiskChartsScript()}
 ${generateGitx156ChartScripts()}
 ${generateVelocityChartScript()}
-${generateTestDebtChartScript()}
 
       // ======================================================================
       // Message Handler
@@ -500,10 +464,18 @@ ${generateTestDebtChartScript()}
             renderLocWeekChart(msg.data);
             break;
           case 'teamTopComplexFilesData':
-            renderComplexFilesTable(msg.data);
+            // Legacy table handler - kept for backwards compatibility
             break;
           case 'teamTopFrequentFilesData':
-            renderFrequentFilesTable(msg.data);
+            // Legacy table handler - kept for backwards compatibility
+            break;
+          case 'teamComplexFilesChartData':
+            // GITX-186: Horizontal stacked bar chart with per-member contributions
+            renderTeamComplexFilesChart(msg.data);
+            break;
+          case 'teamFrequentFilesChartData':
+            // GITX-186: Horizontal stacked bar chart with per-member contributions
+            renderTeamFrequentFilesChart(msg.data);
             break;
           case 'teamTechStackData':
             renderTechStackChart(msg.data);
@@ -527,9 +499,14 @@ ${generateTestDebtChartScript()}
               renderVelocityChart(cachedVelocityData);
             }
             break;
-          case 'teamTestDebtMetricsData':
-            cachedTestDebtMetrics = msg.data;
-            renderTestDebtChart(msg.data);
+          // GITX-188: Hot Spots and Knowledge Concentration
+          case 'teamHotSpotsData':
+            cachedHotSpotsData = msg.data;
+            renderTeamHotSpotsChart(msg.data);
+            break;
+          case 'teamKnowledgeConcentrationData':
+            cachedKnowledgeData = msg.data;
+            renderTeamKnowledgeChart(msg.data);
             break;
           case 'error':
             hideEmptyState();
@@ -543,7 +520,9 @@ ${generateTestDebtChartScript()}
             hideSkeleton('commentsWeekSkeleton');
             hideSkeleton('testsWeekSkeleton');
             hideSkeleton('velocitySkeleton');
-            hideSkeleton('testDebtSkeleton');
+            // GITX-188: Hot Spots and Knowledge Concentration
+            hideSkeleton('hotSpotsSkeleton');
+            hideSkeleton('knowledgeSkeleton');
             break;
         }
       });
@@ -580,45 +559,7 @@ ${generateTestDebtChartScript()}
         }
       });
 
-      // Complex Files Sort Headers
-      document.querySelectorAll('#complexFilesTable .sortable-header').forEach(function(header) {
-        header.addEventListener('click', function() {
-          var key = header.getAttribute('data-sort-key');
-          if (complexFilesSortKey === key) {
-            complexFilesSortDir = complexFilesSortDir === 'asc' ? 'desc' : 'asc';
-          } else {
-            complexFilesSortKey = key;
-            complexFilesSortDir = 'asc';
-          }
-          renderComplexFilesRows();
-        });
-        header.addEventListener('keydown', function(e) {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            header.click();
-          }
-        });
-      });
-
-      // Frequent Files Sort Headers
-      document.querySelectorAll('#frequentFilesTable .sortable-header').forEach(function(header) {
-        header.addEventListener('click', function() {
-          var key = header.getAttribute('data-sort-key');
-          if (frequentFilesSortKey === key) {
-            frequentFilesSortDir = frequentFilesSortDir === 'asc' ? 'desc' : 'asc';
-          } else {
-            frequentFilesSortKey = key;
-            frequentFilesSortDir = 'asc';
-          }
-          renderFrequentFilesRows();
-        });
-        header.addEventListener('keydown', function(e) {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            header.click();
-          }
-        });
-      });
+      // GITX-186: Removed table sort headers - now using horizontal stacked bar charts
 
       // ======================================================================
       // Initialization
@@ -632,7 +573,9 @@ ${generateTestDebtChartScript()}
       showSkeleton('commentsWeekSkeleton');
       showSkeleton('testsWeekSkeleton');
       showSkeleton('velocitySkeleton');
-      showSkeleton('testDebtSkeleton');
+      // GITX-188: Hot Spots and Knowledge Concentration
+      showSkeleton('hotSpotsSkeleton');
+      showSkeleton('knowledgeSkeleton');
 
       requestTeams();
     })();

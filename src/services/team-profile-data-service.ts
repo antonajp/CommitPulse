@@ -9,6 +9,10 @@ import { isValidTeamName } from '../utils/team-validation.js';
 import {
   QUERY_TEAM_PROFILE_VELOCITY_VS_LOC,
   QUERY_TEAM_PROFILE_HAS_VELOCITY_DATA,
+  QUERY_TEAM_HOT_SPOTS_VIEW_EXISTS,
+  QUERY_TEAM_PROFILE_HOT_SPOTS,
+  QUERY_TEAM_KNOWLEDGE_VIEW_EXISTS,
+  QUERY_TEAM_PROFILE_KNOWLEDGE_CONCENTRATION,
 } from '../database/queries/team-profile-queries.js';
 import type {
   TeamProfileSummary,
@@ -22,8 +26,13 @@ import type {
   TeamProfileTeam,
   TeamProfileFilters,
   TeamProfileVelocityPoint,
-  TeamProfileTestDebtMetrics,
-  TeamProfileTestDebtWeekly,
+  TeamProfileComplexFileWithContributors,
+  TeamProfileFrequentFileWithContributors,
+  TeamProfileAuthorContribution,
+  TeamProfileHotSpot,
+  TeamHotSpotRiskTier,
+  TeamProfileKnowledgeConcentration,
+  TeamConcentrationRisk,
 } from './team-profile-data-types.js';
 
 // Re-export types for convenience
@@ -40,8 +49,13 @@ export type {
   TeamProfileTimeframe,
   TeamProfileFilters,
   TeamProfileVelocityPoint,
-  TeamProfileTestDebtMetrics,
-  TeamProfileTestDebtWeekly,
+  TeamProfileComplexFileWithContributors,
+  TeamProfileFrequentFileWithContributors,
+  TeamProfileAuthorContribution,
+  TeamProfileHotSpot,
+  TeamHotSpotRiskTier,
+  TeamProfileKnowledgeConcentration,
+  TeamConcentrationRisk,
 } from './team-profile-data-types.js';
 
 const CLASS_NAME = 'TeamProfileDataService';
@@ -671,7 +685,9 @@ export class TeamProfileDataService {
   /**
    * Get comments added per period for the line chart.
    * Aggregates across all team members.
+   * Uses total_comment_lines column (always populated during commit ingestion).
    * Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
+   * GITX-187: Fixed column from comments_change (NULL) to total_comment_lines.
    *
    * @param filters - Team and timeframe filters
    * @returns Array of comment data points per period (week or month)
@@ -687,6 +703,7 @@ export class TeamProfileDataService {
     const startDate = this.getStartDate(filters.timeframeDays);
 
     // GITX-186: Use consistent join pattern - ch.author stores git author name (full_name)
+    // GITX-187: Use total_comment_lines (populated column) instead of comments_change (NULL column)
     const sql = `
       WITH team_members AS (
         SELECT DISTINCT login, full_name
@@ -695,7 +712,7 @@ export class TeamProfileDataService {
       )
       SELECT
         DATE_TRUNC($3, ch.commit_date)::date AS week_start,
-        COALESCE(SUM(COALESCE(cf.comments_change, 0)), 0)::int AS comments_added
+        COALESCE(SUM(cf.total_comment_lines), 0)::int AS comments_added
       FROM commit_files cf
       JOIN commit_history ch ON cf.sha = ch.sha
       JOIN team_members tm ON (
@@ -956,214 +973,340 @@ export class TeamProfileDataService {
     return hasData;
   }
 
+  // GITX-188: Test debt method removed - Test Debt chart no longer shown on Team Profile dashboard
+  // See Developer Profile or Dev Pipeline dashboards for test debt analysis.
+
   /**
-   * Get test debt metrics for a team.
-   * Returns period breakdown of commits by test coverage tier and ROI calculation.
-   * Aggregates across all team members.
-   * Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
+   * Get top 15 most complex files with per-author contribution breakdown.
+   * GITX-186: For horizontal stacked bar chart visualization.
    *
    * @param filters - Team and timeframe filters
-   * @returns Test debt metrics with period data and ROI multiplier
+   * @returns Array of complex files with author contributions
    */
-  async getTestDebtMetrics(filters: TeamProfileFilters): Promise<TeamProfileTestDebtMetrics> {
-    this.validateTeam(filters.team, 'getTestDebtMetrics');
-    this.validateTimeframe(filters.timeframeDays, 'getTestDebtMetrics');
+  async getTopComplexFilesWithContributors(filters: TeamProfileFilters): Promise<TeamProfileComplexFileWithContributors[]> {
+    this.validateTeam(filters.team, 'getTopComplexFilesWithContributors');
+    this.validateTimeframe(filters.timeframeDays, 'getTopComplexFilesWithContributors');
 
-    const aggregationPeriod = this.getAggregationPeriod(filters.timeframeDays);
-    this.validateAggregationPeriod(aggregationPeriod, 'getTestDebtMetrics');
-    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `Fetching test debt metrics per ${aggregationPeriod} for team ${filters.team}`);
+    this.logger.debug(CLASS_NAME, 'getTopComplexFilesWithContributors', `Fetching top complex files with contributors for team ${filters.team}`);
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
-    // Check if the required view exists
-    const viewExistsResult = await this.db.query<{ view_exists: boolean }>(
-      `SELECT EXISTS (
-        SELECT 1 FROM information_schema.views
-        WHERE table_name = 'vw_commit_test_ratio'
-      ) AS view_exists`
-    );
-
-    if (!viewExistsResult.rows[0]?.view_exists) {
-      this.logger.warn(CLASS_NAME, 'getTestDebtMetrics', 'vw_commit_test_ratio view not found');
-      return {
-        weeklyData: [],
-        lowTestBugRate: 0,
-        highTestBugRate: 0,
-        roiMultiplier: 0,
-        totalCommits: 0,
-        lowTestCommits: 0,
-        orgAvgRoiMultiplier: null,
-      };
-    }
-
-    // GITX-186: Use consistent join pattern - ctr.author stores git author name (full_name)
-    // Query period test debt breakdown by tier
-    const weeklyQuery = `
+    // Query per-file, per-author contributions for complex files
+    const sql = `
       WITH team_members AS (
         SELECT DISTINCT login, full_name
         FROM commit_contributors
         WHERE team = $1
+      ),
+      file_authors AS (
+        SELECT
+          cf.filename,
+          COALESCE(cc.full_name, ch.author) AS author_name,
+          SUM(cf.line_inserts)::BIGINT AS loc,
+          MAX(cf.complexity)::int AS max_complexity,
+          ch.repository,
+          MAX(ch.commit_date)::date AS last_modified
+        FROM commit_files cf
+        JOIN commit_history ch ON ch.sha = cf.sha
+        JOIN team_members tm ON (
+          ch.author = tm.full_name
+          OR (tm.full_name IS NULL AND ch.author = tm.login)
+        )
+        LEFT JOIN commit_contributors cc ON (
+          ch.author = cc.full_name
+          OR (cc.full_name IS NULL AND ch.author = cc.login)
+        )
+        WHERE ch.commit_date >= $2
+          AND ch.is_merge = FALSE
+          AND cf.complexity IS NOT NULL
+          AND cf.complexity > 0
+        GROUP BY cf.filename, author_name, ch.repository
+      ),
+      file_totals AS (
+        SELECT
+          filename,
+          repository,
+          MAX(max_complexity) AS total_complexity,
+          SUM(loc) AS total_loc,
+          MAX(last_modified) AS last_modified
+        FROM file_authors
+        GROUP BY filename, repository
+        ORDER BY total_complexity DESC
+        LIMIT 15
       )
       SELECT
-        DATE_TRUNC($3, ctr.commit_date)::DATE AS week_start,
-        COUNT(*) FILTER (WHERE ctr.test_ratio IS NULL OR ctr.test_ratio < 0.1)::int AS low_test_commits,
-        COUNT(*) FILTER (WHERE ctr.test_ratio >= 0.1 AND ctr.test_ratio < 0.5)::int AS medium_test_commits,
-        COUNT(*) FILTER (WHERE ctr.test_ratio >= 0.5)::int AS high_test_commits,
-        COUNT(*)::int AS total_commits
-      FROM vw_commit_test_ratio ctr
-      JOIN team_members tm ON (
-        ctr.author = tm.full_name
-        OR (tm.full_name IS NULL AND ctr.author = tm.login)
-      )
-      WHERE ctr.commit_date >= $2
-        AND ctr.prod_loc_changed >= 50
-      GROUP BY DATE_TRUNC($3, ctr.commit_date)
-      ORDER BY week_start ASC
+        fa.filename AS file_path,
+        fa.author_name,
+        fa.loc,
+        ft.total_complexity,
+        ft.total_loc,
+        ft.repository,
+        ft.last_modified
+      FROM file_totals ft
+      JOIN file_authors fa ON ft.filename = fa.filename AND ft.repository = fa.repository
+      ORDER BY ft.total_complexity DESC, ft.filename, fa.loc DESC
     `;
 
-    const weeklyResult = await this.db.query<{
-      week_start: Date;
-      low_test_commits: number;
-      medium_test_commits: number;
-      high_test_commits: number;
-      total_commits: number;
-    }>(weeklyQuery, [filters.team, startDate, aggregationPeriod]);
+    const result = await this.db.query<{
+      file_path: string;
+      author_name: string;
+      loc: string;
+      total_complexity: number;
+      total_loc: string;
+      repository: string;
+      last_modified: Date;
+    }>(sql, [filters.team, startDate]);
 
-    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `Found ${weeklyResult.rowCount} ${aggregationPeriod}ly data points`);
+    this.logger.debug(CLASS_NAME, 'getTopComplexFilesWithContributors', `Found ${result.rowCount} file-author combinations`);
 
-    // Query bug rates by tier for ROI calculation
-    // Check if subsequent bugs view exists
-    const bugsViewExistsResult = await this.db.query<{ view_exists: boolean }>(
-      `SELECT EXISTS (
-        SELECT 1 FROM information_schema.views
-        WHERE table_name = 'vw_subsequent_bugs'
-      ) AS view_exists`
-    );
+    // Group results by file
+    const fileMap = new Map<string, TeamProfileComplexFileWithContributors>();
 
-    let lowTestBugRate = 0;
-    let highTestBugRate = 0;
-    let totalCommits = 0;
-    let lowTestCommits = 0;
-    let orgAvgRoiMultiplier: number | null = null;
+    for (const row of result.rows) {
+      const key = `${row.repository}:${row.file_path}`;
+      const totalLoc = Number(row.total_loc);
 
-    if (bugsViewExistsResult.rows[0]?.view_exists) {
-      // GITX-186: Use consistent join pattern - ctr.author stores git author name (full_name)
-      // Query team's bug rates by tier
-      const bugRateQuery = `
-        WITH team_members AS (
-          SELECT DISTINCT login, full_name
-          FROM commit_contributors
-          WHERE team = $1
-        ),
-        team_commits AS (
-          SELECT
-            ctr.sha,
-            ctr.test_ratio,
-            COALESCE(sb.jira_bugs_filed, 0) + COALESCE(sb.linear_bugs_filed, 0) AS subsequent_bugs
-          FROM vw_commit_test_ratio ctr
-          LEFT JOIN vw_subsequent_bugs sb ON ctr.sha = sb.original_sha
-          JOIN team_members tm ON (
-            ctr.author = tm.full_name
-            OR (tm.full_name IS NULL AND ctr.author = tm.login)
-          )
-          WHERE ctr.commit_date >= $2
-            AND ctr.prod_loc_changed >= 50
-        )
-        SELECT
-          COUNT(*) FILTER (WHERE test_ratio IS NULL OR test_ratio < 0.1)::int AS low_test_count,
-          COUNT(*) FILTER (WHERE test_ratio >= 0.5)::int AS high_test_count,
-          SUM(subsequent_bugs) FILTER (WHERE test_ratio IS NULL OR test_ratio < 0.1)::int AS low_test_bugs,
-          SUM(subsequent_bugs) FILTER (WHERE test_ratio >= 0.5)::int AS high_test_bugs,
-          COUNT(*)::int AS total_commits
-        FROM team_commits
-      `;
-
-      const bugRateResult = await this.db.query<{
-        low_test_count: number;
-        high_test_count: number;
-        low_test_bugs: number;
-        high_test_bugs: number;
-        total_commits: number;
-      }>(bugRateQuery, [filters.team, startDate]);
-
-      const row = bugRateResult.rows[0];
-      if (row && row.total_commits > 0) {
-        totalCommits = row.total_commits;
-        lowTestCommits = row.low_test_count ?? 0;
-        const lowTestBugs = row.low_test_bugs ?? 0;
-        const highTestBugs = row.high_test_bugs ?? 0;
-        const lowTestCount = row.low_test_count ?? 0;
-        const highTestCount = row.high_test_count ?? 0;
-
-        lowTestBugRate = lowTestCount > 0 ? lowTestBugs / lowTestCount : 0;
-        highTestBugRate = highTestCount > 0 ? highTestBugs / highTestCount : 0;
+      if (!fileMap.has(key)) {
+        fileMap.set(key, {
+          filePath: row.file_path,
+          totalComplexity: row.total_complexity,
+          totalLoc,
+          repository: row.repository,
+          lastModified: row.last_modified.toISOString().split('T')[0] ?? '',
+          authorContributions: [],
+        });
       }
 
-      // Query organization average ROI for comparison
-      const orgAvgQuery = `
-        WITH org_commits AS (
-          SELECT
-            ctr.sha,
-            ctr.test_ratio,
-            COALESCE(sb.jira_bugs_filed, 0) + COALESCE(sb.linear_bugs_filed, 0) AS subsequent_bugs
-          FROM vw_commit_test_ratio ctr
-          LEFT JOIN vw_subsequent_bugs sb ON ctr.sha = sb.original_sha
-          WHERE ctr.commit_date >= $1
-            AND ctr.prod_loc_changed >= 50
-        )
-        SELECT
-          COUNT(*) FILTER (WHERE test_ratio IS NULL OR test_ratio < 0.1)::int AS low_test_count,
-          COUNT(*) FILTER (WHERE test_ratio >= 0.5)::int AS high_test_count,
-          SUM(subsequent_bugs) FILTER (WHERE test_ratio IS NULL OR test_ratio < 0.1)::int AS low_test_bugs,
-          SUM(subsequent_bugs) FILTER (WHERE test_ratio >= 0.5)::int AS high_test_bugs
-        FROM org_commits
-      `;
+      const file = fileMap.get(key);
+      if (file) {
+        const loc = Number(row.loc);
+        const percentage = totalLoc > 0 ? Math.round((loc / totalLoc) * 100 * 10) / 10 : 0;
 
-      const orgAvgResult = await this.db.query<{
-        low_test_count: number;
-        high_test_count: number;
-        low_test_bugs: number;
-        high_test_bugs: number;
-      }>(orgAvgQuery, [startDate]);
+        const contribution: TeamProfileAuthorContribution = {
+          authorName: row.author_name,
+          loc,
+          percentage,
+        };
 
-      const orgRow = orgAvgResult.rows[0];
-      if (orgRow) {
-        const orgLowTestCount = orgRow.low_test_count ?? 0;
-        const orgHighTestCount = orgRow.high_test_count ?? 0;
-        const orgLowTestBugs = orgRow.low_test_bugs ?? 0;
-        const orgHighTestBugs = orgRow.high_test_bugs ?? 0;
-
-        const orgLowRate = orgLowTestCount > 0 ? orgLowTestBugs / orgLowTestCount : 0;
-        const orgHighRate = orgHighTestCount > 0 ? orgHighTestBugs / orgHighTestCount : 0;
-
-        if (orgHighRate > 0) {
-          orgAvgRoiMultiplier = Number((orgLowRate / orgHighRate).toFixed(1));
-        }
+        // Cast to mutable array to add contribution
+        (file.authorContributions as TeamProfileAuthorContribution[]).push(contribution);
       }
     }
 
-    // Calculate ROI multiplier
-    const roiMultiplier = highTestBugRate > 0 ? Number((lowTestBugRate / highTestBugRate).toFixed(1)) : 0;
+    return Array.from(fileMap.values());
+  }
 
-    // Build weekly data array
-    const weeklyData: TeamProfileTestDebtWeekly[] = weeklyResult.rows.map((row) => ({
-      weekStart: row.week_start.toISOString().split('T')[0] ?? '',
-      lowTestCommits: row.low_test_commits,
-      mediumTestCommits: row.medium_test_commits,
-      highTestCommits: row.high_test_commits,
-      totalCommits: row.total_commits,
+  /**
+   * Get top 20 most frequently modified files with per-author contribution breakdown.
+   * GITX-186: For horizontal stacked bar chart visualization.
+   *
+   * @param filters - Team and timeframe filters
+   * @returns Array of frequent files with author contributions
+   */
+  async getTopFrequentFilesWithContributors(filters: TeamProfileFilters): Promise<TeamProfileFrequentFileWithContributors[]> {
+    this.validateTeam(filters.team, 'getTopFrequentFilesWithContributors');
+    this.validateTimeframe(filters.timeframeDays, 'getTopFrequentFilesWithContributors');
+
+    this.logger.debug(CLASS_NAME, 'getTopFrequentFilesWithContributors', `Fetching top frequent files with contributors for team ${filters.team}`);
+
+    const startDate = this.getStartDate(filters.timeframeDays);
+
+    // Query per-file, per-author contributions for frequently modified files
+    const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      ),
+      file_authors AS (
+        SELECT
+          cf.filename,
+          COALESCE(cc.full_name, ch.author) AS author_name,
+          COUNT(DISTINCT cf.sha)::int AS modification_count,
+          SUM(ABS(cf.line_inserts) + ABS(COALESCE(cf.line_deletes, 0)))::BIGINT AS loc_changed,
+          ch.repository,
+          MAX(ch.commit_date)::date AS last_modified
+        FROM commit_files cf
+        JOIN commit_history ch ON ch.sha = cf.sha
+        JOIN team_members tm ON (
+          ch.author = tm.full_name
+          OR (tm.full_name IS NULL AND ch.author = tm.login)
+        )
+        LEFT JOIN commit_contributors cc ON (
+          ch.author = cc.full_name
+          OR (cc.full_name IS NULL AND ch.author = cc.login)
+        )
+        WHERE ch.commit_date >= $2
+          AND ch.is_merge = FALSE
+        GROUP BY cf.filename, author_name, ch.repository
+      ),
+      file_totals AS (
+        SELECT
+          filename,
+          repository,
+          SUM(modification_count) AS total_modifications,
+          SUM(loc_changed) AS total_loc_changed,
+          MAX(last_modified) AS last_modified
+        FROM file_authors
+        GROUP BY filename, repository
+        ORDER BY total_modifications DESC
+        LIMIT 20
+      )
+      SELECT
+        fa.filename AS file_path,
+        fa.author_name,
+        fa.loc_changed,
+        ft.total_modifications,
+        ft.total_loc_changed,
+        ft.repository,
+        ft.last_modified
+      FROM file_totals ft
+      JOIN file_authors fa ON ft.filename = fa.filename AND ft.repository = fa.repository
+      ORDER BY ft.total_modifications DESC, ft.filename, fa.loc_changed DESC
+    `;
+
+    const result = await this.db.query<{
+      file_path: string;
+      author_name: string;
+      loc_changed: string;
+      total_modifications: string;
+      total_loc_changed: string;
+      repository: string;
+      last_modified: Date;
+    }>(sql, [filters.team, startDate]);
+
+    this.logger.debug(CLASS_NAME, 'getTopFrequentFilesWithContributors', `Found ${result.rowCount} file-author combinations`);
+
+    // Group results by file
+    const fileMap = new Map<string, TeamProfileFrequentFileWithContributors>();
+
+    for (const row of result.rows) {
+      const key = `${row.repository}:${row.file_path}`;
+      const totalLocChanged = Number(row.total_loc_changed);
+
+      if (!fileMap.has(key)) {
+        fileMap.set(key, {
+          filePath: row.file_path,
+          totalModifications: Number(row.total_modifications),
+          totalLocChanged,
+          repository: row.repository,
+          lastModified: row.last_modified.toISOString().split('T')[0] ?? '',
+          authorContributions: [],
+        });
+      }
+
+      const file = fileMap.get(key);
+      if (file) {
+        const loc = Number(row.loc_changed);
+        const percentage = totalLocChanged > 0 ? Math.round((loc / totalLocChanged) * 100 * 10) / 10 : 0;
+
+        const contribution: TeamProfileAuthorContribution = {
+          authorName: row.author_name,
+          loc,
+          percentage,
+        };
+
+        // Cast to mutable array to add contribution
+        (file.authorContributions as TeamProfileAuthorContribution[]).push(contribution);
+      }
+    }
+
+    return Array.from(fileMap.values());
+  }
+
+  // ============================================================================
+  // GITX-188: Hot Spots and Knowledge Concentration for Team Profile
+  // ============================================================================
+
+  /**
+   * Get top 10 hot spots filtered by team members.
+   * Returns files modified by team members, ordered by risk score.
+   * GITX-188: For bubble chart visualization (X=complexity, Y=churn, size=LOC, color=risk).
+   *
+   * @param team - Team name to filter by
+   * @returns Array of hot spot data points, or empty array if view not available
+   */
+  async getTeamHotSpots(team: string): Promise<TeamProfileHotSpot[]> {
+    this.validateTeam(team, 'getTeamHotSpots');
+
+    this.logger.debug(CLASS_NAME, 'getTeamHotSpots', `Fetching hot spots for team ${team}`);
+
+    // Check if the view exists
+    const viewExistsResult = await this.db.query<{ view_exists: boolean }>(
+      QUERY_TEAM_HOT_SPOTS_VIEW_EXISTS
+    );
+
+    if (!viewExistsResult.rows[0]?.view_exists) {
+      this.logger.warn(CLASS_NAME, 'getTeamHotSpots', 'vw_hot_spots view not found');
+      return [];
+    }
+
+    const result = await this.db.query<{
+      file_path: string;
+      repository: string;
+      churn_count: number;
+      complexity: number;
+      loc: number;
+      risk_score: number | string;
+      risk_tier: TeamHotSpotRiskTier;
+    }>(QUERY_TEAM_PROFILE_HOT_SPOTS, [team]);
+
+    this.logger.debug(CLASS_NAME, 'getTeamHotSpots', `Found ${result.rowCount} hot spots`);
+
+    return result.rows.map((row) => ({
+      filePath: row.file_path,
+      repository: row.repository,
+      churnCount: row.churn_count,
+      complexity: row.complexity,
+      loc: row.loc,
+      riskScore: Number(row.risk_score),
+      riskTier: row.risk_tier,
     }));
+  }
 
-    this.logger.debug(CLASS_NAME, 'getTestDebtMetrics', `ROI multiplier: ${roiMultiplier}, totalCommits: ${totalCommits}`);
+  /**
+   * Get top 30 knowledge concentration files filtered by team members.
+   * Returns files with contributions from team members, ordered by concentration risk.
+   * GITX-188: For treemap visualization (size=commits, color=concentration risk).
+   *
+   * @param team - Team name to filter by
+   * @returns Array of knowledge concentration data points, or empty array if view not available
+   */
+  async getTeamKnowledgeConcentration(team: string): Promise<TeamProfileKnowledgeConcentration[]> {
+    this.validateTeam(team, 'getTeamKnowledgeConcentration');
 
-    return {
-      weeklyData,
-      lowTestBugRate: Number(lowTestBugRate.toFixed(2)),
-      highTestBugRate: Number(highTestBugRate.toFixed(2)),
-      roiMultiplier,
-      totalCommits,
-      lowTestCommits,
-      orgAvgRoiMultiplier,
-    };
+    this.logger.debug(CLASS_NAME, 'getTeamKnowledgeConcentration', `Fetching knowledge concentration for team ${team}`);
+
+    // Check if the view exists
+    const viewExistsResult = await this.db.query<{ view_exists: boolean }>(
+      QUERY_TEAM_KNOWLEDGE_VIEW_EXISTS
+    );
+
+    if (!viewExistsResult.rows[0]?.view_exists) {
+      this.logger.warn(CLASS_NAME, 'getTeamKnowledgeConcentration', 'vw_knowledge_concentration view not found');
+      return [];
+    }
+
+    const result = await this.db.query<{
+      file_path: string;
+      repository: string;
+      total_commits: number;
+      total_contributors: number;
+      top_contributor: string;
+      top_contributor_pct: number | string;
+      concentration_risk: TeamConcentrationRisk;
+    }>(QUERY_TEAM_PROFILE_KNOWLEDGE_CONCENTRATION, [team]);
+
+    this.logger.debug(CLASS_NAME, 'getTeamKnowledgeConcentration', `Found ${result.rowCount} concentration risks`);
+
+    return result.rows.map((row) => ({
+      filePath: row.file_path,
+      repository: row.repository,
+      totalCommits: row.total_commits,
+      totalContributors: row.total_contributors,
+      topContributor: row.top_contributor,
+      topContributorPct: Number(row.top_contributor_pct),
+      concentrationRisk: row.concentration_risk,
+    }));
   }
 }

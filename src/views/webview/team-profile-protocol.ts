@@ -24,7 +24,10 @@ import type {
   TeamProfileTestsWeekly,
   TeamProfileHygieneScore,
   TeamProfileVelocityPoint,
-  TeamProfileTestDebtMetrics,
+  TeamProfileComplexFileWithContributors,
+  TeamProfileFrequentFileWithContributors,
+  TeamProfileHotSpot,
+  TeamProfileKnowledgeConcentration,
 } from '../../services/team-profile-data-types.js';
 
 // Re-export types for convenience
@@ -40,7 +43,10 @@ export type {
   TeamProfileTestsWeekly,
   TeamProfileHygieneScore,
   TeamProfileVelocityPoint,
-  TeamProfileTestDebtMetrics,
+  TeamProfileComplexFileWithContributors,
+  TeamProfileFrequentFileWithContributors,
+  TeamProfileHotSpot,
+  TeamProfileKnowledgeConcentration,
 } from '../../services/team-profile-data-types.js';
 
 // ============================================================================
@@ -168,13 +174,41 @@ export interface RequestTeamHasVelocityData {
 }
 
 /**
- * Request to load test debt metrics for a team.
- * Ticket: GITX-185
+ * Request to load top complex files with per-author contributions for chart.
+ * GITX-186: Horizontal stacked bar chart with per-member contribution coloring.
  */
-export interface RequestTeamTestDebtMetrics {
-  readonly type: 'requestTeamTestDebtMetrics';
+export interface RequestTeamComplexFilesChart {
+  readonly type: 'requestTeamComplexFilesChart';
   readonly team: string;
   readonly timeframeDays: TeamProfileTimeframe;
+}
+
+/**
+ * Request to load top frequent files with per-author contributions for chart.
+ * GITX-186: Horizontal stacked bar chart with per-member contribution coloring.
+ */
+export interface RequestTeamFrequentFilesChart {
+  readonly type: 'requestTeamFrequentFilesChart';
+  readonly team: string;
+  readonly timeframeDays: TeamProfileTimeframe;
+}
+
+/**
+ * Request to load hot spots for a team.
+ * GITX-188: Bubble chart filtered by team members.
+ */
+export interface RequestTeamHotSpots {
+  readonly type: 'requestTeamHotSpots';
+  readonly team: string;
+}
+
+/**
+ * Request to load knowledge concentration for a team.
+ * GITX-188: Treemap filtered by team members.
+ */
+export interface RequestTeamKnowledgeConcentration {
+  readonly type: 'requestTeamKnowledgeConcentration';
+  readonly team: string;
 }
 
 /**
@@ -194,7 +228,10 @@ export type TeamProfileWebviewToHost =
   | RequestTeamHygieneScore
   | RequestTeamVelocityVsLoc
   | RequestTeamHasVelocityData
-  | RequestTeamTestDebtMetrics;
+  | RequestTeamComplexFilesChart
+  | RequestTeamFrequentFilesChart
+  | RequestTeamHotSpots
+  | RequestTeamKnowledgeConcentration;
 
 // ============================================================================
 // Extension -> Webview (Responses)
@@ -313,12 +350,39 @@ export interface ResponseTeamHasVelocityData {
 }
 
 /**
- * Response with test debt metrics data for a team.
- * Ticket: GITX-185
+ * Response with top complex files chart data with per-author contributions.
+ * GITX-186: Horizontal stacked bar chart with per-member contribution coloring.
  */
-export interface ResponseTeamTestDebtMetrics {
-  readonly type: 'teamTestDebtMetricsData';
-  readonly data: TeamProfileTestDebtMetrics;
+export interface ResponseTeamComplexFilesChart {
+  readonly type: 'teamComplexFilesChartData';
+  readonly data: readonly TeamProfileComplexFileWithContributors[];
+}
+
+/**
+ * Response with top frequent files chart data with per-author contributions.
+ * GITX-186: Horizontal stacked bar chart with per-member contribution coloring.
+ */
+export interface ResponseTeamFrequentFilesChart {
+  readonly type: 'teamFrequentFilesChartData';
+  readonly data: readonly TeamProfileFrequentFileWithContributors[];
+}
+
+/**
+ * Response with hot spots data for a team.
+ * GITX-188: Bubble chart filtered by team members.
+ */
+export interface ResponseTeamHotSpots {
+  readonly type: 'teamHotSpotsData';
+  readonly data: readonly TeamProfileHotSpot[];
+}
+
+/**
+ * Response with knowledge concentration data for a team.
+ * GITX-188: Treemap filtered by team members.
+ */
+export interface ResponseTeamKnowledgeConcentration {
+  readonly type: 'teamKnowledgeConcentrationData';
+  readonly data: readonly TeamProfileKnowledgeConcentration[];
 }
 
 /**
@@ -337,5 +401,8 @@ export type TeamProfileHostToWebview =
   | ResponseTeamHygieneScore
   | ResponseTeamVelocityVsLoc
   | ResponseTeamHasVelocityData
-  | ResponseTeamTestDebtMetrics
+  | ResponseTeamComplexFilesChart
+  | ResponseTeamFrequentFilesChart
+  | ResponseTeamHotSpots
+  | ResponseTeamKnowledgeConcentration
   | ResponseTeamError;

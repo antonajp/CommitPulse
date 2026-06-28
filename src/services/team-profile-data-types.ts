@@ -169,3 +169,97 @@ export interface TeamProfileTestDebtMetrics {
   /** Organization average ROI for comparison (null if not available) */
   readonly orgAvgRoiMultiplier: number | null;
 }
+
+/**
+ * Per-author contribution to a file.
+ * GITX-186: Used for horizontal stacked bar chart segments.
+ */
+export interface TeamProfileAuthorContribution {
+  readonly authorName: string;
+  readonly loc: number;
+  readonly percentage: number;
+}
+
+// ============================================================================
+// GITX-188: Hot Spots and Knowledge Concentration for Team Profile
+// ============================================================================
+
+/**
+ * Risk tier categories for hot spots (same as global hot spots).
+ * GITX-188: Reused for team-filtered hot spots.
+ */
+export type TeamHotSpotRiskTier = 'critical' | 'high' | 'medium' | 'low';
+
+/**
+ * Hot spot data point filtered by team members.
+ * GITX-188: Used for bubble chart visualization.
+ */
+export interface TeamProfileHotSpot {
+  /** File path relative to repository root */
+  readonly filePath: string;
+  /** Repository name */
+  readonly repository: string;
+  /** Number of distinct commits modifying this file by team members */
+  readonly churnCount: number;
+  /** Current cyclomatic complexity (most recent value) */
+  readonly complexity: number;
+  /** Current lines of code (most recent value) */
+  readonly loc: number;
+  /** Normalized risk score (0-1 range, higher = more risk) */
+  readonly riskScore: number;
+  /** Risk tier: critical, high, medium, low */
+  readonly riskTier: TeamHotSpotRiskTier;
+}
+
+/**
+ * Concentration risk categories for knowledge concentration.
+ * GITX-188: Reused for team-filtered knowledge concentration.
+ */
+export type TeamConcentrationRisk = 'critical' | 'high' | 'medium' | 'low';
+
+/**
+ * Knowledge concentration data point filtered by team members.
+ * GITX-188: Used for treemap visualization.
+ */
+export interface TeamProfileKnowledgeConcentration {
+  /** File path relative to repository root */
+  readonly filePath: string;
+  /** Repository name */
+  readonly repository: string;
+  /** Total number of commits touching this file by team members */
+  readonly totalCommits: number;
+  /** Number of distinct team member contributors to this file */
+  readonly totalContributors: number;
+  /** Primary contributor with most commits */
+  readonly topContributor: string;
+  /** Percentage of commits by top contributor (0-100) */
+  readonly topContributorPct: number;
+  /** Knowledge concentration risk level */
+  readonly concentrationRisk: TeamConcentrationRisk;
+}
+
+/**
+ * Complex file with per-author contribution breakdown.
+ * GITX-186: For horizontal stacked bar chart visualization.
+ */
+export interface TeamProfileComplexFileWithContributors {
+  readonly filePath: string;
+  readonly totalComplexity: number;
+  readonly totalLoc: number;
+  readonly repository: string;
+  readonly lastModified: string;
+  readonly authorContributions: readonly TeamProfileAuthorContribution[];
+}
+
+/**
+ * Frequently modified file with per-author contribution breakdown.
+ * GITX-186: For horizontal stacked bar chart visualization.
+ */
+export interface TeamProfileFrequentFileWithContributors {
+  readonly filePath: string;
+  readonly totalModifications: number;
+  readonly totalLocChanged: number;
+  readonly repository: string;
+  readonly lastModified: string;
+  readonly authorContributions: readonly TeamProfileAuthorContribution[];
+}

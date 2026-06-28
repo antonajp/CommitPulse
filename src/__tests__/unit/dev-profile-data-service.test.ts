@@ -697,7 +697,7 @@ describe('DevProfileDataService', () => {
       });
     });
 
-    it('should use COALESCE for NULL comments_change', async () => {
+    it('should use total_comment_lines column (GITX-187)', async () => {
       await service.getCommentsPerWeek({
         developer: 'john.doe',
         timeframeDays: '90',
@@ -706,8 +706,11 @@ describe('DevProfileDataService', () => {
       const call = vi.mocked(mockDb.query).mock.calls[0];
       expect(call).toBeDefined();
       const sql = call![0] as string;
+      // GITX-187: Use total_comment_lines (populated) instead of comments_change (NULL)
       expect(sql).toContain('COALESCE');
-      expect(sql).toContain('comments_change');
+      expect(sql).toContain('total_comment_lines');
+      // Verify correct JOIN pattern - ch.author matches full_name, not login
+      expect(sql).toContain('ch.author = cc.full_name');
     });
   });
 

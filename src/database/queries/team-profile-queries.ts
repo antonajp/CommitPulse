@@ -121,3 +121,111 @@ export const QUERY_TEAM_PROFILE_HAS_VELOCITY_DATA = `
       AND jh.to_value IN ('Done', 'Closed', 'Resolved')
   ) AS has_data
 `;
+
+// ============================================================================
+// GITX-188: Hot Spots Queries for Team Profile
+// ============================================================================
+
+/**
+ * Query to check if the vw_hot_spots view exists.
+ * Used for graceful degradation if migration 013 has not been applied.
+ * GITX-188: Team Profile uses this to check view availability.
+ */
+export const QUERY_TEAM_HOT_SPOTS_VIEW_EXISTS = `
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.views
+    WHERE table_name = 'vw_hot_spots'
+  ) AS view_exists
+`;
+
+/**
+ * Query to fetch top 10 hot spots filtered by team members.
+ * Returns files ordered by risk_score DESC (highest risk first).
+ * GITX-188: Uses vw_hot_spots view and filters to files modified by team members.
+ *
+ * Parameters:
+ *   $1 - team name (TEXT)
+ */
+export const QUERY_TEAM_PROFILE_HOT_SPOTS = `
+  WITH team_members AS (
+    SELECT DISTINCT login, full_name
+    FROM commit_contributors
+    WHERE team = $1
+  ),
+  team_files AS (
+    SELECT DISTINCT cf.filename AS file_path, ch.repository
+    FROM commit_files cf
+    JOIN commit_history ch ON ch.sha = cf.sha
+    JOIN team_members tm ON (
+      ch.author = tm.full_name
+      OR (tm.full_name IS NULL AND ch.author = tm.login)
+    )
+    WHERE ch.is_merge = FALSE
+  )
+  SELECT
+    hs.file_path,
+    hs.repository,
+    hs.churn_count,
+    hs.complexity,
+    hs.loc,
+    hs.risk_score,
+    hs.risk_tier
+  FROM vw_hot_spots hs
+  JOIN team_files tf ON hs.file_path = tf.file_path AND hs.repository = tf.repository
+  ORDER BY hs.risk_score DESC NULLS LAST
+  LIMIT 10
+`;
+
+// ============================================================================
+// GITX-188: Knowledge Concentration Queries for Team Profile
+// ============================================================================
+
+/**
+ * Query to check if the vw_knowledge_concentration view exists.
+ * Used for graceful degradation if migration 014 has not been applied.
+ * GITX-188: Team Profile uses this to check view availability.
+ */
+export const QUERY_TEAM_KNOWLEDGE_VIEW_EXISTS = `
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.views
+    WHERE table_name = 'vw_knowledge_concentration'
+  ) AS view_exists
+`;
+
+/**
+ * Query to fetch top 30 knowledge concentration files filtered by team members.
+ * Returns files ordered by top_contributor_pct DESC (highest concentration first).
+ * GITX-188: Uses vw_knowledge_concentration view and filters to files with team member contributions.
+ *
+ * Parameters:
+ *   $1 - team name (TEXT)
+ */
+export const QUERY_TEAM_PROFILE_KNOWLEDGE_CONCENTRATION = `
+  WITH team_members AS (
+    SELECT DISTINCT login, full_name
+    FROM commit_contributors
+    WHERE team = $1
+  ),
+  team_files AS (
+    SELECT DISTINCT cf.filename AS file_path, ch.repository
+    FROM commit_files cf
+    JOIN commit_history ch ON ch.sha = cf.sha
+    JOIN team_members tm ON (
+      ch.author = tm.full_name
+      OR (tm.full_name IS NULL AND ch.author = tm.login)
+    )
+    WHERE ch.is_merge = FALSE
+  )
+  SELECT
+    kc.file_path,
+    kc.repository,
+    kc.total_commits,
+    kc.total_contributors,
+    kc.top_contributor,
+    kc.top_contributor_pct,
+    kc.concentration_risk
+  FROM vw_knowledge_concentration kc
+  JOIN team_files tf ON kc.file_path = tf.file_path AND kc.repository = tf.repository
+  ORDER BY kc.top_contributor_pct DESC NULLS LAST
+  LIMIT 30
+`;
