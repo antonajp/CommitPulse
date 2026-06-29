@@ -95,7 +95,9 @@ const SQL_UPDATE_CONTRIBUTOR_REPO = `
 `;
 
 /**
- * Query to get contributor summaries for the Contributors/Teams TreeView.
+ * Query to get contributor summaries for the Contributors/Teams TreeView (base).
+ * This base query works without the organizations/teams tables (migration 030).
+ *
  * Joins commit_contributors with commit_history (for commit counts) and
  * max_num_count_per_full_name (for primary team assignment).
  *
@@ -106,7 +108,7 @@ const SQL_UPDATE_CONTRIBUTOR_REPO = `
  * Note: When full_name is NULL, all logins with NULL full_name are grouped together,
  * and the aggregated logins string is used as the display name.
  */
-const SQL_GET_CONTRIBUTOR_SUMMARIES = `
+const SQL_GET_CONTRIBUTOR_SUMMARIES_BASE = `
   WITH contributor_groups AS (
     SELECT
       cc.full_name,
@@ -130,12 +132,68 @@ const SQL_GET_CONTRIBUTOR_SUMMARIES = `
     cg.logins,
     cg.vendor,
     COALESCE(m.team, cg.fallback_team) AS team,
+    NULL::text AS organization_name,
     cg.repo_list,
     COALESCE(cc.commit_count, 0)::int AS commit_count
   FROM contributor_groups cg
   LEFT JOIN max_num_count_per_full_name m ON m.full_name = cg.full_name
   LEFT JOIN commit_counts cc ON cc.full_name IS NOT DISTINCT FROM cg.full_name
   ORDER BY COALESCE(m.team, cg.fallback_team) NULLS LAST, COALESCE(cg.full_name, cg.logins)
+`;
+
+/**
+ * Query to get contributor summaries with organization hierarchy.
+ * This extended query includes organization names from the teams/organizations tables.
+ *
+ * Ticket: GITX-211 - Added organization_name for 3-level hierarchy support
+ *
+ * IMPORTANT: This query requires migration 030 (teams/organizations tables).
+ * Use SQL_GET_CONTRIBUTOR_SUMMARIES_BASE if tables don't exist.
+ */
+const SQL_GET_CONTRIBUTOR_SUMMARIES_WITH_ORGS = `
+  WITH contributor_groups AS (
+    SELECT
+      cc.full_name,
+      STRING_AGG(DISTINCT cc.login, ',' ORDER BY cc.login) AS logins,
+      MAX(cc.vendor) AS vendor,
+      MAX(cc.team) AS fallback_team,
+      STRING_AGG(DISTINCT cc.repo, ',') AS repo_list
+    FROM commit_contributors cc
+    GROUP BY cc.full_name
+  ),
+  commit_counts AS (
+    SELECT
+      cc.full_name,
+      COUNT(DISTINCT ch.sha) AS commit_count
+    FROM commit_history ch
+    INNER JOIN commit_contributors cc ON ch.author = cc.login
+    GROUP BY cc.full_name
+  )
+  SELECT
+    COALESCE(cg.full_name, cg.logins) AS full_name,
+    cg.logins,
+    cg.vendor,
+    COALESCE(m.team, cg.fallback_team) AS team,
+    o.name AS organization_name,
+    cg.repo_list,
+    COALESCE(cc.commit_count, 0)::int AS commit_count
+  FROM contributor_groups cg
+  LEFT JOIN max_num_count_per_full_name m ON m.full_name = cg.full_name
+  LEFT JOIN commit_counts cc ON cc.full_name IS NOT DISTINCT FROM cg.full_name
+  LEFT JOIN teams t ON t.name = COALESCE(m.team, cg.fallback_team)
+  LEFT JOIN organizations o ON o.id = t.organization_id
+  ORDER BY o.name NULLS LAST, COALESCE(m.team, cg.fallback_team) NULLS LAST, COALESCE(cg.full_name, cg.logins)
+`;
+
+/**
+ * Query to check if organizations table exists.
+ * Used to decide which contributor summary query to use.
+ */
+const SQL_CHECK_ORGS_TABLE_EXISTS = `
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_name = 'organizations'
+  ) AS table_exists
 `;
 
 // ============================================================================
@@ -436,33 +494,61 @@ export class ContributorRepository {
 
   /**
    * Get contributor summaries for the Contributors/Teams TreeView.
-   * Returns all contributors with their primary team, commit count, vendor,
-   * and repo list. Ordered by team then full_name for grouped display.
+   * Returns all contributors with their primary team, organization, commit count,
+   * vendor, and repo list. Ordered by org, team, then full_name for grouped display.
    *
    * Joins commit_contributors + max_num_count_per_full_name (primary team) +
-   * commit_history (commit count aggregation).
+   * commit_history (commit count aggregation) + teams + organizations.
    *
    * Ticket: GITX-169 - Changed to group by full_name instead of login
+   * Ticket: GITX-211 - Added organization_name for 3-level hierarchy support
    *
-   * @returns Array of ContributorSummaryRow, ordered by team then full_name
+   * IMPORTANT: This method checks for the existence of the organizations table
+   * and uses the appropriate query. If migration 030 has not been applied,
+   * organization_name will be null for all contributors.
+   *
+   * @returns Array of ContributorSummaryRow, ordered by org, team, then full_name
    */
   async getContributorSummaries(): Promise<ContributorSummaryRow[]> {
     this.logger.debug(CLASS_NAME, 'getContributorSummaries', 'Querying contributor summaries for TreeView');
+
+    // Check if organizations table exists (migration 030)
+    let hasOrgsTable = false;
+    try {
+      const checkResult: DatabaseQueryResult<{ table_exists: boolean }> =
+        await this.db.query(SQL_CHECK_ORGS_TABLE_EXISTS);
+      hasOrgsTable = checkResult.rows[0]?.table_exists ?? false;
+    } catch {
+      this.logger.debug(CLASS_NAME, 'getContributorSummaries', 'Failed to check organizations table existence');
+      hasOrgsTable = false;
+    }
+
+    const query = hasOrgsTable
+      ? SQL_GET_CONTRIBUTOR_SUMMARIES_WITH_ORGS
+      : SQL_GET_CONTRIBUTOR_SUMMARIES_BASE;
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getContributorSummaries',
+      `Using ${hasOrgsTable ? 'organizations-aware' : 'base'} query`,
+    );
 
     const result: DatabaseQueryResult<{
       full_name: string | null;
       logins: string;
       vendor: string | null;
       team: string | null;
+      organization_name: string | null;
       repo_list: string | null;
       commit_count: number;
-    }> = await this.db.query(SQL_GET_CONTRIBUTOR_SUMMARIES);
+    }> = await this.db.query(query);
 
     const summaries: ContributorSummaryRow[] = result.rows.map((row) => ({
       fullName: row.full_name,
       logins: row.logins,
       vendor: row.vendor,
       team: row.team,
+      organizationName: row.organization_name,
       repoList: row.repo_list,
       commitCount: row.commit_count,
     }));

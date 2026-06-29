@@ -2,37 +2,62 @@
  * HTML section generators for Developer Profile Dashboard.
  * Extracted to keep main HTML file under 600 lines.
  *
- * Ticket: GITX-156, GITX-157, GITX-172, GITX-188
+ * Ticket: GITX-156, GITX-157, GITX-172, GITX-188, GITX-199, GITX-214
  */
 
 /**
- * Generate the HTML for GITX-156 and GITX-157 chart sections (without Test Debt).
- * GITX-188: Used by Team Profile to exclude Test Debt section.
+ * Generate the HTML for the primary Sprint Velocity chart (GITX-199).
+ * This is the primary chart displayed right after KPI cards.
+ * Shows developer's story points as colored bars against team total with LOC trend line.
  */
-export function generateGitx156HtmlSectionsForTeamProfile(): string {
+export function generatePrimaryVelocityChartHtml(): string {
   return `
-      <!-- Sprint Velocity vs LOC Chart (GITX-157) -->
+      <!-- Sprint Velocity vs LOC Chart - Primary Position (GITX-199) -->
       <section class="card card-wide chart-lazy" id="velocityCard" aria-label="Sprint Velocity vs Lines of Code" data-chart-id="velocity">
         <h2>Sprint Velocity vs Lines of Code</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="velocitySkeleton" aria-hidden="true"></div>
-          <div id="velocityChart" class="d3-chart d3-dual-axis hidden" role="img" aria-label="Dual-axis chart showing story points and lines of code per week"></div>
+          <div id="velocityChart" class="d3-chart d3-dual-axis hidden" role="img" aria-label="Stacked bar chart showing your story points against team total with lines of code trend"></div>
         </div>
         <p class="card-empty hidden" id="velocityEmpty">Sprint velocity data requires Linear/Jira issue assignment to this developer.</p>
+        <p class="velocity-no-jira hidden" id="velocityNoJira">
+          <span class="hint-icon" aria-hidden="true">i</span>
+          <span class="hint-text">Connect Jira to see Sprint Velocity. Showing Lines of Code only.</span>
+        </p>
         <p class="velocity-hint hidden" id="velocityHint">
           <span class="hint-icon" aria-hidden="true">i</span>
-          <span class="hint-text">Click on data points to view sprint/week details.</span>
+          <span class="hint-text">Colored bars show your contribution. Muted bars show rest of team.</span>
         </p>
-      </section>
+      </section>`;
+}
 
-      <!-- Technology Stack Doughnut Chart (GITX-156) -->
+/**
+ * Generate the HTML for GITX-156 and GITX-157 chart sections (without Test Debt).
+ * GITX-188: Used by Team Profile to exclude Test Debt section.
+ * GITX-199: Velocity chart moved to primary position, removed from this section.
+ */
+export function generateGitx156HtmlSectionsForTeamProfile(): string {
+  return `
+
+      <!-- Technology Stack Doughnut Chart (GITX-156, GITX-214) -->
       <section class="card" id="techStackCard" aria-label="Technology Stack">
-        <h2>Technology Stack</h2>
+        <div class="card-header-with-toggle">
+          <h2>Technology Stack</h2>
+          <div class="metric-toggle" role="radiogroup" aria-label="Technology stack grouping">
+            <button class="metric-btn active" data-view="languages" role="radio" aria-checked="true" tabindex="0">
+              Languages
+            </button>
+            <button class="metric-btn" data-view="extensions" role="radio" aria-checked="false" tabindex="-1">
+              File Extensions
+            </button>
+          </div>
+        </div>
         <div class="chart-container">
           <div class="chart-skeleton" id="techStackSkeleton" aria-hidden="true"></div>
           <div id="techStackChart" class="d3-chart d3-doughnut hidden" role="img" aria-label="Doughnut chart showing technology stack contributions"></div>
         </div>
         <p class="card-empty hidden" id="techStackEmpty">No technology stack data available for the selected timeframe.</p>
+        <p class="card-empty hidden" id="techStackExtEmpty">No file extension data for selected timeframe.</p>
       </section>
 
       <!-- Commit Hygiene Score Gauge (GITX-156) -->
@@ -97,32 +122,31 @@ export function generateGitx156HtmlSectionsForTeamProfile(): string {
 }
 
 /**
- * Generate the HTML for GITX-156 and GITX-157 chart sections.
+ * Generate the HTML for GITX-156 chart sections (without velocity - moved to primary position).
+ * GITX-199: Velocity chart is now generated separately via generatePrimaryVelocityChartHtml().
+ * GITX-216: Test Debt chart removed.
  */
 export function generateGitx156HtmlSections(): string {
   return `
-      <!-- Sprint Velocity vs LOC Chart (GITX-157) -->
-      <section class="card card-wide chart-lazy" id="velocityCard" aria-label="Sprint Velocity vs Lines of Code" data-chart-id="velocity">
-        <h2>Sprint Velocity vs Lines of Code</h2>
-        <div class="chart-container">
-          <div class="chart-skeleton" id="velocitySkeleton" aria-hidden="true"></div>
-          <div id="velocityChart" class="d3-chart d3-dual-axis hidden" role="img" aria-label="Dual-axis chart showing story points and lines of code per week"></div>
-        </div>
-        <p class="card-empty hidden" id="velocityEmpty">Sprint velocity data requires Linear/Jira issue assignment to this developer.</p>
-        <p class="velocity-hint hidden" id="velocityHint">
-          <span class="hint-icon" aria-hidden="true">i</span>
-          <span class="hint-text">Click on data points to view sprint/week details.</span>
-        </p>
-      </section>
-
-      <!-- Technology Stack Doughnut Chart (GITX-156) -->
+      <!-- Technology Stack Doughnut Chart (GITX-156, GITX-214) -->
       <section class="card" id="techStackCard" aria-label="Technology Stack">
-        <h2>Technology Stack</h2>
+        <div class="card-header-with-toggle">
+          <h2>Technology Stack</h2>
+          <div class="metric-toggle" role="radiogroup" aria-label="Technology stack grouping">
+            <button class="metric-btn active" data-view="languages" role="radio" aria-checked="true" tabindex="0">
+              Languages
+            </button>
+            <button class="metric-btn" data-view="extensions" role="radio" aria-checked="false" tabindex="-1">
+              File Extensions
+            </button>
+          </div>
+        </div>
         <div class="chart-container">
           <div class="chart-skeleton" id="techStackSkeleton" aria-hidden="true"></div>
           <div id="techStackChart" class="d3-chart d3-doughnut hidden" role="img" aria-label="Doughnut chart showing technology stack contributions"></div>
         </div>
         <p class="card-empty hidden" id="techStackEmpty">No technology stack data available for the selected timeframe.</p>
+        <p class="card-empty hidden" id="techStackExtEmpty">No file extension data for selected timeframe.</p>
       </section>
 
       <!-- Commit Hygiene Score Gauge (GITX-156) -->
@@ -183,41 +207,5 @@ export function generateGitx156HtmlSections(): string {
           <div id="testsWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing test files modified"></div>
         </div>
         <p class="card-empty hidden" id="testsWeekEmpty">No test data available for the selected timeframe.</p>
-      </section>
-
-      <!-- Test Debt Risk Analysis (GITX-172) -->
-      <section class="card card-wide chart-lazy" id="testDebtCard" aria-label="Test Debt Risk Analysis" data-chart-id="testDebt">
-        <h2>Test Debt Risk Analysis</h2>
-        <div class="test-debt-container">
-          <div class="chart-container test-debt-chart-container">
-            <div class="chart-skeleton" id="testDebtSkeleton" aria-hidden="true"></div>
-            <div id="testDebtChart" class="d3-chart d3-stacked-bar hidden" role="img" aria-label="Stacked bar chart showing weekly commits by test coverage tier"></div>
-          </div>
-          <div class="test-debt-metrics hidden" id="testDebtMetrics">
-            <div class="test-debt-roi" id="testDebtRoi">
-              <span class="roi-value" id="roiValue">-</span>
-              <span class="roi-label">Your low-test commits cause <span id="roiMultiplier">0</span>x more bugs</span>
-            </div>
-            <div class="test-debt-comparison hidden" id="testDebtComparison">
-              <span class="comparison-label">Team average: <span id="teamAvgRoi">-</span>x</span>
-            </div>
-            <div class="test-debt-summary" id="testDebtSummary">
-              <span class="summary-item"><span id="lowTestCount">0</span> low-test commits</span>
-              <span class="summary-item"><span id="totalTestCommits">0</span> total commits</span>
-            </div>
-          </div>
-        </div>
-        <p class="card-empty hidden" id="testDebtEmpty">No test coverage data available for this developer.</p>
-        <p class="card-success hidden" id="testDebtSuccess">Great job! All commits have good test coverage.</p>
-        <details class="chart-explanation">
-          <summary>What is Test Debt?</summary>
-          <p>Test debt occurs when production code is committed without adequate test coverage. This chart shows your commits by test coverage tier:</p>
-          <ul>
-            <li><span class="tier-badge tier-low">Low</span> Test ratio &lt; 10% (highest bug risk)</li>
-            <li><span class="tier-badge tier-medium">Medium</span> Test ratio 10-50%</li>
-            <li><span class="tier-badge tier-high">High</span> Test ratio &gt; 50% (lowest bug risk)</li>
-          </ul>
-          <p>The ROI metric shows how much more likely low-test commits are to result in bugs compared to well-tested commits.</p>
-        </details>
       </section>`;
 }

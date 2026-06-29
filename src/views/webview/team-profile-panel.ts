@@ -1,15 +1,16 @@
 /**
  * Team Profile Dashboard webview panel manager.
- * Creates and manages a VS Code WebviewPanel with:
- * - Singleton pattern (only one panel at a time)
+ * Creates and manages VS Code WebviewPanels with:
+ * - Multi-instance pattern (multiple panels can be open simultaneously for different teams)
  * - Message routing between webview and extension host
  * - D3.js v7 bundled as a local resource
  * - CSP nonce generation for script authorization
  * - Rate limiting on message handlers
  * - Proper disposal and resource cleanup
  * - Pre-selection of team when opened from TreeView
+ * - Shared dashboard cache service across all instances (GITX-194, GITX-196)
  *
- * Ticket: GITX-185
+ * Ticket: GITX-185, GITX-196
  */
 
 import * as vscode from 'vscode';
@@ -39,14 +40,15 @@ const VIEW_TYPE = 'gitrx.teamProfilePanel';
 
 /**
  * Manages the Team Profile Dashboard WebviewPanel lifecycle.
- * Implements singleton pattern: only one panel exists at a time.
- * Re-reveals existing panel if user triggers the command again.
+ * GITX-196: Implements multi-instance pattern - multiple panels can be open simultaneously
+ * for different teams, enabling side-by-side comparison.
  */
 export class TeamProfilePanel implements vscode.Disposable {
   /**
-   * Singleton panel instance. Null when no panel is open.
+   * Track all active panel instances for testing and cleanup.
+   * GITX-196: Replaces singleton pattern with collection for multi-instance support.
    */
-  private static currentPanel: TeamProfilePanel | undefined;
+  private static activePanels: Set<TeamProfilePanel> = new Set();
 
   private readonly logger: LoggerService;
   private readonly panel: vscode.WebviewPanel;
@@ -66,38 +68,37 @@ export class TeamProfilePanel implements vscode.Disposable {
   private isDisposed = false;
 
   /**
-   * Create or reveal the Team Profile panel.
-   * If a panel already exists, it is brought to the front.
-   * If no panel exists, a new one is created.
+   * Create a new Team Profile panel.
+   * GITX-196: Always creates a new panel instance (no singleton). Multiple panels can be open
+   * simultaneously for different teams, enabling side-by-side comparison.
    *
    * @param extensionUri - The URI of the extension's root directory
    * @param secretService - SecretStorageService for database password retrieval
-   * @param team - Optional pre-selected team name
+   * @param team - Optional pre-selected team name (used in panel title)
+   * @returns The newly created TeamProfilePanel instance
    */
-  static createOrShow(
+  static create(
     extensionUri: vscode.Uri,
     secretService: SecretStorageService,
     team?: string,
-  ): void {
+  ): TeamProfilePanel {
     const logger = LoggerService.getInstance();
-    logger.info(CLASS_NAME, 'createOrShow', `Opening Team Profile panel${team ? ` for ${team}` : ''}`);
+    logger.info(CLASS_NAME, 'create', `Creating new Team Profile panel${team ? ` for ${team}` : ''}`);
 
-    // If panel exists, reveal it and optionally update team
-    if (TeamProfilePanel.currentPanel) {
-      logger.debug(CLASS_NAME, 'createOrShow', 'Existing panel found, revealing');
-      if (team) {
-        TeamProfilePanel.currentPanel.setTeam(team);
-      }
-      TeamProfilePanel.currentPanel.panel.reveal(vscode.ViewColumn.One);
-      return;
-    }
+    // GITX-196: Determine view column - open beside if another editor/panel is active
+    const column = vscode.window.activeTextEditor
+      ? vscode.ViewColumn.Beside
+      : vscode.ViewColumn.One;
 
-    // Create a new panel
-    logger.debug(CLASS_NAME, 'createOrShow', 'Creating new webview panel');
+    logger.debug(CLASS_NAME, 'create', `Creating new webview panel in column ${column}`);
+
+    // GITX-196: Panel title includes team name for identification
+    const panelTitle = team ? `Team Profile: ${team}` : 'Team Profile';
+
     const panel = vscode.window.createWebviewPanel(
       VIEW_TYPE,
-      'Team Profile',
-      vscode.ViewColumn.One,
+      panelTitle,
+      column,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -107,11 +108,26 @@ export class TeamProfilePanel implements vscode.Disposable {
       },
     );
 
-    TeamProfilePanel.currentPanel = new TeamProfilePanel(panel, extensionUri, secretService, team);
+    return new TeamProfilePanel(panel, extensionUri, secretService, team);
   }
 
   /**
-   * Private constructor — use createOrShow() to create instances.
+   * @deprecated Use create() instead. This method exists for backward compatibility
+   * but will be removed in a future version.
+   * GITX-196: createOrShow is replaced by create() for multi-instance support.
+   */
+  static createOrShow(
+    extensionUri: vscode.Uri,
+    secretService: SecretStorageService,
+    team?: string,
+  ): void {
+    // Delegate to create() for backward compatibility
+    TeamProfilePanel.create(extensionUri, secretService, team);
+  }
+
+  /**
+   * Private constructor — use create() to create instances.
+   * GITX-196: Each instance has independent state and shares the cache service.
    */
   private constructor(
     panel: vscode.WebviewPanel,
@@ -128,8 +144,13 @@ export class TeamProfilePanel implements vscode.Disposable {
       minIntervalMs: DEFAULT_RATE_LIMIT_INTERVAL_MS,
       className: CLASS_NAME,
     });
+    // GITX-196: Cache service is shared via singleton - accessed through TeamProfileDataService
 
-    this.logger.debug(CLASS_NAME, 'constructor', 'Initializing TeamProfilePanel');
+    this.logger.debug(CLASS_NAME, 'constructor', `Initializing TeamProfilePanel for team: ${team ?? 'none'}`);
+
+    // GITX-196: Track this panel in the active set
+    TeamProfilePanel.activePanels.add(this);
+    this.logger.debug(CLASS_NAME, 'constructor', `Active panels count: ${TeamProfilePanel.activePanels.size}`);
 
     // Set the webview HTML content
     this.updateWebviewContent();
@@ -160,15 +181,20 @@ export class TeamProfilePanel implements vscode.Disposable {
       });
     }, 100);
 
-    this.logger.info(CLASS_NAME, 'constructor', 'TeamProfilePanel initialized successfully');
+    this.logger.info(CLASS_NAME, 'constructor', `TeamProfilePanel initialized successfully for: ${team ?? 'no team'}`);
   }
 
   /**
-   * Set the selected team and notify the webview.
+   * Set the selected team, update the panel title, and notify the webview.
+   * GITX-196: Updates panel title to reflect the selected team.
    */
   private setTeam(team: string): void {
     this.logger.debug(CLASS_NAME, 'setTeam', `Setting team to: ${team}`);
     this.selectedTeam = team;
+
+    // GITX-196: Update panel title to include team name
+    this.panel.title = `Team Profile: ${team}`;
+
     this.postMessage({
       type: 'initialState',
       team: this.selectedTeam,
@@ -299,13 +325,15 @@ export class TeamProfilePanel implements vscode.Disposable {
           // Request all data in parallel (matching DevProfilePanel pattern)
           // GITX-186: Added per-author contribution chart data
           // GITX-188: Added hot spots and knowledge concentration, removed test debt
-          this.selectedTeam = message.team;
+          // GITX-196: Use setTeam to update title and state together
+          this.setTeam(message.team);
           this.selectedTimeframe = message.timeframeDays;
           const filters = {
             team: message.team,
             timeframeDays: message.timeframeDays,
           };
-          const [summary, locPerWeek, complexFilesChart, frequentFilesChart, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, hasVelocityData, hotSpots, knowledgeConcentration] = await Promise.all([
+          // GITX-200: Added velocityWithMembers for stacked member chart
+          const [summary, locPerWeek, complexFilesChart, frequentFilesChart, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, velocityWithMembers, hasVelocityData, hotSpots, knowledgeConcentration] = await Promise.all([
             this.dataService.getSummary(filters),
             this.dataService.getLocPerWeek(filters),
             this.dataService.getTopComplexFilesWithContributors(filters),
@@ -315,6 +343,7 @@ export class TeamProfilePanel implements vscode.Disposable {
             this.dataService.getTestsPerWeek(filters),
             this.dataService.getHygieneScore(filters),
             this.dataService.getVelocityVsLoc(filters),
+            this.dataService.getVelocityWithMembers(filters),
             this.dataService.hasVelocityData(filters.team),
             this.dataService.getTeamHotSpots(filters.team),
             this.dataService.getTeamKnowledgeConcentration(filters.team),
@@ -329,6 +358,8 @@ export class TeamProfilePanel implements vscode.Disposable {
           this.postMessage({ type: 'teamTestsPerWeekData', data: testsPerWeek });
           this.postMessage({ type: 'teamHygieneScoreData', data: hygieneScore });
           this.postMessage({ type: 'teamVelocityVsLocData', data: velocityVsLoc });
+          // GITX-200: Send velocity with member breakdown for stacked chart
+          this.postMessage({ type: 'teamVelocityWithMembersData', data: velocityWithMembers });
           this.postMessage({ type: 'teamHasVelocityData', hasData: hasVelocityData });
           // GITX-188: Send hot spots and knowledge concentration data
           this.postMessage({ type: 'teamHotSpotsData', data: hotSpots });
@@ -342,6 +373,16 @@ export class TeamProfilePanel implements vscode.Disposable {
             timeframeDays: message.timeframeDays,
           });
           this.postMessage({ type: 'teamTechStackData', data });
+          break;
+        }
+
+        // GITX-214: Technology stack by file extension
+        case 'requestTeamTechStackByExtension': {
+          const data = await this.dataService.getTechStackByExtension({
+            team: message.team,
+            timeframeDays: message.timeframeDays,
+          });
+          this.postMessage({ type: 'teamTechStackByExtensionData', data });
           break;
         }
 
@@ -416,6 +457,16 @@ export class TeamProfilePanel implements vscode.Disposable {
         case 'requestTeamKnowledgeConcentration': {
           const knowledgeData = await this.dataService.getTeamKnowledgeConcentration(message.team);
           this.postMessage({ type: 'teamKnowledgeConcentrationData', data: knowledgeData });
+          break;
+        }
+
+        // GITX-200: Velocity with member breakdown for stacked bar chart
+        case 'requestTeamVelocityWithMembers': {
+          const velocityMembersData = await this.dataService.getVelocityWithMembers({
+            team: message.team,
+            timeframeDays: message.timeframeDays,
+          });
+          this.postMessage({ type: 'teamVelocityWithMembersData', data: velocityMembersData });
           break;
         }
 
@@ -533,6 +584,7 @@ export class TeamProfilePanel implements vscode.Disposable {
   /**
    * Dispose the panel and all its resources.
    * Shuts down the database connection if one was opened.
+   * GITX-196: Removes panel from active set instead of clearing singleton.
    */
   dispose(): void {
     // GITX-175: Prevent double disposal and set flag FIRST to stop new queries
@@ -541,9 +593,11 @@ export class TeamProfilePanel implements vscode.Disposable {
       return;
     }
     this.isDisposed = true;
-    this.logger.info(CLASS_NAME, 'dispose', 'Disposing TeamProfilePanel');
+    this.logger.info(CLASS_NAME, 'dispose', `Disposing TeamProfilePanel for: ${this.selectedTeam ?? 'no team'}`);
 
-    TeamProfilePanel.currentPanel = undefined;
+    // GITX-196: Remove from active panels set instead of clearing singleton
+    TeamProfilePanel.activePanels.delete(this);
+    this.logger.debug(CLASS_NAME, 'dispose', `Active panels remaining: ${TeamProfilePanel.activePanels.size}`);
 
     // Reset rate limiter state
     this.rateLimiter.reset();
@@ -579,10 +633,38 @@ export class TeamProfilePanel implements vscode.Disposable {
   }
 
   /**
-   * Reset the singleton for testing purposes.
+   * Reset all panel tracking for testing purposes.
+   * GITX-196: Clears the active panels set instead of singleton.
    * @internal - Only use in test code
    */
   static resetForTesting(): void {
-    TeamProfilePanel.currentPanel = undefined;
+    TeamProfilePanel.activePanels.clear();
+  }
+
+  /**
+   * Get the count of active panels.
+   * GITX-196: Useful for testing and debugging multi-instance behavior.
+   * @returns The number of currently active TeamProfilePanel instances
+   */
+  static getActivePanelCount(): number {
+    return TeamProfilePanel.activePanels.size;
+  }
+
+  /**
+   * Get the team identifier for this panel.
+   * GITX-196: Useful for testing panel state.
+   * @returns The selected team or null
+   */
+  getTeam(): string | null {
+    return this.selectedTeam;
+  }
+
+  /**
+   * Get the timeframe for this panel.
+   * GITX-196: Useful for testing panel state.
+   * @returns The selected timeframe
+   */
+  getTimeframe(): TeamProfileTimeframe {
+    return this.selectedTimeframe;
   }
 }

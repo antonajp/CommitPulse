@@ -9,6 +9,7 @@ import { isValidTeamName } from '../utils/team-validation.js';
 import {
   QUERY_TEAM_PROFILE_VELOCITY_VS_LOC,
   QUERY_TEAM_PROFILE_HAS_VELOCITY_DATA,
+  QUERY_TEAM_PROFILE_VELOCITY_WITH_MEMBERS,
   QUERY_TEAM_HOT_SPOTS_VIEW_EXISTS,
   QUERY_TEAM_PROFILE_HOT_SPOTS,
   QUERY_TEAM_KNOWLEDGE_VIEW_EXISTS,
@@ -20,12 +21,15 @@ import type {
   TeamProfileComplexFile,
   TeamProfileFrequentFile,
   TeamProfileTechStack,
+  TeamProfileTechStackByExtension,
   TeamProfileCommentsWeekly,
   TeamProfileTestsWeekly,
   TeamProfileHygieneScore,
   TeamProfileTeam,
   TeamProfileFilters,
   TeamProfileVelocityPoint,
+  TeamProfileVelocityWithMembers,
+  TeamMemberVelocityContribution,
   TeamProfileComplexFileWithContributors,
   TeamProfileFrequentFileWithContributors,
   TeamProfileAuthorContribution,
@@ -42,6 +46,7 @@ export type {
   TeamProfileComplexFile,
   TeamProfileFrequentFile,
   TeamProfileTechStack,
+  TeamProfileTechStackByExtension,
   TeamProfileCommentsWeekly,
   TeamProfileTestsWeekly,
   TeamProfileHygieneScore,
@@ -49,6 +54,8 @@ export type {
   TeamProfileTimeframe,
   TeamProfileFilters,
   TeamProfileVelocityPoint,
+  TeamProfileVelocityWithMembers,
+  TeamMemberVelocityContribution,
   TeamProfileComplexFileWithContributors,
   TeamProfileFrequentFileWithContributors,
   TeamProfileAuthorContribution,
@@ -683,6 +690,87 @@ export class TeamProfileDataService {
   }
 
   /**
+   * Get technology stack by file extension for doughnut chart.
+   * GITX-214: Returns file extensions with LOC counts and percentages.
+   * Aggregates across all team members.
+   *
+   * @param filters - Team and timeframe filters
+   * @returns Array of tech stack data points by file extension
+   */
+  async getTechStackByExtension(filters: TeamProfileFilters): Promise<TeamProfileTechStackByExtension[]> {
+    this.validateTeam(filters.team, 'getTechStackByExtension');
+    this.validateTimeframe(filters.timeframeDays, 'getTechStackByExtension');
+
+    this.logger.debug(CLASS_NAME, 'getTechStackByExtension', `Fetching tech stack by extension for team ${filters.team}`);
+
+    const startDate = this.getStartDate(filters.timeframeDays);
+
+    const sql = `
+      WITH team_members AS (
+        SELECT DISTINCT login, full_name
+        FROM commit_contributors
+        WHERE team = $1
+      ),
+      team_contributions AS (
+        SELECT
+          LOWER(COALESCE(NULLIF(cf.file_extension, ''),
+            CASE
+              WHEN cf.filename LIKE '%Dockerfile%' THEN 'Dockerfile'
+              WHEN cf.filename LIKE '%Makefile%' THEN 'Makefile'
+              WHEN cf.filename LIKE '%.gitignore' THEN '.gitignore'
+              WHEN cf.filename LIKE '%.env%' THEN '.env'
+              ELSE '(no extension)'
+            END
+          )) AS extension,
+          ch.repository,
+          COALESCE(SUM(cf.line_inserts), 0)::bigint AS loc_count
+        FROM commit_files cf
+        JOIN commit_history ch ON cf.sha = ch.sha
+        JOIN team_members tm ON (
+          ch.author = tm.full_name
+          OR (tm.full_name IS NULL AND ch.author = tm.login)
+        )
+        WHERE ch.commit_date >= $2
+          AND ch.is_merge = FALSE
+          AND cf.line_inserts IS NOT NULL
+        GROUP BY extension, ch.repository
+      ),
+      total_loc AS (
+        SELECT COALESCE(SUM(loc_count), 0) AS total FROM team_contributions
+      )
+      SELECT
+        tc.extension,
+        tc.repository,
+        tc.loc_count,
+        CASE
+          WHEN tl.total > 0 THEN ROUND((tc.loc_count * 100.0 / tl.total)::numeric, 2)
+          ELSE 0
+        END AS percentage
+      FROM team_contributions tc
+      CROSS JOIN total_loc tl
+      WHERE tc.loc_count > 0
+      ORDER BY tc.loc_count DESC
+      LIMIT 20
+    `;
+
+    const result = await this.db.query<{
+      extension: string;
+      repository: string;
+      loc_count: string;
+      percentage: string;
+    }>(sql, [filters.team, startDate]);
+
+    this.logger.debug(CLASS_NAME, 'getTechStackByExtension', `Found ${result.rowCount} file extensions`);
+
+    return result.rows.map((row) => ({
+      extension: row.extension,
+      repository: row.repository,
+      locCount: Number(row.loc_count),
+      percentage: Number(row.percentage),
+    }));
+  }
+
+  /**
    * Get comments added per period for the line chart.
    * Aggregates across all team members.
    * Uses total_comment_lines column (always populated during commit ingestion).
@@ -975,6 +1063,65 @@ export class TeamProfileDataService {
 
   // GITX-188: Test debt method removed - Test Debt chart no longer shown on Team Profile dashboard
   // See Developer Profile or Dev Pipeline dashboards for test debt analysis.
+
+  /**
+   * GITX-200: Get sprint velocity with per-member breakdown for stacked bar chart.
+   * Returns velocity data with member-level story point contributions for color-coded visualization.
+   *
+   * @param filters - Team and timeframe filters
+   * @returns Array of velocity data points with member contributions
+   */
+  async getVelocityWithMembers(filters: TeamProfileFilters): Promise<TeamProfileVelocityWithMembers[]> {
+    this.validateTeam(filters.team, 'getVelocityWithMembers');
+    this.validateTimeframe(filters.timeframeDays, 'getVelocityWithMembers');
+
+    const aggregationPeriod = this.getAggregationPeriod(filters.timeframeDays);
+    this.validateAggregationPeriod(aggregationPeriod, 'getVelocityWithMembers');
+    this.logger.debug(CLASS_NAME, 'getVelocityWithMembers', `Fetching velocity with members per ${aggregationPeriod} for team ${filters.team}`);
+
+    const startDate = this.getStartDate(filters.timeframeDays);
+
+    const result = await this.db.query<{
+      week_start: Date;
+      total_story_points: number;
+      lines_of_code: string;
+      member_name: string | null;
+      member_story_points: number;
+      member_percentage: string;
+    }>(QUERY_TEAM_PROFILE_VELOCITY_WITH_MEMBERS, [filters.team, startDate, aggregationPeriod]);
+
+    this.logger.debug(CLASS_NAME, 'getVelocityWithMembers', `Found ${result.rowCount} velocity-member data points`);
+
+    // Group results by period
+    const periodMap = new Map<string, TeamProfileVelocityWithMembers>();
+
+    for (const row of result.rows) {
+      const weekStart = row.week_start.toISOString().split('T')[0] ?? '';
+
+      if (!periodMap.has(weekStart)) {
+        periodMap.set(weekStart, {
+          weekStart,
+          totalStoryPoints: row.total_story_points,
+          linesOfCode: Number(row.lines_of_code),
+          memberContributions: [],
+        });
+      }
+
+      const period = periodMap.get(weekStart);
+      if (period && row.member_name && row.member_story_points > 0) {
+        const contribution: TeamMemberVelocityContribution = {
+          memberName: row.member_name,
+          storyPoints: row.member_story_points,
+          percentage: Number(row.member_percentage),
+        };
+
+        // Cast to mutable array to add contribution
+        (period.memberContributions as TeamMemberVelocityContribution[]).push(contribution);
+      }
+    }
+
+    return Array.from(periodMap.values());
+  }
 
   /**
    * Get top 15 most complex files with per-author contribution breakdown.

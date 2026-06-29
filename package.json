@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.53",
+  "version": "0.1.54",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -245,6 +245,11 @@
         "command": "gitrx.openJoinDiagnostic",
         "title": "Gitr: Open Join Diagnostics",
         "icon": "$(search)"
+      },
+      {
+        "command": "gitrx.openOrganizationProfile",
+        "title": "Gitr: Open Organization Profile",
+        "icon": "$(organization)"
       },
       {
         "command": "gitrx.fixRepositoryNames",
@@ -606,6 +611,22 @@
           "maximum": 500,
           "description": "Maximum number of files to analyze in a single File Contribution Report query",
           "markdownDescription": "Maximum number of files to analyze in a single File Contribution Report query. Higher values may impact performance.\n\nDefault: `100`"
+        },
+        "gitr.dashboardCacheTtlMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Time-to-live for cached dashboard queries in minutes",
+          "markdownDescription": "Time-to-live (TTL) for cached dashboard queries in minutes.\n\nCached queries expire after this duration and are refreshed on next access. Lower values ensure fresher data but increase database load.\n\nDefault: `5`"
+        },
+        "gitr.dashboardCacheMaxEntries": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "Maximum number of cached dashboard query results",
+          "markdownDescription": "Maximum number of cached dashboard query results.\n\nWhen the cache exceeds this limit, least recently used (LRU) entries are evicted. Higher values use more memory but improve cache hit rates.\n\nDefault: `100`"
         }
       }
     },
@@ -690,6 +711,11 @@
           "command": "gitrx.openRepoInTerminal",
           "when": "view == gitrx-repos && viewItem == repository",
           "group": "1_actions@3"
+        },
+        {
+          "command": "gitrx.openOrganizationProfile",
+          "when": "view == gitrx-contributors && viewItem == organization",
+          "group": "navigation@1"
         }
       ]
     }

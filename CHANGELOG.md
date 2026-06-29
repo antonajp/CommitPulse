@@ -5,6 +5,55 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.54] - 2026-06-29
+
+### Added
+
+- Add Hot Spots labels to Team Profile, remove truncation
+- Add Hot Spots labels and enhanced Hygiene Score
+- Dashboard cleanup - remove unused charts
+- Organization Profile Sprint Velocity Chart with Team Colors
+- Sprint Velocity Chart with Member Colors on Team Profile
+- Primary Sprint Velocity chart with team context
+- Multi-Instance Organization Profile Panels
+- Multi-Instance Team Profile Panels
+- Multi-Instance Developer Profile Panels
+- Add Dashboard Query Caching Service
+- Add File Types toggle to Technology Stack pie chart
+- Knowledge Concentration developer color coding (Team Profile)
+- Add context menu for organization nodes in TreeView
+- Add 3-level hierarchy to Contributors TreeView
+- Add partial data coverage handling for Organization Profile
+- Add Hot Spots and Knowledge Concentration charts to Organization Profile
+- Add Team-Colored File Charts for Org Profile Dashboard
+- Add Organization Profile Charts
+- Add Organization Summary & KPI Cards
+- Add Organization Profile Panel Manager
+- Add Organization Profile Data Service skeleton
+- Add organization profile SQL queries
+- Create organizations and teams tables
+
+### Changed
+
+- Add migration upgrade instructions for existing users
+- Add Organization Profile Dashboard user stories WBS
+
+### Fixed
+
+- Remove stale velocity chart element references
+- Remove duplicate Sprint Velocity chart
+- Restore formatWeekDate utility function
+- Add null-safety to Team Profile requestAllData
+- Remove duplicate cachedVelocityWithMembers declaration
+- Remove duplicate cachedOrgVelocityWithTeams declaration
+- Fix incorrect .ts/.tsx category mapping in vw_technology_stack_category view
+- Organization Profile Dashboard bug fixes
+- Add Organization Profile to Charts TreeView
+
+### Technical
+
+- Add comprehensive integration tests for Organization Profile
+
 ## [0.1.53] - 2026-06-29
 
 ### Fixed

@@ -67,7 +67,7 @@ contributor_loc AS (
     cf.filename,
     COALESCE(cc.full_name, cc.login) AS contributor,
     cc.team AS team,
-    COALESCE(SUM(cf.line_inserts), 0)::BIGINT AS loc
+    COALESCE(SUM(cf.line_inserts - COALESCE(cf.line_deletes, 0)), 0)::BIGINT AS loc
   FROM commit_files cf
   INNER JOIN commit_history ch ON cf.sha = ch.sha
   LEFT JOIN commit_contributors cc ON ch.author = cc.login
@@ -128,7 +128,7 @@ team_loc AS (
   SELECT
     cf.filename,
     COALESCE(cc.team, 'Unassigned') AS contributor,
-    COALESCE(SUM(cf.line_inserts), 0)::BIGINT AS loc
+    COALESCE(SUM(cf.line_inserts - COALESCE(cf.line_deletes, 0)), 0)::BIGINT AS loc
   FROM commit_files cf
   INNER JOIN commit_history ch ON cf.sha = ch.sha
   LEFT JOIN commit_contributors cc ON ch.author = cc.login

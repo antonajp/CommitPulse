@@ -21,8 +21,8 @@
  */
 
 import * as vscode from 'vscode';
-import { generateLocWeekChartScript, generateTableRenderingScripts, generateGitx156ChartScripts, generateVelocityChartScript, generateTestDebtChartScript } from './dev-profile-charts.js';
-import { generateGitx156HtmlSections } from './dev-profile-html-sections.js';
+import { generateLocWeekChartScript, generateTableRenderingScripts, generateGitx156ChartScripts, generateVelocityChartScript } from './dev-profile-charts.js';
+import { generateGitx156HtmlSections, generatePrimaryVelocityChartHtml } from './dev-profile-html-sections.js';
 
 /**
  * Configuration for generating the developer profile HTML.
@@ -154,6 +154,7 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
     </section>
 
     <main class="devprofile-grid" id="mainContent">
+${generatePrimaryVelocityChartHtml()}
       <!-- LOC per Week Chart -->
       <section class="card card-wide" id="locWeekCard" aria-label="Lines of Code Chart">
         <h2>Lines of Code</h2>
@@ -254,7 +255,6 @@ ${generateGitx156HtmlSections()}
       let cachedHygieneScore = null;
       let cachedVelocityData = [];
       let velocityDataAvailable = false;
-      let cachedTestDebtMetrics = null;
       let complexFilesSortKey = 'complexityScore';
       let complexFilesSortDir = 'desc';
       let frequentFilesSortKey = 'modificationCount';
@@ -377,7 +377,6 @@ ${generateGitx156HtmlSections()}
         showSkeleton('commentsWeekSkeleton');
         showSkeleton('testsWeekSkeleton');
         showSkeleton('velocitySkeleton');
-        showSkeleton('testDebtSkeleton');
         document.getElementById('locWeekChart').classList.add('hidden');
         document.getElementById('complexFilesTable').classList.add('hidden');
         document.getElementById('frequentFilesTable').classList.add('hidden');
@@ -387,8 +386,6 @@ ${generateGitx156HtmlSections()}
         document.getElementById('commentsWeekChart').classList.add('hidden');
         document.getElementById('testsWeekChart').classList.add('hidden');
         document.getElementById('velocityChart').classList.add('hidden');
-        document.getElementById('testDebtChart').classList.add('hidden');
-        document.getElementById('testDebtMetrics').classList.add('hidden');
         document.getElementById('locWeekEmpty').classList.add('hidden');
         document.getElementById('complexFilesEmpty').classList.add('hidden');
         document.getElementById('frequentFilesEmpty').classList.add('hidden');
@@ -398,8 +395,6 @@ ${generateGitx156HtmlSections()}
         document.getElementById('testsWeekEmpty').classList.add('hidden');
         document.getElementById('velocityEmpty').classList.add('hidden');
         document.getElementById('velocityHint').classList.add('hidden');
-        document.getElementById('testDebtEmpty').classList.add('hidden');
-        document.getElementById('testDebtSuccess').classList.add('hidden');
         hideEmptyState();
         vscode.postMessage({
           type: 'requestAllData',
@@ -478,7 +473,6 @@ ${generateLocWeekChartScript()}
 ${generateTableRenderingScripts()}
 ${generateGitx156ChartScripts()}
 ${generateVelocityChartScript()}
-${generateTestDebtChartScript()}
 
       // ======================================================================
       // Message Handler
@@ -544,6 +538,10 @@ ${generateTestDebtChartScript()}
           case 'techStackData':
             renderTechStackChart(msg.data);
             break;
+          // GITX-214: Tech stack by extension data handler
+          case 'techStackByExtensionData':
+            handleTechStackByExtensionData(msg.data);
+            break;
           case 'hygieneScoreData':
             renderHygieneScore(msg.data);
             break;
@@ -564,10 +562,6 @@ ${generateTestDebtChartScript()}
               renderVelocityChart(cachedVelocityData);
             }
             break;
-          case 'testDebtMetricsData':
-            cachedTestDebtMetrics = msg.data;
-            renderTestDebtChart(msg.data);
-            break;
           case 'error':
             hideEmptyState();
             showError(msg.message);
@@ -580,7 +574,6 @@ ${generateTestDebtChartScript()}
             hideSkeleton('commentsWeekSkeleton');
             hideSkeleton('testsWeekSkeleton');
             hideSkeleton('velocitySkeleton');
-            hideSkeleton('testDebtSkeleton');
             break;
         }
       });
@@ -669,10 +662,13 @@ ${generateTestDebtChartScript()}
       showSkeleton('commentsWeekSkeleton');
       showSkeleton('testsWeekSkeleton');
       showSkeleton('velocitySkeleton');
-      showSkeleton('testDebtSkeleton');
 
       // GITX-157: Initialize lazy loading for charts
       initLazyLoading();
+
+      // GITX-214: Initialize tech stack toggle and restore state
+      initTechStackToggle();
+      restoreTechStackToggleState();
 
       // Request developers list immediately on webview load
       // This ensures data loads even if initialState message is delayed

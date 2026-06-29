@@ -70,6 +70,17 @@ export interface TeamProfileTechStack {
 }
 
 /**
+ * Technology stack by file extension data point for doughnut chart.
+ * GITX-214: Aggregates LOC by file extension (e.g., .ts, .py, .md).
+ */
+export interface TeamProfileTechStackByExtension {
+  readonly extension: string;
+  readonly repository: string;
+  readonly locCount: number;
+  readonly percentage: number;
+}
+
+/**
  * Comments per period data point for line chart.
  * Can represent weekly or monthly data depending on timeframe.
  */
@@ -136,6 +147,30 @@ export interface TeamProfileVelocityPoint {
   readonly linesOfCode: number; // Lines of code committed
   readonly issueCount: number; // Number of issues completed
   readonly commitCount: number; // Number of commits
+}
+
+/**
+ * GITX-200: Per-member story point contribution for stacked velocity chart.
+ * Used for displaying stacked bars where each segment represents a team member's contribution.
+ */
+export interface TeamMemberVelocityContribution {
+  /** Team member display name */
+  readonly memberName: string;
+  /** Story points completed by this member in the period */
+  readonly storyPoints: number;
+  /** Percentage of team total for this period */
+  readonly percentage: number;
+}
+
+/**
+ * GITX-200: Sprint velocity data with per-member breakdown for stacked bar chart.
+ * Enables color-coded member contribution visualization on Team Profile.
+ */
+export interface TeamProfileVelocityWithMembers {
+  readonly weekStart: string; // YYYY-MM-DD (start of week or month)
+  readonly totalStoryPoints: number; // Team total story points
+  readonly linesOfCode: number; // Team total LOC
+  readonly memberContributions: readonly TeamMemberVelocityContribution[];
 }
 
 /**

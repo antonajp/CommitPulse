@@ -69,6 +69,17 @@ export interface DevProfileTechStack {
 }
 
 /**
+ * Technology stack by file extension data point for doughnut chart.
+ * GITX-214: Aggregates LOC by file extension (e.g., .ts, .py, .md).
+ */
+export interface DevProfileTechStackByExtension {
+  readonly extension: string;
+  readonly locCount: number;
+  readonly percentage: number;
+  readonly repository: string;
+}
+
+/**
  * Comments per period data point for line chart.
  * Ticket: GITX-156, GITX-179
  * GITX-179: Can represent weekly or monthly data depending on timeframe.
@@ -127,12 +138,15 @@ export interface DevProfileFilters {
 /**
  * Sprint velocity vs LOC data point for dual-axis chart.
  * Correlates story points completed with lines of code committed per period.
- * Ticket: GITX-157, GITX-179
+ * Ticket: GITX-157, GITX-179, GITX-199
  * GITX-179: Can represent weekly or monthly data depending on timeframe.
+ * GITX-199: Added teamStoryPoints for stacked bar visualization showing developer
+ * contribution against team total.
  */
 export interface DevProfileVelocityPoint {
   readonly weekStart: string; // YYYY-MM-DD (start of week or month)
-  readonly storyPoints: number; // Story points from Linear/Jira
+  readonly storyPoints: number; // Story points from Linear/Jira (developer's contribution)
+  readonly teamStoryPoints: number; // Total team story points for the period (GITX-199)
   readonly linesOfCode: number; // Lines of code committed
   readonly issueCount: number; // Number of issues completed
   readonly commitCount: number; // Number of commits
