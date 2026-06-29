@@ -24,10 +24,7 @@ export function generateTeamProfileRiskChartsScript(): string {
         low: '#2a9d8f',       // teal
       };
 
-      /**
-       * Cached data for hot spots chart.
-       */
-      var cachedHotSpotsData = [];
+      // Note: cachedHotSpotsData is declared in team-profile-html.ts main script block
 
       /**
        * Render the Hot Spots bubble chart.
@@ -229,10 +226,7 @@ export function generateTeamProfileRiskChartsScript(): string {
         low: '#16a34a',       // green-600
       };
 
-      /**
-       * Cached data for knowledge concentration chart.
-       */
-      var cachedKnowledgeData = [];
+      // Note: cachedKnowledgeData is declared in team-profile-html.ts main script block
 
       /**
        * Get initials from a contributor name.
