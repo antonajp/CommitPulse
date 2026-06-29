@@ -15,9 +15,11 @@
  * 'teamCoupling' added in IQS-910 for cross-team coupling chord diagram.
  * 'architectureDrift' added in IQS-918 for architecture drift heat map.
  * 'joinDiagnostic' added in GITX-183 for debugging chart data joins.
+ * 'organizationProfile' added in GITX-205 for organization-level analytics dashboard.
  */
 export type ChartType =
   | 'allMetricsDashboard'
+  | 'organizationProfile'
   | 'commitVelocity'
   | 'teamScorecard'
   | 'fileComplexity'

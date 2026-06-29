@@ -26,6 +26,7 @@ import { generateGitx156HtmlSectionsForTeamProfile } from './dev-profile-html-se
 import { generateTeamProfileFileChartsScript } from './d3-team-profile-file-charts.js';
 import { generateTeamProfileRiskChartsScript } from './d3-team-profile-risk-charts.js';
 import { generateTeamProfileChartSections } from './team-profile-html-sections.js';
+import { generateTeamVelocityChartScript } from './team-velocity-chart.js';
 
 /**
  * Configuration for generating the team profile HTML.
@@ -157,9 +158,31 @@ export function generateTeamProfileHtml(config: TeamProfileHtmlConfig): string {
     </section>
 
     <main class="devprofile-grid" id="mainContent">
-      <!-- LOC per Week Chart -->
-      <section class="card card-wide" id="locWeekCard" aria-label="Lines of Code Chart">
-        <h2>Lines of Code</h2>
+      <!-- GITX-200: Sprint Velocity vs LOC Chart (Primary) -->
+      <section class="card card-wide" id="sprintVelocityCard" aria-label="Sprint Velocity Chart">
+        <h2>Sprint Velocity vs Lines of Code</h2>
+        <div class="chart-container">
+          <div class="chart-skeleton" id="sprintVelocitySkeleton" aria-hidden="true"></div>
+          <div id="sprintVelocityChart" class="d3-chart hidden" role="img" aria-label="Stacked bar chart showing team member story point contributions with LOC overlay"></div>
+        </div>
+        <p class="card-empty hidden" id="sprintVelocityEmpty">No velocity data available for the selected timeframe.</p>
+        <p class="card-hint hidden" id="sprintVelocityHint">Click legend items to toggle visibility. Colors are assigned by team member.</p>
+        <p class="card-hint hidden" id="sprintVelocityNoJira">Connect Jira to see Sprint Velocity. Showing Lines of Code only.</p>
+        <details class="chart-explanation">
+          <summary>Understanding this chart</summary>
+          <p>This chart shows team velocity (story points) as stacked colored bars per time period, with each color representing a team member's contribution. The LOC trend line shows lines of code committed by the team.</p>
+          <ul>
+            <li><strong>Left Y-axis:</strong> Story points (stacked total)</li>
+            <li><strong>Right Y-axis:</strong> Lines of code</li>
+            <li><strong>Bar colors:</strong> One color per team member (max 10, others grouped as "Other Members")</li>
+            <li><strong>Legend:</strong> Click to toggle member visibility</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- LOC by Repository Chart (moved after Sprint Velocity per GITX-200) -->
+      <section class="card card-wide" id="locWeekCard" aria-label="Lines of Code by Repository">
+        <h2>Lines of Code by Repository</h2>
         <div class="chart-container">
           <div class="chart-skeleton" id="locWeekSkeleton" aria-hidden="true"></div>
           <div id="locWeekChart" class="d3-chart hidden" role="img" aria-label="Line chart showing lines of code by repository"></div>
@@ -194,6 +217,8 @@ ${generateTeamProfileChartSections()}
     <div id="locTooltip" class="chart-tooltip" role="tooltip" aria-hidden="true"></div>
     <!-- GITX-186: Tooltip for team file charts -->
     <div id="teamFileTooltip" class="chart-tooltip" role="tooltip" aria-hidden="true"></div>
+    <!-- GITX-200: Tooltip for team velocity chart -->
+    <div id="teamVelocityTooltip" class="chart-tooltip" role="tooltip" aria-hidden="true"></div>
   </div>
 
   <script nonce="${nonce}" src="${d3Uri.toString()}"></script>
@@ -213,6 +238,7 @@ ${generateTeamProfileChartSections()}
       let cachedTestsWeek = [];
       let cachedHygieneScore = null;
       let cachedVelocityData = [];
+      let cachedVelocityWithMembers = [];
       let velocityDataAvailable = false;
       // GITX-188: Hot Spots and Knowledge Concentration
       let cachedHotSpotsData = [];
@@ -274,6 +300,11 @@ ${generateTeamProfileChartSections()}
         if (skeleton) { skeleton.classList.add('hidden'); }
       }
 
+      function hideById(id) {
+        var el = document.getElementById(id);
+        if (el) { el.classList.add('hidden'); }
+      }
+
       function showSummarySkeleton() {
         document.querySelectorAll('.summary-card-skeleton').forEach(function(el) {
           el.classList.remove('hidden');
@@ -324,6 +355,8 @@ ${generateTeamProfileChartSections()}
         if (!currentTeam) { return; }
         hideError();
         showSummarySkeleton();
+        // GITX-200: Sprint Velocity chart skeleton
+        showSkeleton('sprintVelocitySkeleton');
         showSkeleton('locWeekSkeleton');
         showSkeleton('complexFilesSkeleton');
         showSkeleton('frequentFilesSkeleton');
@@ -335,31 +368,37 @@ ${generateTeamProfileChartSections()}
         // GITX-188: Hot Spots and Knowledge Concentration
         showSkeleton('hotSpotsSkeleton');
         showSkeleton('knowledgeSkeleton');
-        document.getElementById('locWeekChart').classList.add('hidden');
+        // GITX-200: Sprint Velocity chart (use hideById for null-safety)
+        hideById('sprintVelocityChart');
+        hideById('locWeekChart');
         // GITX-186: Use chart containers instead of table elements
-        document.getElementById('complexFilesChart').classList.add('hidden');
-        document.getElementById('frequentFilesChart').classList.add('hidden');
-        document.getElementById('techStackChart').classList.add('hidden');
-        document.getElementById('hygieneGauge').classList.add('hidden');
-        document.getElementById('hygieneBreakdown').classList.add('hidden');
-        document.getElementById('commentsWeekChart').classList.add('hidden');
-        document.getElementById('testsWeekChart').classList.add('hidden');
-        document.getElementById('velocityChart').classList.add('hidden');
+        hideById('complexFilesChart');
+        hideById('frequentFilesChart');
+        hideById('techStackChart');
+        hideById('hygieneGauge');
+        hideById('hygieneBreakdown');
+        hideById('commentsWeekChart');
+        hideById('testsWeekChart');
+        hideById('velocityChart');
         // GITX-188: Hot Spots and Knowledge Concentration
-        document.getElementById('hotSpotsChart').classList.add('hidden');
-        document.getElementById('knowledgeChart').classList.add('hidden');
-        document.getElementById('locWeekEmpty').classList.add('hidden');
-        document.getElementById('complexFilesEmpty').classList.add('hidden');
-        document.getElementById('frequentFilesEmpty').classList.add('hidden');
-        document.getElementById('techStackEmpty').classList.add('hidden');
-        document.getElementById('hygieneEmpty').classList.add('hidden');
-        document.getElementById('commentsWeekEmpty').classList.add('hidden');
-        document.getElementById('testsWeekEmpty').classList.add('hidden');
-        document.getElementById('velocityEmpty').classList.add('hidden');
-        document.getElementById('velocityHint').classList.add('hidden');
+        hideById('hotSpotsChart');
+        hideById('knowledgeChart');
+        // GITX-200: Sprint Velocity empty state
+        hideById('sprintVelocityEmpty');
+        hideById('sprintVelocityHint');
+        hideById('sprintVelocityNoJira');
+        hideById('locWeekEmpty');
+        hideById('complexFilesEmpty');
+        hideById('frequentFilesEmpty');
+        hideById('techStackEmpty');
+        hideById('hygieneEmpty');
+        hideById('commentsWeekEmpty');
+        hideById('testsWeekEmpty');
+        hideById('velocityEmpty');
+        hideById('velocityHint');
         // GITX-188: Hot Spots and Knowledge Concentration
-        document.getElementById('hotSpotsEmpty').classList.add('hidden');
-        document.getElementById('knowledgeEmpty').classList.add('hidden');
+        hideById('hotSpotsEmpty');
+        hideById('knowledgeEmpty');
         hideEmptyState();
         vscode.postMessage({
           type: 'requestTeamAllData',
@@ -425,6 +464,7 @@ ${generateTeamProfileFileChartsScript()}
 ${generateTeamProfileRiskChartsScript()}
 ${generateGitx156ChartScripts()}
 ${generateVelocityChartScript()}
+${generateTeamVelocityChartScript()}
 
       // ======================================================================
       // Message Handler
@@ -480,6 +520,10 @@ ${generateVelocityChartScript()}
           case 'teamTechStackData':
             renderTechStackChart(msg.data);
             break;
+          // GITX-214: Tech stack by extension data handler
+          case 'teamTechStackByExtensionData':
+            handleTechStackByExtensionData(msg.data);
+            break;
           case 'teamHygieneScoreData':
             renderHygieneScore(msg.data);
             break;
@@ -493,10 +537,18 @@ ${generateVelocityChartScript()}
             cachedVelocityData = msg.data;
             renderVelocityChart(msg.data);
             break;
+          // GITX-200: Sprint Velocity with member breakdown
+          case 'teamVelocityWithMembersData':
+            cachedVelocityWithMembers = msg.data;
+            renderTeamVelocityChart(msg.data);
+            break;
           case 'teamHasVelocityData':
             velocityDataAvailable = msg.hasData;
             if (cachedVelocityData.length > 0) {
               renderVelocityChart(cachedVelocityData);
+            }
+            if (cachedVelocityWithMembers.length > 0) {
+              renderTeamVelocityChart(cachedVelocityWithMembers);
             }
             break;
           // GITX-188: Hot Spots and Knowledge Concentration
@@ -512,6 +564,8 @@ ${generateVelocityChartScript()}
             hideEmptyState();
             showError(msg.message);
             hideSummarySkeleton();
+            // GITX-200: Sprint Velocity skeleton
+            hideSkeleton('sprintVelocitySkeleton');
             hideSkeleton('locWeekSkeleton');
             hideSkeleton('complexFilesSkeleton');
             hideSkeleton('frequentFilesSkeleton');
@@ -565,6 +619,8 @@ ${generateVelocityChartScript()}
       // Initialization
       // ======================================================================
       showSummarySkeleton();
+      // GITX-200: Sprint Velocity chart skeleton
+      showSkeleton('sprintVelocitySkeleton');
       showSkeleton('locWeekSkeleton');
       showSkeleton('complexFilesSkeleton');
       showSkeleton('frequentFilesSkeleton');
@@ -576,6 +632,10 @@ ${generateVelocityChartScript()}
       // GITX-188: Hot Spots and Knowledge Concentration
       showSkeleton('hotSpotsSkeleton');
       showSkeleton('knowledgeSkeleton');
+
+      // GITX-214: Initialize tech stack toggle and restore state
+      initTechStackToggle();
+      restoreTechStackToggleState();
 
       requestTeams();
     })();

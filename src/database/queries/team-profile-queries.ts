@@ -123,6 +123,109 @@ export const QUERY_TEAM_PROFILE_HAS_VELOCITY_DATA = `
 `;
 
 // ============================================================================
+// GITX-200: Sprint Velocity with Member Breakdown Queries
+// ============================================================================
+
+/**
+ * Query to fetch sprint velocity with per-member breakdown for stacked bar chart.
+ * Returns story points aggregated per period with member-level contributions.
+ * GITX-200: Enables color-coded member contribution visualization.
+ *
+ * Parameters:
+ *   $1 - team name (TEXT)
+ *   $2 - start date (DATE)
+ *   $3 - aggregation period ('week' or 'month') (TEXT)
+ */
+export const QUERY_TEAM_PROFILE_VELOCITY_WITH_MEMBERS = `
+  WITH team_members AS (
+    SELECT DISTINCT login, full_name, email, jira_name
+    FROM commit_contributors
+    WHERE team = $1
+  ),
+  team_commits AS (
+    SELECT
+      DATE_TRUNC($3, ch.commit_date)::date AS week_start,
+      COALESCE(SUM(cf.line_inserts - COALESCE(cf.line_deletes, 0)), 0)::bigint AS lines_of_code
+    FROM commit_history ch
+    LEFT JOIN commit_files cf ON cf.sha = ch.sha
+    JOIN team_members tm ON (
+      ch.author = tm.full_name
+      OR (tm.full_name IS NULL AND ch.author = tm.login)
+    )
+    WHERE ch.commit_date >= $2
+      AND ch.is_merge = FALSE
+    GROUP BY week_start
+  ),
+  linear_member_points AS (
+    SELECT
+      DATE_TRUNC($3, ld.completed_date)::date AS week_start,
+      COALESCE(tm.full_name, tm.login) AS member_name,
+      COALESCE(SUM(ld.calculated_story_points), 0)::int AS story_points
+    FROM linear_detail ld
+    JOIN team_members tm ON (
+      ld.assignee = tm.email OR ld.assignee = tm.login OR ld.assignee = tm.full_name
+    )
+    WHERE ld.completed_date >= $2
+      AND ld.state IN ('Done', 'Completed')
+    GROUP BY week_start, member_name
+  ),
+  jira_member_points AS (
+    SELECT
+      DATE_TRUNC($3, jh.change_date)::date AS week_start,
+      COALESCE(tm.full_name, tm.login) AS member_name,
+      COALESCE(SUM(jd.calculated_story_points), 0)::int AS story_points
+    FROM jira_history jh
+    JOIN jira_detail jd ON jh.jira_key = jd.jira_key
+    JOIN team_members tm ON jd.assignee = COALESCE(tm.jira_name, tm.full_name)
+    WHERE jh.change_date >= $2
+      AND jh.field = 'status'
+      AND jh.to_value IN ('Done', 'Closed', 'Resolved')
+    GROUP BY week_start, member_name
+  ),
+  all_member_points AS (
+    SELECT week_start, member_name, story_points FROM linear_member_points
+    UNION ALL
+    SELECT week_start, member_name, story_points FROM jira_member_points
+  ),
+  aggregated_member_points AS (
+    SELECT
+      week_start,
+      member_name,
+      SUM(story_points)::int AS story_points
+    FROM all_member_points
+    GROUP BY week_start, member_name
+  ),
+  period_totals AS (
+    SELECT
+      week_start,
+      SUM(story_points)::int AS total_story_points
+    FROM aggregated_member_points
+    GROUP BY week_start
+  ),
+  all_periods AS (
+    SELECT DISTINCT week_start FROM team_commits
+    UNION
+    SELECT DISTINCT week_start FROM aggregated_member_points
+  )
+  SELECT
+    ap.week_start,
+    COALESCE(pt.total_story_points, 0) AS total_story_points,
+    COALESCE(tc.lines_of_code, 0) AS lines_of_code,
+    amp.member_name,
+    COALESCE(amp.story_points, 0) AS member_story_points,
+    CASE
+      WHEN COALESCE(pt.total_story_points, 0) > 0
+      THEN ROUND((COALESCE(amp.story_points, 0)::numeric / pt.total_story_points) * 100, 1)
+      ELSE 0
+    END AS member_percentage
+  FROM all_periods ap
+  LEFT JOIN team_commits tc ON tc.week_start = ap.week_start
+  LEFT JOIN period_totals pt ON pt.week_start = ap.week_start
+  LEFT JOIN aggregated_member_points amp ON amp.week_start = ap.week_start
+  ORDER BY ap.week_start ASC, amp.story_points DESC NULLS LAST
+`;
+
+// ============================================================================
 // GITX-188: Hot Spots Queries for Team Profile
 // ============================================================================
 

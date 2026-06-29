@@ -36,6 +36,14 @@ export const CHART_CATALOG: readonly ChartDefinition[] = [
     icon: 'dashboard',
   },
   {
+    type: 'organizationProfile',
+    label: 'Organization Profile',
+    category: 'Overview',
+    command: 'gitrx.openOrganizationProfile',
+    description: 'Organization-level analytics',
+    icon: 'organization',
+  },
+  {
     type: 'commitVelocity',
     label: 'Commit Velocity',
     category: 'Productivity',

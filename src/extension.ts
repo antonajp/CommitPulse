@@ -31,6 +31,7 @@ import { ComplexityTrendPanel } from './views/webview/complexity-trend-panel.js'
 import { DevProfilePanel } from './views/webview/dev-profile-panel.js';
 import { TeamProfilePanel } from './views/webview/team-profile-panel.js';
 import { JoinDiagnosticPanel } from './views/webview/join-diagnostic-panel.js';
+import { OrganizationProfilePanel } from './views/webview/org-profile-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 
 /**
@@ -793,7 +794,8 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
   });
   disposables.push(openComplexityTrendDisposable);
 
-  // gitrx.openDeveloperProfile - Open the Developer Profile dashboard (GITX-155)
+  // gitrx.openDeveloperProfile - Open the Developer Profile dashboard (GITX-155, GITX-195)
+  // GITX-195: Always creates a new panel for multi-instance side-by-side comparison
   const openDevProfileDisposable = vscode.commands.registerCommand('gitrx.openDeveloperProfile', (developer?: string) => {
     logger?.info(CLASS_NAME, 'openDeveloperProfile', `Command executed: gitrx.openDeveloperProfile${developer ? ` for ${developer}` : ''}`);
 
@@ -804,7 +806,8 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
       return;
     }
 
-    DevProfilePanel.createOrShow(context.extensionUri, secretService, developer);
+    // GITX-195: Use create() instead of createOrShow() for multi-instance support
+    DevProfilePanel.create(context.extensionUri, secretService, developer);
   });
   disposables.push(openDevProfileDisposable);
 
@@ -819,7 +822,8 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
       return;
     }
 
-    TeamProfilePanel.createOrShow(context.extensionUri, secretService, team);
+    // GITX-196: Use create() instead of createOrShow() for multi-instance support
+    TeamProfilePanel.create(context.extensionUri, secretService, team);
   });
   disposables.push(openTeamProfileDisposable);
 
@@ -837,6 +841,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     JoinDiagnosticPanel.createOrShow(context.extensionUri, secretService);
   });
   disposables.push(openJoinDiagnosticDisposable);
+
+  // gitrx.openOrganizationProfile - Open the Organization Profile dashboard (GITX-205)
+  const openOrgProfileDisposable = vscode.commands.registerCommand('gitrx.openOrganizationProfile', (organization?: string) => {
+    logger?.info(CLASS_NAME, 'openOrganizationProfile', `Command executed: gitrx.openOrganizationProfile${organization ? ` for ${organization}` : ''}`);
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'openOrganizationProfile', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    OrganizationProfilePanel.createOrShow(context.extensionUri, secretService, organization);
+  });
+  disposables.push(openOrgProfileDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }

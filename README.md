@@ -341,6 +341,38 @@ The database uses a named volume (`gitrx-pgdata`) for data persistence. Running 
 
 Migrations are applied automatically on first container startup via the init script at `docker/init/01_run_migrations.sh`.
 
+### Upgrading from Version 0.1.53 or Earlier
+
+If you installed CommitPulse before version 0.1.54, you need to manually apply new database migrations. The PostgreSQL init script only runs on first container creation, so existing databases won't receive new migrations automatically.
+
+**Apply all pending migrations:**
+
+```bash
+# From the repository root directory
+for migration in docker/migrations/*.sql; do
+  # Skip rollback files
+  [[ "$migration" == *.rollback.sql ]] && continue
+  echo "Applying: $migration"
+  docker exec -i gitrx-postgres psql -U gitrx_admin -d gitrx < "$migration"
+done
+```
+
+**Or apply a specific migration:**
+
+```bash
+docker exec -i gitrx-postgres psql -U gitrx_admin -d gitrx < docker/migrations/030_create_organizations_teams_tables.sql
+```
+
+**Alternative — Fresh start (loses all data):**
+
+```bash
+docker compose down -v && docker compose up -d
+```
+
+This removes the data volume and recreates the container, which runs all migrations automatically.
+
+> **Note:** Migration 030 introduces the `organizations` and `teams` tables required for the Organization Profile Dashboard. Without this migration, opening the Organization Profile will show a "relation does not exist" error.
+
 ---
 
 ## TreeViews

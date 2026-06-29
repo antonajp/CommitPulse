@@ -21,6 +21,7 @@
 
 import { LoggerService } from '../logging/logger.js';
 import { PipelineRepository } from '../database/pipeline-repository.js';
+import { DashboardCacheService } from './dashboard-cache-service.js';
 import { GitAnalysisService } from './git-analysis-service.js';
 import { GitHubService } from './github-service.js';
 import { JiraIncrementalLoader } from './jira-incremental-loader.js';
@@ -256,6 +257,9 @@ export class PipelineService {
     const totalDurationMs = Date.now() - startTime;
 
     this.logFinalSummary(stepResults, tableCounts, totalDurationMs);
+
+    // GITX-194: Invalidate dashboard cache after pipeline completion
+    this.invalidateDashboardCache();
 
     this.logger.critical(CLASS_NAME, 'runPipeline', `Pipeline run complete: status=${status}, duration=${totalDurationMs}ms`);
 
@@ -719,5 +723,20 @@ export class PipelineService {
     const skippedCount = stepResults.filter((r) => r.status === 'SKIPPED').length;
 
     this.logger.critical(CLASS_NAME, 'logFinalSummary', `Total: ${successCount} succeeded, ${errorCount} failed, ${skippedCount} skipped (${totalDurationMs}ms)`);
+  }
+
+  /**
+   * Invalidate dashboard cache after pipeline completion.
+   * GITX-194: Ensures dashboard queries return fresh data after pipeline run.
+   */
+  private invalidateDashboardCache(): void {
+    try {
+      const cacheService = DashboardCacheService.getInstance();
+      cacheService.onPipelineComplete();
+      this.logger.debug(CLASS_NAME, 'invalidateDashboardCache', 'Dashboard cache invalidated after pipeline completion');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(CLASS_NAME, 'invalidateDashboardCache', `Failed to invalidate dashboard cache: ${message}`);
+    }
   }
 }

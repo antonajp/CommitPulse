@@ -1,7 +1,7 @@
 /**
  * Developer Profile Dashboard webview panel manager.
- * Creates and manages a VS Code WebviewPanel with:
- * - Singleton pattern (only one panel at a time)
+ * Creates and manages VS Code WebviewPanels with:
+ * - Multi-instance pattern (multiple panels can be open simultaneously for different developers)
  * - Message routing between webview and extension host
  * - D3.js v7 bundled as a local resource
  * - CSP nonce generation for script authorization
@@ -9,8 +9,9 @@
  * - Proper disposal and resource cleanup
  * - Pre-selection of developer when opened from TreeView (accepts login, webview converts to full_name)
  * - Developer filtering by full_name (with login fallback - GITX-169)
+ * - Shared dashboard cache service across all instances (GITX-194, GITX-195)
  *
- * Ticket: GITX-155, GITX-169
+ * Ticket: GITX-155, GITX-169, GITX-195
  */
 
 import * as vscode from 'vscode';
@@ -27,6 +28,7 @@ import type {
   DevProfileHostToWebview,
   DevProfileTimeframe,
 } from './dev-profile-protocol.js';
+// GITX-195: DashboardCacheService is used internally by DevProfileDataService (singleton pattern)
 
 /**
  * Class name constant for structured logging context.
@@ -40,14 +42,15 @@ const VIEW_TYPE = 'gitrx.devProfilePanel';
 
 /**
  * Manages the Developer Profile Dashboard WebviewPanel lifecycle.
- * Implements singleton pattern: only one panel exists at a time.
- * Re-reveals existing panel if user triggers the command again.
+ * GITX-195: Implements multi-instance pattern - multiple panels can be open simultaneously
+ * for different developers, enabling side-by-side comparison.
  */
 export class DevProfilePanel implements vscode.Disposable {
   /**
-   * Singleton panel instance. Null when no panel is open.
+   * Track all active panel instances for testing and cleanup.
+   * GITX-195: Replaces singleton pattern with collection for multi-instance support.
    */
-  private static currentPanel: DevProfilePanel | undefined;
+  private static activePanels: Set<DevProfilePanel> = new Set();
 
   private readonly logger: LoggerService;
   private readonly panel: vscode.WebviewPanel;
@@ -67,38 +70,37 @@ export class DevProfilePanel implements vscode.Disposable {
   private isDisposed = false;
 
   /**
-   * Create or reveal the Developer Profile panel.
-   * If a panel already exists, it is brought to the front.
-   * If no panel exists, a new one is created.
+   * Create a new Developer Profile panel.
+   * GITX-195: Always creates a new panel instance (no singleton). Multiple panels can be open
+   * simultaneously for different developers, enabling side-by-side comparison.
    *
    * @param extensionUri - The URI of the extension's root directory
    * @param secretService - SecretStorageService for database password retrieval
-   * @param developer - Optional pre-selected developer login
+   * @param developer - Optional pre-selected developer login (used in panel title)
+   * @returns The newly created DevProfilePanel instance
    */
-  static createOrShow(
+  static create(
     extensionUri: vscode.Uri,
     secretService: SecretStorageService,
     developer?: string,
-  ): void {
+  ): DevProfilePanel {
     const logger = LoggerService.getInstance();
-    logger.info(CLASS_NAME, 'createOrShow', `Opening Developer Profile panel${developer ? ` for ${developer}` : ''}`);
+    logger.info(CLASS_NAME, 'create', `Creating new Developer Profile panel${developer ? ` for ${developer}` : ''}`);
 
-    // If panel exists, reveal it and optionally update developer
-    if (DevProfilePanel.currentPanel) {
-      logger.debug(CLASS_NAME, 'createOrShow', 'Existing panel found, revealing');
-      if (developer) {
-        DevProfilePanel.currentPanel.setDeveloper(developer);
-      }
-      DevProfilePanel.currentPanel.panel.reveal(vscode.ViewColumn.One);
-      return;
-    }
+    // GITX-195: Determine view column - open beside if another editor/panel is active
+    const column = vscode.window.activeTextEditor
+      ? vscode.ViewColumn.Beside
+      : vscode.ViewColumn.One;
 
-    // Create a new panel
-    logger.debug(CLASS_NAME, 'createOrShow', 'Creating new webview panel');
+    logger.debug(CLASS_NAME, 'create', `Creating new webview panel in column ${column}`);
+
+    // GITX-195: Panel title includes developer name for identification
+    const panelTitle = developer ? `Dev Profile: ${developer}` : 'Developer Profile';
+
     const panel = vscode.window.createWebviewPanel(
       VIEW_TYPE,
-      'Developer Profile',
-      vscode.ViewColumn.One,
+      panelTitle,
+      column,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -108,11 +110,26 @@ export class DevProfilePanel implements vscode.Disposable {
       },
     );
 
-    DevProfilePanel.currentPanel = new DevProfilePanel(panel, extensionUri, secretService, developer);
+    return new DevProfilePanel(panel, extensionUri, secretService, developer);
   }
 
   /**
-   * Private constructor — use createOrShow() to create instances.
+   * @deprecated Use create() instead. This method exists for backward compatibility
+   * but will be removed in a future version.
+   * GITX-195: createOrShow is replaced by create() for multi-instance support.
+   */
+  static createOrShow(
+    extensionUri: vscode.Uri,
+    secretService: SecretStorageService,
+    developer?: string,
+  ): void {
+    // Delegate to create() for backward compatibility
+    DevProfilePanel.create(extensionUri, secretService, developer);
+  }
+
+  /**
+   * Private constructor — use create() to create instances.
+   * GITX-195: Each instance has independent state and shares the cache service.
    */
   private constructor(
     panel: vscode.WebviewPanel,
@@ -129,8 +146,13 @@ export class DevProfilePanel implements vscode.Disposable {
       minIntervalMs: DEFAULT_RATE_LIMIT_INTERVAL_MS,
       className: CLASS_NAME,
     });
+    // GITX-195: Cache service is shared via singleton - accessed through DevProfileDataService
 
-    this.logger.debug(CLASS_NAME, 'constructor', 'Initializing DevProfilePanel');
+    this.logger.debug(CLASS_NAME, 'constructor', `Initializing DevProfilePanel for developer: ${developer ?? 'none'}`);
+
+    // GITX-195: Track this panel in the active set
+    DevProfilePanel.activePanels.add(this);
+    this.logger.debug(CLASS_NAME, 'constructor', `Active panels count: ${DevProfilePanel.activePanels.size}`);
 
     // Set the webview HTML content
     this.updateWebviewContent();
@@ -161,15 +183,20 @@ export class DevProfilePanel implements vscode.Disposable {
       });
     }, 100);
 
-    this.logger.info(CLASS_NAME, 'constructor', 'DevProfilePanel initialized successfully');
+    this.logger.info(CLASS_NAME, 'constructor', `DevProfilePanel initialized successfully for: ${developer ?? 'no developer'}`);
   }
 
   /**
-   * Set the selected developer and notify the webview.
+   * Set the selected developer, update the panel title, and notify the webview.
+   * GITX-195: Updates panel title to reflect the selected developer.
    */
   private setDeveloper(developer: string): void {
     this.logger.debug(CLASS_NAME, 'setDeveloper', `Setting developer to: ${developer}`);
     this.selectedDeveloper = developer;
+
+    // GITX-195: Update panel title to include developer name
+    this.panel.title = `Dev Profile: ${developer}`;
+
     this.postMessage({
       type: 'initialState',
       developer: this.selectedDeveloper,
@@ -298,15 +325,15 @@ export class DevProfilePanel implements vscode.Disposable {
 
         case 'requestAllData': {
           // Request all data in parallel (including GITX-156 + GITX-157 + GITX-172 charts)
-          this.selectedDeveloper = message.developer;
+          // GITX-195: Use setDeveloper to update title and state together
+          this.setDeveloper(message.developer);
           this.selectedTimeframe = message.timeframeDays;
           const filters = {
             developer: message.developer,
             timeframeDays: message.timeframeDays,
           };
           // GITX-157: Added velocityVsLoc and hasVelocityData
-          // GITX-172: Added testDebtMetrics
-          const [summary, locPerWeek, complexFiles, frequentFiles, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, hasVelocityData, testDebtMetrics] = await Promise.all([
+          const [summary, locPerWeek, complexFiles, frequentFiles, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, hasVelocityData] = await Promise.all([
             this.dataService.getSummary(filters),
             this.dataService.getLocPerWeek(filters),
             this.dataService.getTopComplexFiles(filters),
@@ -317,7 +344,6 @@ export class DevProfilePanel implements vscode.Disposable {
             this.dataService.getHygieneScore(filters),
             this.dataService.getVelocityVsLoc(filters),
             this.dataService.hasVelocityData(filters.developer),
-            this.dataService.getTestDebtMetrics(filters),
           ]);
           this.postMessage({ type: 'summaryData', data: summary });
           this.postMessage({ type: 'locPerWeekData', data: locPerWeek });
@@ -330,8 +356,6 @@ export class DevProfilePanel implements vscode.Disposable {
           // GITX-157: Send velocity data and availability status
           this.postMessage({ type: 'velocityVsLocData', data: velocityVsLoc });
           this.postMessage({ type: 'hasVelocityData', hasData: hasVelocityData });
-          // GITX-172: Send test debt metrics
-          this.postMessage({ type: 'testDebtMetricsData', data: testDebtMetrics });
           break;
         }
 
@@ -341,6 +365,16 @@ export class DevProfilePanel implements vscode.Disposable {
             timeframeDays: message.timeframeDays,
           });
           this.postMessage({ type: 'techStackData', data });
+          break;
+        }
+
+        // GITX-214: Technology stack by file extension
+        case 'requestTechStackByExtension': {
+          const data = await this.dataService.getTechStackByExtension({
+            developer: message.developer,
+            timeframeDays: message.timeframeDays,
+          });
+          this.postMessage({ type: 'techStackByExtensionData', data });
           break;
         }
 
@@ -385,16 +419,6 @@ export class DevProfilePanel implements vscode.Disposable {
           // GITX-157: Check if velocity data is available
           const hasData = await this.dataService.hasVelocityData(message.developer);
           this.postMessage({ type: 'hasVelocityData', hasData });
-          break;
-        }
-
-        case 'requestTestDebtMetrics': {
-          // GITX-172: Test debt metrics
-          const testDebtData = await this.dataService.getTestDebtMetrics({
-            developer: message.developer,
-            timeframeDays: message.timeframeDays,
-          });
-          this.postMessage({ type: 'testDebtMetricsData', data: testDebtData });
           break;
         }
 
@@ -512,6 +536,7 @@ export class DevProfilePanel implements vscode.Disposable {
   /**
    * Dispose the panel and all its resources.
    * Shuts down the database connection if one was opened.
+   * GITX-195: Removes panel from active set instead of clearing singleton.
    */
   dispose(): void {
     // GITX-175: Prevent double disposal and set flag FIRST to stop new queries
@@ -520,9 +545,11 @@ export class DevProfilePanel implements vscode.Disposable {
       return;
     }
     this.isDisposed = true;
-    this.logger.info(CLASS_NAME, 'dispose', 'Disposing DevProfilePanel');
+    this.logger.info(CLASS_NAME, 'dispose', `Disposing DevProfilePanel for: ${this.selectedDeveloper ?? 'no developer'}`);
 
-    DevProfilePanel.currentPanel = undefined;
+    // GITX-195: Remove from active panels set instead of clearing singleton
+    DevProfilePanel.activePanels.delete(this);
+    this.logger.debug(CLASS_NAME, 'dispose', `Active panels remaining: ${DevProfilePanel.activePanels.size}`);
 
     // Reset rate limiter state
     this.rateLimiter.reset();
@@ -558,10 +585,38 @@ export class DevProfilePanel implements vscode.Disposable {
   }
 
   /**
-   * Reset the singleton for testing purposes.
+   * Reset all panel tracking for testing purposes.
+   * GITX-195: Clears the active panels set instead of singleton.
    * @internal - Only use in test code
    */
   static resetForTesting(): void {
-    DevProfilePanel.currentPanel = undefined;
+    DevProfilePanel.activePanels.clear();
+  }
+
+  /**
+   * Get the count of active panels.
+   * GITX-195: Useful for testing and debugging multi-instance behavior.
+   * @returns The number of currently active DevProfilePanel instances
+   */
+  static getActivePanelCount(): number {
+    return DevProfilePanel.activePanels.size;
+  }
+
+  /**
+   * Get the developer identifier for this panel.
+   * GITX-195: Useful for testing panel state.
+   * @returns The selected developer or null
+   */
+  getDeveloper(): string | null {
+    return this.selectedDeveloper;
+  }
+
+  /**
+   * Get the timeframe for this panel.
+   * GITX-195: Useful for testing panel state.
+   * @returns The selected timeframe
+   */
+  getTimeframe(): DevProfileTimeframe {
+    return this.selectedTimeframe;
   }
 }

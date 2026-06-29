@@ -381,20 +381,31 @@ export function generateTableRenderingScripts(): string {
 // Re-export velocity chart script from separate module (GITX-157)
 export { generateVelocityChartScript } from './dev-profile-velocity-chart.js';
 
-// Re-export test debt chart script from separate module (GITX-172)
-export { generateTestDebtChartScript } from './dev-profile-test-debt-chart.js';
-
 /**
  * Generate the JavaScript code for the GITX-156 charts (tech stack, hygiene, comments, tests).
  */
 export function generateGitx156ChartScripts(): string {
   return `
       // ======================================================================
-      // GITX-156: Technology Stack Doughnut Chart
+      // GITX-156, GITX-214: Technology Stack Doughnut Chart with Toggle
       // ======================================================================
+      // GITX-214: State for tech stack toggle
+      let cachedTechStackByExtension = [];
+      let currentTechStackView = 'languages'; // 'languages' or 'extensions'
+
       function renderTechStackChart(data) {
         hideSkeleton('techStackSkeleton');
         cachedTechStack = data;
+
+        // If currently showing languages view, render the chart
+        if (currentTechStackView === 'languages') {
+          renderTechStackLanguagesView(data);
+        }
+      }
+
+      // GITX-214: Render languages (categories) view
+      function renderTechStackLanguagesView(data) {
+        document.getElementById('techStackExtEmpty').classList.add('hidden');
 
         if (!data || data.length === 0) {
           document.getElementById('techStackChart').classList.add('hidden');
@@ -424,6 +435,56 @@ export function generateGitx156ChartScripts(): string {
           };
         }).sort(function(a, b) { return b.locCount - a.locCount; });
 
+        renderTechStackDoughnut(chartData, 'category');
+      }
+
+      // GITX-214: Render file extensions view
+      function renderTechStackExtensionsView(data) {
+        document.getElementById('techStackEmpty').classList.add('hidden');
+
+        if (!data || data.length === 0) {
+          document.getElementById('techStackChart').classList.add('hidden');
+          document.getElementById('techStackExtEmpty').classList.remove('hidden');
+          return;
+        }
+
+        document.getElementById('techStackChart').classList.remove('hidden');
+        document.getElementById('techStackExtEmpty').classList.add('hidden');
+
+        // Aggregate by extension (sum across repositories)
+        var extensionMap = {};
+        data.forEach(function(d) {
+          var ext = d.extension || '(no extension)';
+          if (!extensionMap[ext]) {
+            extensionMap[ext] = 0;
+          }
+          extensionMap[ext] += d.locCount;
+        });
+
+        var extensions = Object.keys(extensionMap);
+        var totalLoc = extensions.reduce(function(sum, ext) { return sum + extensionMap[ext]; }, 0);
+        var aggregatedData = extensions.map(function(ext) {
+          return {
+            extension: ext,
+            locCount: extensionMap[ext],
+            percentage: totalLoc > 0 ? (extensionMap[ext] * 100 / totalLoc).toFixed(1) : 0
+          };
+        }).sort(function(a, b) { return b.locCount - a.locCount; });
+
+        // Top 15 extensions, rest grouped as "Other"
+        var topExtensions = aggregatedData.slice(0, 15);
+        var otherData = aggregatedData.slice(15);
+        if (otherData.length > 0) {
+          var otherTotal = otherData.reduce(function(acc, d) { return acc + d.locCount; }, 0);
+          var otherPct = totalLoc > 0 ? (otherTotal * 100 / totalLoc).toFixed(1) : 0;
+          topExtensions.push({ extension: 'Other', locCount: otherTotal, percentage: otherPct });
+        }
+
+        renderTechStackDoughnut(topExtensions, 'extension');
+      }
+
+      // GITX-214: Shared doughnut chart renderer for both views
+      function renderTechStackDoughnut(chartData, labelKey) {
         var container = document.getElementById('techStackChart');
         container.innerHTML = '';
         var width = container.clientWidth;
@@ -437,7 +498,7 @@ export function generateGitx156ChartScripts(): string {
           .append('g')
           .attr('transform', 'translate(' + (width / 3) + ',' + (height / 2) + ')');
 
-        var color = d3.scaleOrdinal().domain(chartData.map(function(d) { return d.category; })).range(CHART_COLORS);
+        var color = d3.scaleOrdinal().domain(chartData.map(function(d) { return d[labelKey]; })).range(CHART_COLORS);
 
         var pie = d3.pie().value(function(d) { return d.locCount; }).sort(null);
         var arc = d3.arc().innerRadius(radius * 0.5).outerRadius(radius);
@@ -451,21 +512,21 @@ export function generateGitx156ChartScripts(): string {
 
         arcs.append('path')
           .attr('d', arc)
-          .attr('fill', function(d) { return color(d.data.category); })
+          .attr('fill', function(d) { return color(d.data[labelKey]); })
           .attr('stroke', 'var(--vscode-editor-background)')
           .attr('stroke-width', 2)
           .attr('tabindex', 0)
           .attr('role', 'img')
           .attr('aria-label', function(d) {
-            return d.data.category + ': ' + formatNumber(d.data.locCount) + ' lines (' + d.data.percentage + '%)';
+            return d.data[labelKey] + ': ' + formatNumber(d.data.locCount) + ' lines (' + d.data.percentage + '%)';
           })
           .append('title')
           .text(function(d) {
-            return d.data.category + '\\n' + formatNumber(d.data.locCount) + ' lines\\n' + d.data.percentage + '%';
+            return d.data[labelKey] + '\\n' + formatNumber(d.data.locCount) + ' lines\\n' + d.data.percentage + '%';
           });
 
         // Add percentage labels on segments (only for segments > 5%)
-        arcs.filter(function(d) { return d.data.percentage > 5; })
+        arcs.filter(function(d) { return parseFloat(d.data.percentage) > 5; })
           .append('text')
           .attr('transform', function(d) { return 'translate(' + labelArc.centroid(d) + ')'; })
           .attr('text-anchor', 'middle')
@@ -480,13 +541,150 @@ export function generateGitx156ChartScripts(): string {
 
         chartData.forEach(function(d, i) {
           var g = legend.append('g').attr('transform', 'translate(0,' + (i * 20) + ')');
-          g.append('rect').attr('width', 12).attr('height', 12).attr('fill', color(d.category));
+          g.append('rect').attr('width', 12).attr('height', 12).attr('fill', color(d[labelKey]));
           g.append('text')
             .attr('x', 16).attr('y', 10)
             .style('fill', 'var(--vscode-foreground)')
             .style('font-size', '11px')
-            .text(truncatePath(d.category, 12) + ' (' + d.percentage + '%)');
+            .text(truncatePath(d[labelKey], 12) + ' (' + d.percentage + '%)');
         });
+      }
+
+      // GITX-214: Handle tech stack by extension data response
+      function handleTechStackByExtensionData(data) {
+        cachedTechStackByExtension = data;
+        hideSkeleton('techStackSkeleton');
+        if (currentTechStackView === 'extensions') {
+          renderTechStackExtensionsView(data);
+        }
+      }
+
+      // GITX-214: Initialize tech stack toggle
+      function initTechStackToggle() {
+        var toggleContainer = document.querySelector('#techStackCard .metric-toggle');
+        if (!toggleContainer) return;
+
+        var buttons = toggleContainer.querySelectorAll('.metric-btn');
+        buttons.forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var view = this.getAttribute('data-view');
+            if (view === currentTechStackView) return;
+
+            // Update toggle state
+            buttons.forEach(function(b) {
+              b.classList.remove('active');
+              b.setAttribute('aria-checked', 'false');
+              b.setAttribute('tabindex', '-1');
+            });
+            this.classList.add('active');
+            this.setAttribute('aria-checked', 'true');
+            this.setAttribute('tabindex', '0');
+
+            // GITX-214: ARIA live region for screen reader announcement
+            var announcement = view === 'languages' ? 'Showing Languages view' : 'Showing File Extensions view';
+            announceToScreenReader(announcement);
+
+            currentTechStackView = view;
+            // Persist state in VS Code webview state
+            var savedState = vscode.getState() || {};
+            savedState.techStackView = view;
+            vscode.setState(savedState);
+
+            // Switch view
+            if (view === 'languages') {
+              if (cachedTechStack && cachedTechStack.length > 0) {
+                renderTechStackLanguagesView(cachedTechStack);
+              } else {
+                // Request data if not cached - detect context
+                var msg = { timeframeDays: currentTimeframe };
+                if (typeof currentDeveloper !== 'undefined' && currentDeveloper) {
+                  msg.type = 'requestTechStack';
+                  msg.developer = currentDeveloper;
+                } else if (typeof currentTeam !== 'undefined' && currentTeam) {
+                  msg.type = 'requestTeamTechStack';
+                  msg.team = currentTeam;
+                } else if (typeof currentOrgId !== 'undefined' && currentOrgId) {
+                  msg.type = 'requestOrgTechStack';
+                  msg.organizationId = currentOrgId;
+                }
+                vscode.postMessage(msg);
+              }
+            } else {
+              if (cachedTechStackByExtension && cachedTechStackByExtension.length > 0) {
+                renderTechStackExtensionsView(cachedTechStackByExtension);
+              } else {
+                // Request extension data - detect context
+                showSkeleton('techStackSkeleton');
+                var msg = { timeframeDays: currentTimeframe };
+                if (typeof currentDeveloper !== 'undefined' && currentDeveloper) {
+                  msg.type = 'requestTechStackByExtension';
+                  msg.developer = currentDeveloper;
+                } else if (typeof currentTeam !== 'undefined' && currentTeam) {
+                  msg.type = 'requestTeamTechStackByExtension';
+                  msg.team = currentTeam;
+                } else if (typeof currentOrgId !== 'undefined' && currentOrgId) {
+                  msg.type = 'requestOrgTechStackByExtension';
+                  msg.organizationId = currentOrgId;
+                }
+                vscode.postMessage(msg);
+              }
+            }
+          });
+
+          // GITX-214: Keyboard navigation (Tab to toggle, Enter/Space to activate)
+          btn.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              this.click();
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+              e.preventDefault();
+              var currentBtn = this;
+              var allBtns = Array.from(buttons);
+              var currentIndex = allBtns.indexOf(currentBtn);
+              var nextIndex = e.key === 'ArrowRight' ? (currentIndex + 1) % allBtns.length : (currentIndex - 1 + allBtns.length) % allBtns.length;
+              allBtns[nextIndex].focus();
+            }
+          });
+        });
+      }
+
+      // GITX-214: Screen reader announcement helper
+      function announceToScreenReader(message) {
+        var announcement = document.getElementById('srAnnouncement');
+        if (!announcement) {
+          announcement = document.createElement('div');
+          announcement.id = 'srAnnouncement';
+          announcement.setAttribute('role', 'status');
+          announcement.setAttribute('aria-live', 'polite');
+          announcement.setAttribute('aria-atomic', 'true');
+          announcement.className = 'sr-only';
+          document.body.appendChild(announcement);
+        }
+        announcement.textContent = message;
+      }
+
+      // GITX-214: Restore tech stack toggle state from VS Code state
+      function restoreTechStackToggleState() {
+        var savedState = vscode.getState();
+        if (savedState && savedState.techStackView) {
+          currentTechStackView = savedState.techStackView;
+          var toggleContainer = document.querySelector('#techStackCard .metric-toggle');
+          if (toggleContainer) {
+            var buttons = toggleContainer.querySelectorAll('.metric-btn');
+            buttons.forEach(function(btn) {
+              var view = btn.getAttribute('data-view');
+              if (view === currentTechStackView) {
+                btn.classList.add('active');
+                btn.setAttribute('aria-checked', 'true');
+                btn.setAttribute('tabindex', '0');
+              } else {
+                btn.classList.remove('active');
+                btn.setAttribute('aria-checked', 'false');
+                btn.setAttribute('tabindex', '-1');
+              }
+            });
+          }
+        }
       }
 
       // ======================================================================

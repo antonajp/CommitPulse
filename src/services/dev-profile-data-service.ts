@@ -6,7 +6,7 @@
 import { DatabaseService } from '../database/database-service.js';
 import { LoggerService } from '../logging/logger.js';
 import {
-  QUERY_DEV_PROFILE_VELOCITY_VS_LOC,
+  QUERY_DEV_PROFILE_VELOCITY_VS_LOC_WITH_TEAM,
   QUERY_DEV_PROFILE_HAS_VELOCITY_DATA,
 } from '../database/queries/dev-profile-queries.js';
 import type {
@@ -15,6 +15,7 @@ import type {
   DevProfileComplexFile,
   DevProfileFrequentFile,
   DevProfileTechStack,
+  DevProfileTechStackByExtension,
   DevProfileCommentsWeekly,
   DevProfileTestsWeekly,
   DevProfileHygieneScore,
@@ -32,6 +33,7 @@ export type {
   DevProfileComplexFile,
   DevProfileFrequentFile,
   DevProfileTechStack,
+  DevProfileTechStackByExtension,
   DevProfileCommentsWeekly,
   DevProfileTestsWeekly,
   DevProfileHygieneScore,
@@ -541,6 +543,80 @@ export class DevProfileDataService {
   }
 
   /**
+   * Get technology stack by file extension for doughnut chart.
+   * GITX-214: Returns file extensions with LOC counts and percentages.
+   * Filters by full_name with fallback to login for NULL full_name.
+   *
+   * @param filters - Developer and timeframe filters (developer is full_name)
+   * @returns Array of tech stack data points by file extension
+   */
+  async getTechStackByExtension(filters: DevProfileFilters): Promise<DevProfileTechStackByExtension[]> {
+    this.validateDeveloper(filters.developer, 'getTechStackByExtension');
+    this.validateTimeframe(filters.timeframeDays, 'getTechStackByExtension');
+
+    this.logger.debug(CLASS_NAME, 'getTechStackByExtension', `Fetching tech stack by extension for ${filters.developer}`);
+
+    const startDate = this.getStartDate(filters.timeframeDays);
+
+    const sql = `
+      WITH dev_contributions AS (
+        SELECT
+          LOWER(COALESCE(NULLIF(cf.file_extension, ''),
+            CASE
+              WHEN cf.filename LIKE '%Dockerfile%' THEN 'Dockerfile'
+              WHEN cf.filename LIKE '%Makefile%' THEN 'Makefile'
+              WHEN cf.filename LIKE '%.gitignore' THEN '.gitignore'
+              WHEN cf.filename LIKE '%.env%' THEN '.env'
+              ELSE '(no extension)'
+            END
+          )) AS extension,
+          ch.repository,
+          COALESCE(SUM(cf.line_inserts), 0)::bigint AS loc_count
+        FROM commit_files cf
+        JOIN commit_history ch ON cf.sha = ch.sha
+        JOIN commit_contributors cc ON ch.author = cc.login
+        WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
+          AND ch.commit_date >= $2
+          AND ch.is_merge = FALSE
+          AND cf.line_inserts IS NOT NULL
+        GROUP BY extension, ch.repository
+      ),
+      total_loc AS (
+        SELECT COALESCE(SUM(loc_count), 0) AS total FROM dev_contributions
+      )
+      SELECT
+        dc.extension,
+        dc.repository,
+        dc.loc_count,
+        CASE
+          WHEN tl.total > 0 THEN ROUND((dc.loc_count * 100.0 / tl.total)::numeric, 2)
+          ELSE 0
+        END AS percentage
+      FROM dev_contributions dc
+      CROSS JOIN total_loc tl
+      WHERE dc.loc_count > 0
+      ORDER BY dc.loc_count DESC
+      LIMIT 20
+    `;
+
+    const result = await this.db.query<{
+      extension: string;
+      repository: string;
+      loc_count: string;
+      percentage: string;
+    }>(sql, [filters.developer, startDate]);
+
+    this.logger.debug(CLASS_NAME, 'getTechStackByExtension', `Found ${result.rowCount} file extensions`);
+
+    return result.rows.map((row) => ({
+      extension: row.extension,
+      repository: row.repository,
+      locCount: Number(row.loc_count),
+      percentage: Number(row.percentage),
+    }));
+  }
+
+  /**
    * Get comments added per period for the line chart.
    * Filters by full_name with fallback to login for NULL full_name.
    * Uses total_comment_lines column (always populated during commit ingestion).
@@ -761,8 +837,10 @@ export class DevProfileDataService {
    * Get sprint velocity vs LOC data for the dual-axis chart.
    * Correlates story points from Linear/Jira with lines of code committed.
    * Uses commit_contributors.email -> Linear/Jira assignee mapping.
-   * Ticket: GITX-157, GITX-179
+   * Ticket: GITX-157, GITX-179, GITX-199
    * GITX-179: Uses dynamic aggregation (week for < 365 days, month for >= 365 days).
+   * GITX-199: Includes team story points for stacked bar visualization showing
+   * developer contribution against team total.
    *
    * @param filters - Developer and timeframe filters
    * @returns Array of velocity data points per period (week or month)
@@ -777,20 +855,22 @@ export class DevProfileDataService {
 
     const startDate = this.getStartDate(filters.timeframeDays);
 
-    // GITX-179: Pass aggregation period as third parameter
+    // GITX-199: Use query that includes team totals for stacked bar chart
     const result = await this.db.query<{
       week_start: Date;
       story_points: number;
+      team_story_points: number;
       lines_of_code: string;
       issue_count: number;
       commit_count: number;
-    }>(QUERY_DEV_PROFILE_VELOCITY_VS_LOC, [filters.developer, startDate, aggregationPeriod]);
+    }>(QUERY_DEV_PROFILE_VELOCITY_VS_LOC_WITH_TEAM, [filters.developer, startDate, aggregationPeriod]);
 
     this.logger.debug(CLASS_NAME, 'getVelocityVsLoc', `Found ${result.rowCount} ${aggregationPeriod}ly velocity data points`);
 
     return result.rows.map((row) => ({
       weekStart: row.week_start.toISOString().split('T')[0] ?? '',
       storyPoints: row.story_points,
+      teamStoryPoints: row.team_story_points,
       linesOfCode: Number(row.lines_of_code),
       issueCount: row.issue_count,
       commitCount: row.commit_count,

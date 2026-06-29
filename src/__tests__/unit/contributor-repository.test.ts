@@ -414,17 +414,32 @@ describe('ContributorRepository', () => {
   });
 
   // --------------------------------------------------------------------------
-  // GITX-169: Contributor grouping by full_name
+  // GITX-169, GITX-211: Contributor grouping by full_name with organization support
   // --------------------------------------------------------------------------
 
-  describe('getContributorSummaries (GITX-169)', () => {
+  describe('getContributorSummaries (GITX-169, GITX-211)', () => {
+    /**
+     * Helper to mock the table existence check query.
+     * GITX-211: The query now first checks if organizations table exists.
+     */
+    function mockTableExistsCheck(tableExists: boolean): void {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ table_exists: tableExists }],
+        rowCount: 1,
+      });
+    }
+
     it('should group multiple logins with same full_name', async () => {
+      // First call: check if organizations table exists
+      mockTableExistsCheck(false);
+      // Second call: actual contributor query
       mockQuery.mockResolvedValueOnce({
         rows: [{
           full_name: 'Alice Smith',
           logins: 'alice,alice.smith',
           vendor: 'Company',
           team: 'Engineering',
+          organization_name: null,
           repo_list: 'repo-a,repo-b',
           commit_count: 150,
         }],
@@ -438,11 +453,13 @@ describe('ContributorRepository', () => {
       expect(result[0]?.logins).toBe('alice,alice.smith');
       expect(result[0]?.vendor).toBe('Company');
       expect(result[0]?.team).toBe('Engineering');
+      expect(result[0]?.organizationName).toBeNull();
       expect(result[0]?.repoList).toBe('repo-a,repo-b');
       expect(result[0]?.commitCount).toBe(150);
     });
 
     it('should handle NULL full_name with login fallback', async () => {
+      mockTableExistsCheck(false);
       mockQuery.mockResolvedValueOnce({
         rows: [{
           // COALESCE(cc.full_name, STRING_AGG(DISTINCT cc.login, ',')) returns login when full_name is NULL
@@ -450,6 +467,7 @@ describe('ContributorRepository', () => {
           logins: 'bot-user',
           vendor: null,
           team: null,
+          organization_name: null,
           repo_list: null,
           commit_count: 5,
         }],
@@ -465,12 +483,14 @@ describe('ContributorRepository', () => {
     });
 
     it('should aggregate commits across multiple logins', async () => {
+      mockTableExistsCheck(false);
       mockQuery.mockResolvedValueOnce({
         rows: [{
           full_name: 'Bob Jones',
           logins: 'bob,bob.jones,bjones',
           vendor: 'Acme Corp',
           team: 'Data',
+          organization_name: null,
           repo_list: 'repo-c',
           commit_count: 250,
         }],
@@ -485,6 +505,7 @@ describe('ContributorRepository', () => {
     });
 
     it('should handle same full_name with different teams separately', async () => {
+      mockTableExistsCheck(false);
       // Edge case: same person on multiple teams (should show as separate entries)
       mockQuery.mockResolvedValueOnce({
         rows: [
@@ -493,6 +514,7 @@ describe('ContributorRepository', () => {
             logins: 'charlie',
             vendor: 'Company',
             team: 'Engineering',
+            organization_name: null,
             repo_list: 'repo-a',
             commit_count: 100,
           },
@@ -501,6 +523,7 @@ describe('ContributorRepository', () => {
             logins: 'charlie',
             vendor: 'Company',
             team: 'Data',
+            organization_name: null,
             repo_list: 'repo-b',
             commit_count: 50,
           },
@@ -518,6 +541,7 @@ describe('ContributorRepository', () => {
     });
 
     it('should return empty array when no contributors', async () => {
+      mockTableExistsCheck(false);
       mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
       const result = await repo.getContributorSummaries();
@@ -525,6 +549,7 @@ describe('ContributorRepository', () => {
     });
 
     it('should handle mixed NULL and non-NULL full_names', async () => {
+      mockTableExistsCheck(false);
       mockQuery.mockResolvedValueOnce({
         rows: [
           {
@@ -532,6 +557,7 @@ describe('ContributorRepository', () => {
             logins: 'alice',
             vendor: 'Company',
             team: 'Engineering',
+            organization_name: null,
             repo_list: 'repo-a',
             commit_count: 150,
           },
@@ -541,6 +567,7 @@ describe('ContributorRepository', () => {
             logins: 'bot',
             vendor: null,
             team: null,
+            organization_name: null,
             repo_list: null,
             commit_count: 5,
           },
@@ -553,6 +580,51 @@ describe('ContributorRepository', () => {
       expect(result).toHaveLength(2);
       expect(result[0]?.fullName).toBe('Alice Smith');
       expect(result[1]?.fullName).toBe('bot');
+    });
+
+    it('should include organization_name when organizations table exists', async () => {
+      mockTableExistsCheck(true);
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          full_name: 'Alice Smith',
+          logins: 'alice',
+          vendor: 'Company',
+          team: 'Engineering',
+          organization_name: 'Acme Corp',
+          repo_list: 'repo-a',
+          commit_count: 150,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await repo.getContributorSummaries();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.fullName).toBe('Alice Smith');
+      expect(result[0]?.organizationName).toBe('Acme Corp');
+    });
+
+    it('should use base query when table existence check fails', async () => {
+      // First call: check throws error
+      mockQuery.mockRejectedValueOnce(new Error('Table check failed'));
+      // Second call: base query
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          full_name: 'Alice Smith',
+          logins: 'alice',
+          vendor: 'Company',
+          team: 'Engineering',
+          organization_name: null,
+          repo_list: 'repo-a',
+          commit_count: 150,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await repo.getContributorSummaries();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.fullName).toBe('Alice Smith');
     });
   });
 });

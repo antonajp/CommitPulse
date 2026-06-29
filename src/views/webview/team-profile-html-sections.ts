@@ -2,14 +2,18 @@
  * HTML section generators for Team Profile Dashboard.
  * GITX-188: Adds Hot Spots and Knowledge Concentration charts,
  * excludes Test Debt Risk Analysis (team-specific version).
+ * GITX-193: Knowledge Concentration treemap color-coded by developer.
+ * GITX-214: Technology Stack toggle between Languages and File Extensions.
  *
- * Ticket: GITX-188
+ * Ticket: GITX-188, GITX-193, GITX-214
  */
 
 /**
  * Generate the HTML for Team Profile-specific chart sections.
  * GITX-188: Includes Hot Spots and Knowledge Concentration,
  * excludes Test Debt Risk Analysis.
+ * GITX-193: Knowledge Concentration treemap color-coded by developer
+ * with interactive legend to filter developers.
  */
 export function generateTeamProfileChartSections(): string {
   return `
@@ -33,20 +37,23 @@ export function generateTeamProfileChartSections(): string {
         </details>
       </section>
 
-      <!-- GITX-188: Knowledge Concentration Treemap -->
+      <!-- GITX-188/GITX-193: Knowledge Concentration Treemap with Developer Color Coding -->
       <section class="card card-wide" id="knowledgeCard" aria-label="Knowledge Concentration">
         <h2>Knowledge Concentration (Top 30 At-Risk Files)</h2>
+        <p class="chart-description">Files color-coded by top contributor. Click legend to filter developers.</p>
         <div class="chart-container">
           <div class="chart-skeleton" id="knowledgeSkeleton" aria-hidden="true"></div>
-          <div id="knowledgeChart" class="d3-chart hidden" role="img" aria-label="Treemap showing knowledge concentration: tile size=commits, color=concentration risk"></div>
+          <div id="knowledgeChart" class="d3-chart hidden" role="img" aria-label="Treemap showing knowledge concentration: tile size=commits, color=developer"></div>
         </div>
+        <div id="knowledgeLegend" class="org-knowledge-legend hidden" role="img" aria-label="Developer color legend"></div>
         <p class="card-empty hidden" id="knowledgeEmpty">No knowledge concentration data available. Run the pipeline to analyze repositories.</p>
         <details class="chart-explanation">
           <summary>What is Knowledge Concentration?</summary>
           <p>Knowledge concentration measures how much code ownership is concentrated in single contributors (bus factor risk). Files with high concentration risk may become maintenance issues if the primary contributor leaves.</p>
           <ul>
             <li><strong>Tile size:</strong> Number of commits to the file</li>
-            <li><strong>Tile color:</strong> Concentration risk level</li>
+            <li><strong>Tile color:</strong> Top contributor (Okabe-Ito colorblind-safe palette)</li>
+            <li><strong>Legend:</strong> Click to toggle developer visibility</li>
             <li><span class="tier-badge tier-critical">Critical</span> Single contributor owns 90%+ of commits</li>
             <li><span class="tier-badge tier-high">High</span> Single contributor owns 80-90% of commits</li>
             <li><span class="tier-badge tier-medium">Medium</span> Single contributor owns 60-80% of commits</li>

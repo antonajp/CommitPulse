@@ -5,8 +5,9 @@ vi.mock('vscode', () => import('../__mocks__/vscode.js'));
 import { generateTeamProfileHtml, type TeamProfileHtmlConfig } from '../../views/webview/team-profile-html.js';
 
 /**
- * Unit tests for Team Profile HTML generation (GITX-185).
- * Tests for CSP compliance, team selector, and summary cards.
+ * Unit tests for Team Profile HTML generation (GITX-185, GITX-193).
+ * Tests for CSP compliance, team selector, summary cards, and
+ * Knowledge Concentration developer color coding legend.
  */
 describe('team-profile-html', () => {
   const mockConfig: TeamProfileHtmlConfig = {
@@ -225,6 +226,47 @@ describe('team-profile-html', () => {
     it('should include header with title', () => {
       const html = generateTeamProfileHtml(mockConfig);
       expect(html).toContain('<h1>Team Profile</h1>');
+    });
+
+    // GITX-193: Knowledge Concentration developer color coding
+    describe('Knowledge Concentration chart (GITX-193)', () => {
+      it('should include knowledge concentration chart section', () => {
+        const html = generateTeamProfileHtml(mockConfig);
+        expect(html).toContain('id="knowledgeCard"');
+        expect(html).toContain('id="knowledgeChart"');
+      });
+
+      it('should include developer legend container', () => {
+        const html = generateTeamProfileHtml(mockConfig);
+        expect(html).toContain('id="knowledgeLegend"');
+        expect(html).toContain('org-knowledge-legend');
+      });
+
+      it('should describe chart as color-coded by developer', () => {
+        const html = generateTeamProfileHtml(mockConfig);
+        expect(html).toContain('color-coded by top contributor');
+        expect(html).toContain('Click legend to filter developers');
+      });
+
+      it('should include empty state for knowledge concentration', () => {
+        const html = generateTeamProfileHtml(mockConfig);
+        expect(html).toContain('id="knowledgeEmpty"');
+      });
+
+      it('should include knowledge concentration message handler', () => {
+        const html = generateTeamProfileHtml(mockConfig);
+        expect(html).toContain("case 'teamKnowledgeConcentrationData':");
+      });
+
+      it('should call renderTeamKnowledgeChart in message handler', () => {
+        const html = generateTeamProfileHtml(mockConfig);
+        expect(html).toContain('renderTeamKnowledgeChart(msg.data)');
+      });
+
+      it('should cache knowledge data', () => {
+        const html = generateTeamProfileHtml(mockConfig);
+        expect(html).toContain('cachedKnowledgeData = msg.data');
+      });
     });
   });
 });

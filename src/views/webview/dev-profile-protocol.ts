@@ -20,11 +20,11 @@ import type {
   DevProfileDeveloper,
   DevProfileTimeframe,
   DevProfileTechStack,
+  DevProfileTechStackByExtension,
   DevProfileCommentsWeekly,
   DevProfileTestsWeekly,
   DevProfileHygieneScore,
   DevProfileVelocityPoint,
-  DevProfileTestDebtMetrics,
 } from '../../services/dev-profile-data-service.js';
 
 // Re-export types for convenience
@@ -36,11 +36,11 @@ export type {
   DevProfileDeveloper,
   DevProfileTimeframe,
   DevProfileTechStack,
+  DevProfileTechStackByExtension,
   DevProfileCommentsWeekly,
   DevProfileTestsWeekly,
   DevProfileHygieneScore,
   DevProfileVelocityPoint,
-  DevProfileTestDebtMetrics,
 } from '../../services/dev-profile-data-service.js';
 
 // ============================================================================
@@ -125,6 +125,16 @@ export interface RequestTechStack {
 }
 
 /**
+ * Request to load technology stack by file extension.
+ * GITX-214: File Extensions view for Technology Stack toggle.
+ */
+export interface RequestTechStackByExtension {
+  readonly type: 'requestTechStackByExtension';
+  readonly developer: string;
+  readonly timeframeDays: DevProfileTimeframe;
+}
+
+/**
  * Request to load comments per week data.
  * The developer field should contain full_name (preferred) or login (fallback).
  * Ticket: GITX-156
@@ -179,17 +189,6 @@ export interface RequestHasVelocityData {
 }
 
 /**
- * Request to load test debt metrics for a developer.
- * The developer field should contain full_name (preferred) or login (fallback).
- * Ticket: GITX-172
- */
-export interface RequestTestDebtMetrics {
-  readonly type: 'requestTestDebtMetrics';
-  readonly developer: string;
-  readonly timeframeDays: DevProfileTimeframe;
-}
-
-/**
  * Union type of all messages sent from the webview to the extension host.
  */
 export type DevProfileWebviewToHost =
@@ -201,12 +200,12 @@ export type DevProfileWebviewToHost =
   | RequestOpenFile
   | RequestAllData
   | RequestTechStack
+  | RequestTechStackByExtension
   | RequestCommentsPerWeek
   | RequestTestsPerWeek
   | RequestHygieneScore
   | RequestVelocityVsLoc
-  | RequestHasVelocityData
-  | RequestTestDebtMetrics;
+  | RequestHasVelocityData;
 
 // ============================================================================
 // Extension -> Webview (Responses)
@@ -280,6 +279,15 @@ export interface ResponseTechStack {
 }
 
 /**
+ * Response with technology stack by file extension.
+ * GITX-214: File Extensions view for Technology Stack toggle.
+ */
+export interface ResponseTechStackByExtension {
+  readonly type: 'techStackByExtensionData';
+  readonly data: readonly DevProfileTechStackByExtension[];
+}
+
+/**
  * Response with comments per week data.
  * Ticket: GITX-156
  */
@@ -325,15 +333,6 @@ export interface ResponseHasVelocityData {
 }
 
 /**
- * Response with test debt metrics data.
- * Ticket: GITX-172
- */
-export interface ResponseTestDebtMetrics {
-  readonly type: 'testDebtMetricsData';
-  readonly data: DevProfileTestDebtMetrics;
-}
-
-/**
  * Union type of all messages sent from the extension host to the webview.
  */
 export type DevProfileHostToWebview =
@@ -344,10 +343,10 @@ export type DevProfileHostToWebview =
   | ResponseTopFrequentFiles
   | ResponseInitialState
   | ResponseTechStack
+  | ResponseTechStackByExtension
   | ResponseCommentsPerWeek
   | ResponseTestsPerWeek
   | ResponseHygieneScore
   | ResponseVelocityVsLoc
   | ResponseHasVelocityData
-  | ResponseTestDebtMetrics
   | ResponseError;

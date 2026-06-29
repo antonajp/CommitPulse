@@ -20,10 +20,12 @@ import type {
   TeamProfileTeam,
   TeamProfileTimeframe,
   TeamProfileTechStack,
+  TeamProfileTechStackByExtension,
   TeamProfileCommentsWeekly,
   TeamProfileTestsWeekly,
   TeamProfileHygieneScore,
   TeamProfileVelocityPoint,
+  TeamProfileVelocityWithMembers,
   TeamProfileComplexFileWithContributors,
   TeamProfileFrequentFileWithContributors,
   TeamProfileHotSpot,
@@ -39,10 +41,12 @@ export type {
   TeamProfileTeam,
   TeamProfileTimeframe,
   TeamProfileTechStack,
+  TeamProfileTechStackByExtension,
   TeamProfileCommentsWeekly,
   TeamProfileTestsWeekly,
   TeamProfileHygieneScore,
   TeamProfileVelocityPoint,
+  TeamProfileVelocityWithMembers,
   TeamProfileComplexFileWithContributors,
   TeamProfileFrequentFileWithContributors,
   TeamProfileHotSpot,
@@ -120,6 +124,16 @@ export interface RequestTeamAllData {
  */
 export interface RequestTeamTechStack {
   readonly type: 'requestTeamTechStack';
+  readonly team: string;
+  readonly timeframeDays: TeamProfileTimeframe;
+}
+
+/**
+ * Request to load technology stack by file extension for a team.
+ * GITX-214: File Extensions view for Technology Stack toggle.
+ */
+export interface RequestTeamTechStackByExtension {
+  readonly type: 'requestTeamTechStackByExtension';
   readonly team: string;
   readonly timeframeDays: TeamProfileTimeframe;
 }
@@ -212,6 +226,16 @@ export interface RequestTeamKnowledgeConcentration {
 }
 
 /**
+ * Request to load velocity with member breakdown for stacked bar chart.
+ * GITX-200: Sprint Velocity chart with member colors on Team Profile.
+ */
+export interface RequestTeamVelocityWithMembers {
+  readonly type: 'requestTeamVelocityWithMembers';
+  readonly team: string;
+  readonly timeframeDays: TeamProfileTimeframe;
+}
+
+/**
  * Union type of all messages sent from the webview to the extension host.
  */
 export type TeamProfileWebviewToHost =
@@ -223,11 +247,13 @@ export type TeamProfileWebviewToHost =
   | RequestOpenFile
   | RequestTeamAllData
   | RequestTeamTechStack
+  | RequestTeamTechStackByExtension
   | RequestTeamCommentsPerWeek
   | RequestTeamTestsPerWeek
   | RequestTeamHygieneScore
   | RequestTeamVelocityVsLoc
   | RequestTeamHasVelocityData
+  | RequestTeamVelocityWithMembers
   | RequestTeamComplexFilesChart
   | RequestTeamFrequentFilesChart
   | RequestTeamHotSpots
@@ -302,6 +328,15 @@ export interface ResponseTeamInitialState {
 export interface ResponseTeamTechStack {
   readonly type: 'teamTechStackData';
   readonly data: readonly TeamProfileTechStack[];
+}
+
+/**
+ * Response with technology stack by file extension for a team.
+ * GITX-214: File Extensions view for Technology Stack toggle.
+ */
+export interface ResponseTeamTechStackByExtension {
+  readonly type: 'teamTechStackByExtensionData';
+  readonly data: readonly TeamProfileTechStackByExtension[];
 }
 
 /**
@@ -386,6 +421,15 @@ export interface ResponseTeamKnowledgeConcentration {
 }
 
 /**
+ * Response with velocity data including per-member breakdown.
+ * GITX-200: Sprint Velocity chart with member colors on Team Profile.
+ */
+export interface ResponseTeamVelocityWithMembers {
+  readonly type: 'teamVelocityWithMembersData';
+  readonly data: readonly TeamProfileVelocityWithMembers[];
+}
+
+/**
  * Union type of all messages sent from the extension host to the webview.
  */
 export type TeamProfileHostToWebview =
@@ -396,11 +440,13 @@ export type TeamProfileHostToWebview =
   | ResponseTeamTopFrequentFiles
   | ResponseTeamInitialState
   | ResponseTeamTechStack
+  | ResponseTeamTechStackByExtension
   | ResponseTeamCommentsPerWeek
   | ResponseTeamTestsPerWeek
   | ResponseTeamHygieneScore
   | ResponseTeamVelocityVsLoc
   | ResponseTeamHasVelocityData
+  | ResponseTeamVelocityWithMembers
   | ResponseTeamComplexFilesChart
   | ResponseTeamFrequentFilesChart
   | ResponseTeamHotSpots

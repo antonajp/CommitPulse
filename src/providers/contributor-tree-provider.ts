@@ -2,13 +2,24 @@ import * as vscode from 'vscode';
 import { LoggerService } from '../logging/logger.js';
 import type {
   ContributorSummaryRow,
-  ContributorTreeNodeData,
   ContributorViewMode,
 } from './contributor-tree-types.js';
 import { ContributorRepository } from '../database/contributor-repository.js';
 import { DatabaseService, buildConfigFromSettings } from '../database/database-service.js';
 import { SecretStorageService } from '../config/secret-storage.js';
 import { getSettings } from '../config/settings.js';
+import {
+  ContributorTreeItem,
+  ICONS,
+  UNASSIGNED_TEAM_LABEL,
+  UNASSIGNED_ORG_LABEL,
+  buildContributorDetailNodes,
+  buildContributorNode,
+  buildEmptyNode,
+} from './contributor-tree-builders.js';
+
+// Re-export ContributorTreeItem for consumers
+export { ContributorTreeItem } from './contributor-tree-builders.js';
 
 /**
  * Class name constant for structured logging context.
@@ -16,68 +27,19 @@ import { getSettings } from '../config/settings.js';
 const CLASS_NAME = 'ContributorTreeProvider';
 
 /**
- * Label used for contributors with no team assignment.
- */
-const UNASSIGNED_TEAM_LABEL = '(Unassigned)';
-
-/**
- * ThemeIcon identifiers used for tree nodes.
- * Using built-in VS Code codicons for consistent theming.
- */
-const ICONS = {
-  team: new vscode.ThemeIcon('organization'),
-  contributor: new vscode.ThemeIcon('person'),
-  contributorCompany: new vscode.ThemeIcon('shield'),
-  detail: new vscode.ThemeIcon('info'),
-  commits: new vscode.ThemeIcon('git-commit'),
-  vendor: new vscode.ThemeIcon('briefcase'),
-  repos: new vscode.ThemeIcon('repo'),
-  name: new vscode.ThemeIcon('account'),
-  warning: new vscode.ThemeIcon('warning'),
-  info: new vscode.ThemeIcon('info'),
-  listFlat: new vscode.ThemeIcon('list-flat'),
-  listTree: new vscode.ThemeIcon('list-tree'),
-} as const;
-
-/**
- * ContributorTreeItem extends vscode.TreeItem with typed node data.
- * Each item carries a ContributorTreeNodeData payload for context menu
- * discrimination and child resolution.
- */
-export class ContributorTreeItem extends vscode.TreeItem {
-  public readonly nodeData: ContributorTreeNodeData;
-
-  constructor(
-    nodeData: ContributorTreeNodeData,
-    collapsibleState: vscode.TreeItemCollapsibleState,
-  ) {
-    super(nodeData.label, collapsibleState);
-    this.nodeData = nodeData;
-    this.contextValue = nodeData.type;
-    if (nodeData.description !== undefined) {
-      this.description = nodeData.description;
-    }
-    if (nodeData.tooltip !== undefined) {
-      this.tooltip = nodeData.tooltip;
-    }
-  }
-}
-
-/**
  * ContributorTreeProvider implements vscode.TreeDataProvider<ContributorTreeItem>
- * for the gitrx-contributors TreeView. Displays contributors organized by team
- * or as a flat alphabetical list.
+ * for the gitrx-contributors TreeView.
  *
- * Root nodes (grouped mode): each unique team from max_num_count_per_login.
- * Child nodes per team: contributors belonging to that team.
- * Contributor details: login, full_name, vendor, commit count, repo list.
- *
- * Root nodes (flat mode): all contributors listed alphabetically.
+ * GITX-211: 3-level hierarchy support:
+ * - grouped mode: Organization (root) -> Teams (children) -> Contributors (grandchildren)
+ * - team mode: Team (root) -> Contributors (children) (legacy 2-level mode)
+ * - flat mode: All contributors listed alphabetically
  *
  * Data sourced from commit_contributors + gitja_team_contributor +
  * max_num_count_per_login via ContributorRepository.getContributorSummaries().
  *
  * Ticket: IQS-867
+ * Ticket: GITX-211 - 3-level hierarchy (Organization -> Team -> Contributor)
  */
 export class ContributorTreeProvider
   implements vscode.TreeDataProvider<ContributorTreeItem>, vscode.Disposable
@@ -104,7 +66,10 @@ export class ContributorTreeProvider
   private dataLoaded = false;
 
   /**
-   * Current display mode: 'grouped' (by team) or 'flat' (alphabetical).
+   * Current display mode:
+   * - 'grouped': Organization root nodes with team and contributor children (GITX-211)
+   * - 'team': Team root nodes with contributor children (legacy 2-level mode)
+   * - 'flat': All contributors listed alphabetically
    */
   private viewMode: ContributorViewMode = 'grouped';
 
@@ -131,14 +96,29 @@ export class ContributorTreeProvider
   }
 
   /**
-   * Toggle between grouped (by team) and flat display modes.
+   * Toggle between grouped (by org), team (by team only), and flat display modes.
+   * Cycles: grouped -> team -> flat -> grouped
    * Fires a tree data change event to rebuild the entire tree.
+   *
+   * GITX-211: Now supports 3 modes.
    *
    * @returns The new view mode label for display in notifications
    */
   toggleViewMode(): string {
-    this.viewMode = this.viewMode === 'grouped' ? 'flat' : 'grouped';
-    const modeLabel = this.viewMode === 'grouped' ? 'Group by Team' : 'Flat List';
+    if (this.viewMode === 'grouped') {
+      this.viewMode = 'team';
+    } else if (this.viewMode === 'team') {
+      this.viewMode = 'flat';
+    } else {
+      this.viewMode = 'grouped';
+    }
+
+    const modeLabels: Record<ContributorViewMode, string> = {
+      grouped: 'Group by Organization',
+      team: 'Group by Team',
+      flat: 'Flat List',
+    };
+    const modeLabel = modeLabels[this.viewMode];
     this.logger.info(CLASS_NAME, 'toggleViewMode', `View mode toggled to: ${modeLabel}`);
     this._onDidChangeTreeData.fire();
     return modeLabel;
@@ -163,6 +143,8 @@ export class ContributorTreeProvider
    * Get child elements for a given parent, or root elements if parent is undefined.
    * Required by vscode.TreeDataProvider.
    *
+   * GITX-211: Supports 3-level hierarchy (organization -> team -> contributor).
+   *
    * @param element - The parent element, or undefined for root nodes
    * @returns Array of child ContributorTreeItem nodes
    */
@@ -184,8 +166,16 @@ export class ContributorTreeProvider
       return this.getRootNodes();
     }
 
+    // GITX-211: Handle organization node -> return team children
+    if (element.nodeData.type === 'organization') {
+      return this.getOrganizationChildNodes(element.nodeData.organizationName ?? UNASSIGNED_ORG_LABEL);
+    }
+
     if (element.nodeData.type === 'team') {
-      return this.getTeamChildNodes(element.nodeData.teamName ?? UNASSIGNED_TEAM_LABEL);
+      return this.getTeamChildNodes(
+        element.nodeData.teamName ?? UNASSIGNED_TEAM_LABEL,
+        element.nodeData.organizationName,
+      );
     }
 
     if (element.nodeData.type === 'contributor') {
@@ -206,21 +196,97 @@ export class ContributorTreeProvider
   private getRootNodes(): ContributorTreeItem[] {
     if (this.contributorCache.length === 0) {
       this.logger.info(CLASS_NAME, 'getRootNodes', 'No contributor data available');
-      return [this.buildEmptyNode()];
+      return [buildEmptyNode()];
     }
 
     if (this.viewMode === 'grouped') {
-      return this.getGroupedRootNodes();
+      return this.getOrganizationRootNodes();
+    }
+    if (this.viewMode === 'team') {
+      return this.getTeamRootNodes();
     }
     return this.getFlatRootNodes();
   }
 
   /**
-   * Build root nodes in grouped mode: one collapsible node per team.
+   * Build root nodes in grouped mode: one collapsible node per organization.
+   * Organizations are sorted alphabetically, "Unassigned" always at bottom.
+   *
+   * GITX-211: TreeView structure: Organization (root) -> Teams (children) -> Contributors
+   * Display format: "Org Name - X teams, Y contributors, Z commits"
+   */
+  private getOrganizationRootNodes(): ContributorTreeItem[] {
+    this.logger.debug(CLASS_NAME, 'getOrganizationRootNodes', 'Building organization root nodes');
+
+    // Group contributors by organization
+    const orgMap = new Map<string, ContributorSummaryRow[]>();
+    for (const contributor of this.contributorCache) {
+      const orgKey = contributor.organizationName ?? UNASSIGNED_ORG_LABEL;
+      const existing = orgMap.get(orgKey);
+      if (existing) {
+        existing.push(contributor);
+      } else {
+        orgMap.set(orgKey, [contributor]);
+      }
+    }
+
+    // Sort organization names: assigned orgs alphabetically, Unassigned last
+    const orgNames = Array.from(orgMap.keys()).sort((a, b) => {
+      if (a === UNASSIGNED_ORG_LABEL) { return 1; }
+      if (b === UNASSIGNED_ORG_LABEL) { return -1; }
+      return a.localeCompare(b);
+    });
+
+    const rootNodes: ContributorTreeItem[] = [];
+    for (const orgName of orgNames) {
+      const members = orgMap.get(orgName) ?? [];
+      const totalCommits = members.reduce((sum, c) => sum + c.commitCount, 0);
+
+      // Count unique teams in this organization
+      const teamsInOrg = new Set<string>();
+      for (const member of members) {
+        teamsInOrg.add(member.team ?? UNASSIGNED_TEAM_LABEL);
+      }
+      const teamCount = teamsInOrg.size;
+
+      // Format: "Org Name - X teams, Y contributors, Z commits"
+      const description = `${teamCount} team${teamCount !== 1 ? 's' : ''}, ${members.length} contributor${members.length !== 1 ? 's' : ''}, ${totalCommits.toLocaleString()} commits`;
+
+      const node = new ContributorTreeItem(
+        {
+          type: 'organization',
+          label: orgName,
+          description,
+          tooltip: `Organization: ${orgName}\nTeams: ${teamCount}\nContributors: ${members.length}\nTotal Commits: ${totalCommits.toLocaleString()}`,
+          organizationName: orgName,
+        },
+        vscode.TreeItemCollapsibleState.Collapsed,
+      );
+      node.iconPath = ICONS.organization;
+
+      // GITX-211: Add click command for organization nodes (opens Organization Profile)
+      // Exclude "Unassigned" organization from Organization Profile (no click action)
+      if (orgName !== UNASSIGNED_ORG_LABEL) {
+        node.command = {
+          command: 'gitrx.openOrganizationProfile',
+          title: 'Open Organization Profile',
+          arguments: [orgName],
+        };
+      }
+
+      rootNodes.push(node);
+    }
+
+    this.logger.debug(CLASS_NAME, 'getOrganizationRootNodes', `Built ${rootNodes.length} organization nodes`);
+    return rootNodes;
+  }
+
+  /**
+   * Build root nodes in team mode (legacy 2-level): one collapsible node per team.
    * Teams are sorted alphabetically with unassigned at the end.
    */
-  private getGroupedRootNodes(): ContributorTreeItem[] {
-    this.logger.debug(CLASS_NAME, 'getGroupedRootNodes', 'Building grouped root nodes');
+  private getTeamRootNodes(): ContributorTreeItem[] {
+    this.logger.debug(CLASS_NAME, 'getTeamRootNodes', 'Building team root nodes');
 
     // Group contributors by team
     const teamMap = new Map<string, ContributorSummaryRow[]>();
@@ -246,11 +312,14 @@ export class ContributorTreeProvider
       const members = teamMap.get(teamName) ?? [];
       const totalCommits = members.reduce((sum, c) => sum + c.commitCount, 0);
 
+      // Format: "Team Name - X contributors, Y commits"
+      const description = `${members.length} contributor${members.length !== 1 ? 's' : ''}, ${totalCommits.toLocaleString()} commits`;
+
       const node = new ContributorTreeItem(
         {
           type: 'team',
           label: teamName,
-          description: `${members.length} contributors, ${totalCommits.toLocaleString()} commits`,
+          description,
           tooltip: `Team: ${teamName}\nContributors: ${members.length}\nTotal Commits: ${totalCommits.toLocaleString()}`,
           teamName,
         },
@@ -271,7 +340,7 @@ export class ContributorTreeProvider
       rootNodes.push(node);
     }
 
-    this.logger.debug(CLASS_NAME, 'getGroupedRootNodes', `Built ${rootNodes.length} team nodes`);
+    this.logger.debug(CLASS_NAME, 'getTeamRootNodes', `Built ${rootNodes.length} team nodes`);
     return rootNodes;
   }
 
@@ -291,7 +360,7 @@ export class ContributorTreeProvider
     const rootNodes: ContributorTreeItem[] = [];
 
     for (const contributor of sorted) {
-      rootNodes.push(this.buildContributorNode(contributor));
+      rootNodes.push(buildContributorNode(contributor));
     }
 
     this.logger.debug(CLASS_NAME, 'getFlatRootNodes', `Built ${rootNodes.length} contributor nodes`);
@@ -303,16 +372,104 @@ export class ContributorTreeProvider
   // --------------------------------------------------------------------------
 
   /**
+   * Build child nodes for an organization: one collapsible node per team in that org.
+   * Teams are sorted by commit count descending within organization.
+   *
+   * GITX-211: Organization -> Team hierarchy.
+   */
+  private getOrganizationChildNodes(orgName: string): ContributorTreeItem[] {
+    const targetOrg = orgName === UNASSIGNED_ORG_LABEL ? null : orgName;
+
+    // Group contributors by team within this organization
+    const teamMap = new Map<string, ContributorSummaryRow[]>();
+    for (const contributor of this.contributorCache) {
+      const contributorOrg = contributor.organizationName;
+      if (targetOrg === null ? contributorOrg === null : contributorOrg === targetOrg) {
+        const teamKey = contributor.team ?? UNASSIGNED_TEAM_LABEL;
+        const existing = teamMap.get(teamKey);
+        if (existing) {
+          existing.push(contributor);
+        } else {
+          teamMap.set(teamKey, [contributor]);
+        }
+      }
+    }
+
+    // Sort teams by commit count descending
+    const teamEntries = Array.from(teamMap.entries())
+      .map(([teamName, members]) => ({
+        teamName,
+        members,
+        totalCommits: members.reduce((sum, c) => sum + c.commitCount, 0),
+      }))
+      .sort((a, b) => {
+        // Sort by commit count desc, "(Unassigned)" always last
+        if (a.teamName === UNASSIGNED_TEAM_LABEL) { return 1; }
+        if (b.teamName === UNASSIGNED_TEAM_LABEL) { return -1; }
+        return b.totalCommits - a.totalCommits;
+      });
+
+    const childNodes: ContributorTreeItem[] = [];
+    for (const { teamName, members, totalCommits } of teamEntries) {
+      // Format: "Team Name - X contributors, Y commits"
+      const description = `${members.length} contributor${members.length !== 1 ? 's' : ''}, ${totalCommits.toLocaleString()} commits`;
+
+      const node = new ContributorTreeItem(
+        {
+          type: 'team',
+          label: teamName,
+          description,
+          tooltip: `Team: ${teamName}\nOrganization: ${orgName}\nContributors: ${members.length}\nTotal Commits: ${totalCommits.toLocaleString()}`,
+          organizationName: orgName,
+          teamName,
+        },
+        vscode.TreeItemCollapsibleState.Collapsed,
+      );
+      node.iconPath = ICONS.team;
+
+      // Add click command for team nodes (GITX-185)
+      // Exclude "(Unassigned)" team from Team Profile (no click action)
+      if (teamName !== UNASSIGNED_TEAM_LABEL) {
+        node.command = {
+          command: 'gitrx.openTeamProfile',
+          title: 'Open Team Profile',
+          arguments: [teamName],
+        };
+      }
+
+      childNodes.push(node);
+    }
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getOrganizationChildNodes',
+      `Built ${childNodes.length} team nodes for organization: ${orgName}`,
+    );
+
+    return childNodes;
+  }
+
+  /**
    * Build child nodes for a team: one collapsible node per contributor in that team.
    * Contributors are sorted by commit count descending, then by fullName.
    * GITX-169: Sort by fullName instead of login.
+   *
+   * GITX-211: Now accepts optional orgName for 3-level hierarchy filtering.
    */
-  private getTeamChildNodes(teamName: string): ContributorTreeItem[] {
+  private getTeamChildNodes(teamName: string, orgName?: string): ContributorTreeItem[] {
     const targetTeam = teamName === UNASSIGNED_TEAM_LABEL ? null : teamName;
+    const targetOrg = orgName === UNASSIGNED_ORG_LABEL ? null : orgName;
+
     const members = this.contributorCache
-      .filter((c) =>
-        targetTeam === null ? c.team === null : c.team === targetTeam,
-      )
+      .filter((c) => {
+        const teamMatch = targetTeam === null ? c.team === null : c.team === targetTeam;
+        // In 'grouped' mode, also filter by organization
+        if (this.viewMode === 'grouped' && orgName !== undefined) {
+          const orgMatch = targetOrg === null ? c.organizationName === null : c.organizationName === targetOrg;
+          return teamMatch && orgMatch;
+        }
+        return teamMatch;
+      })
       .sort((a, b) => {
         // Sort by commit count desc, then fullName asc
         if (b.commitCount !== a.commitCount) {
@@ -326,10 +483,10 @@ export class ContributorTreeProvider
     this.logger.debug(
       CLASS_NAME,
       'getTeamChildNodes',
-      `Building ${members.length} contributor nodes for team: ${teamName}`,
+      `Building ${members.length} contributor nodes for team: ${teamName}${orgName ? ` in org: ${orgName}` : ''}`,
     );
 
-    return members.map((contributor) => this.buildContributorNode(contributor));
+    return members.map((contributor) => buildContributorNode(contributor));
   }
 
   /**
@@ -352,177 +509,9 @@ export class ContributorTreeProvider
       `Building detail nodes for: ${contributorKey}`,
     );
 
-    const details: ContributorTreeItem[] = [];
-
-    // Full Name
-    if (contributor.fullName) {
-      const nameNode = new ContributorTreeItem(
-        {
-          type: 'detail',
-          label: 'Name',
-          description: contributor.fullName,
-          tooltip: `Full Name: ${contributor.fullName}`,
-          contributorLogin: contributorKey,
-        },
-        vscode.TreeItemCollapsibleState.None,
-      );
-      nameNode.iconPath = ICONS.name;
-      details.push(nameNode);
-    }
-
-    // Logins - show all associated logins
-    const logins = contributor.logins
-      .split(',')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    const loginsNode = new ContributorTreeItem(
-      {
-        type: 'detail',
-        label: 'Logins',
-        description: logins.length === 1 ? logins[0]! : `${logins.length} logins`,
-        tooltip: `Logins:\n${logins.map((l) => `  - ${l}`).join('\n')}`,
-        contributorLogin: contributorKey,
-      },
-      vscode.TreeItemCollapsibleState.None,
-    );
-    loginsNode.iconPath = ICONS.name;
-    details.push(loginsNode);
-
-    // Vendor
-    const vendorLabel = contributor.vendor ?? 'Unknown';
-    const vendorNode = new ContributorTreeItem(
-      {
-        type: 'detail',
-        label: 'Vendor',
-        description: vendorLabel,
-        tooltip: `Vendor: ${vendorLabel}`,
-        contributorLogin: contributorKey,
-      },
-      vscode.TreeItemCollapsibleState.None,
-    );
-    vendorNode.iconPath = ICONS.vendor;
-    details.push(vendorNode);
-
-    // Commit Count
-    const commitsNode = new ContributorTreeItem(
-      {
-        type: 'detail',
-        label: 'Commits',
-        description: contributor.commitCount.toLocaleString(),
-        tooltip: `Total Commits: ${contributor.commitCount.toLocaleString()}`,
-        contributorLogin: contributorKey,
-      },
-      vscode.TreeItemCollapsibleState.None,
-    );
-    commitsNode.iconPath = ICONS.commits;
-    details.push(commitsNode);
-
-    // Repositories
-    if (contributor.repoList) {
-      const repos = contributor.repoList
-        .split(',')
-        .map((r) => r.trim())
-        .filter((r) => r.length > 0);
-      const repoNode = new ContributorTreeItem(
-        {
-          type: 'detail',
-          label: 'Repositories',
-          description: repos.length === 1 ? repos[0]! : `${repos.length} repos`,
-          tooltip: `Repositories:\n${repos.map((r) => `  - ${r}`).join('\n')}`,
-          contributorLogin: contributorKey,
-        },
-        vscode.TreeItemCollapsibleState.None,
-      );
-      repoNode.iconPath = ICONS.repos;
-      details.push(repoNode);
-    }
-
-    return details;
+    return buildContributorDetailNodes(contributor, contributorKey);
   }
 
-  // --------------------------------------------------------------------------
-  // Helper builders
-  // --------------------------------------------------------------------------
-
-  /**
-   * Build a contributor tree node with commit count description and icon.
-   * GITX-169: Display as "{fullName} (@{login})" or just login if no fullName.
-   */
-  private buildContributorNode(contributor: ContributorSummaryRow): ContributorTreeItem {
-    // Get the primary login (first one in the comma-separated list)
-    const primaryLogin = contributor.logins.split(',')[0]?.trim() ?? contributor.logins;
-
-    // Format: "{fullName} (@{login})" or just login if no fullName
-    const displayName = contributor.fullName
-      ? `${contributor.fullName} (@${primaryLogin})`
-      : primaryLogin;
-
-    // Description: "{team} • {commitCount} commits"
-    const teamLabel = contributor.team ?? '(Unassigned)';
-    const description = `${teamLabel} \u2022 ${contributor.commitCount.toLocaleString()} commits`;
-
-    // Tooltip with all details
-    const logins = contributor.logins
-      .split(',')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    const tooltipParts = [
-      contributor.fullName ? contributor.fullName : null,
-      `Logins: ${logins.join(', ')}`,
-      `Team: ${teamLabel}`,
-      contributor.vendor ? `Vendor: ${contributor.vendor}` : null,
-      `Commits: ${contributor.commitCount.toLocaleString()}`,
-    ].filter(Boolean);
-
-    // Use fullName as the key, or logins if fullName is null
-    const contributorKey = contributor.fullName ?? contributor.logins;
-
-    const node = new ContributorTreeItem(
-      {
-        type: 'contributor',
-        label: displayName,
-        description,
-        tooltip: tooltipParts.join('\n'),
-        teamName: contributor.team ?? undefined,
-        contributorLogin: contributorKey,
-        contributorData: contributor,
-      },
-      vscode.TreeItemCollapsibleState.Collapsed,
-    );
-
-    // Use shield icon for Company (internal) contributors
-    const isCompany = contributor.vendor?.toLowerCase() === 'company';
-    node.iconPath = isCompany ? ICONS.contributorCompany : ICONS.contributor;
-
-    // Set command for click to open Developer Profile dashboard (GITX-155)
-    // GITX-178: Pass full_name (with login fallback) to match Developer Profile query pattern
-    // The Developer Profile queries use: WHERE (cc.full_name = $1 OR (cc.full_name IS NULL AND cc.login = $1))
-    const contributorIdentifier = contributor.fullName ?? primaryLogin;
-    node.command = {
-      command: 'gitrx.openDeveloperProfile',
-      title: 'Open Developer Profile',
-      arguments: [contributorIdentifier],
-    };
-
-    return node;
-  }
-
-  /**
-   * Build an empty placeholder node when no data is available.
-   */
-  private buildEmptyNode(): ContributorTreeItem {
-    const node = new ContributorTreeItem(
-      {
-        type: 'empty',
-        label: 'No contributor data',
-        description: 'Run pipeline to populate',
-        tooltip: 'Run "Gitr: Run Pipeline" to load contributor data from your repositories.',
-      },
-      vscode.TreeItemCollapsibleState.None,
-    );
-    node.iconPath = ICONS.info;
-    return node;
-  }
 
   // --------------------------------------------------------------------------
   // Data loading

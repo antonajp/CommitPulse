@@ -2,38 +2,70 @@
  * D3.js velocity chart rendering functions for the Developer Profile Dashboard.
  * Contains inline JavaScript code for rendering the dual-axis velocity vs LOC chart.
  * Extracted from dev-profile-charts.ts to keep files under 600 lines.
- * Ticket: GITX-157
+ * Ticket: GITX-157, GITX-199
  */
 
 /**
- * Generate the JavaScript code for the GITX-157 velocity chart and lazy loading.
+ * Generate the JavaScript code for the GITX-157/GITX-199 velocity chart and lazy loading.
+ * GITX-199: Primary chart showing stacked bars (developer contribution vs team total)
+ * with LOC as trend line overlay. Includes proper legend, tooltips, and graceful degradation.
  */
 export function generateVelocityChartScript(): string {
   return `
       // ======================================================================
-      // GITX-157: Sprint Velocity vs LOC Dual-Axis Chart
+      // GITX-157, GITX-199: Sprint Velocity vs LOC Dual-Axis Chart
+      // GITX-199: Primary chart with stacked bars showing developer vs team
       // ======================================================================
       // NOTE: cachedVelocityData and velocityDataAvailable are declared in the parent scope
       // (dev-profile-html.ts) to avoid duplicate declaration errors (GITX-161)
+
+      // GITX-199: Color constants for velocity chart
+      var VELOCITY_COLOR_DEV = '#E69F00';      // Okabe-Ito orange - Your Contribution
+      var VELOCITY_COLOR_TEAM = '#999999';      // Muted gray - Rest of Team
+      var VELOCITY_COLOR_LOC = '#56B4E9';       // Okabe-Ito sky blue - Lines of Code
 
       function renderVelocityChart(data) {
         hideSkeleton('velocitySkeleton');
         cachedVelocityData = data;
 
-        if (!data || data.length === 0 || !velocityDataAvailable) {
+        // GITX-199: Check if there's any story point data (Jira connected)
+        var hasStoryPointData = data && data.some(function(d) {
+          return d.storyPoints > 0 || d.teamStoryPoints > 0;
+        });
+        var hasLocData = data && data.some(function(d) {
+          return d.linesOfCode > 0;
+        });
+
+        // No data at all - show empty state
+        if (!data || data.length === 0 || (!hasStoryPointData && !hasLocData)) {
           document.getElementById('velocityChart').classList.add('hidden');
           document.getElementById('velocityEmpty').classList.remove('hidden');
           document.getElementById('velocityHint').classList.add('hidden');
+          var noJiraMsg = document.getElementById('velocityNoJira');
+          if (noJiraMsg) { noJiraMsg.classList.add('hidden'); }
           return;
         }
 
         document.getElementById('velocityChart').classList.remove('hidden');
         document.getElementById('velocityEmpty').classList.add('hidden');
-        document.getElementById('velocityHint').classList.remove('hidden');
+
+        // GITX-199: Show appropriate hint based on data availability
+        var hintEl = document.getElementById('velocityHint');
+        var noJiraEl = document.getElementById('velocityNoJira');
+
+        if (!hasStoryPointData && hasLocData) {
+          // No Jira data - graceful degradation: show LOC only with message
+          if (hintEl) { hintEl.classList.add('hidden'); }
+          if (noJiraEl) { noJiraEl.classList.remove('hidden'); }
+        } else {
+          // Has story point data - show full chart with hint
+          if (hintEl) { hintEl.classList.remove('hidden'); }
+          if (noJiraEl) { noJiraEl.classList.add('hidden'); }
+        }
 
         var container = document.getElementById('velocityChart');
         container.innerHTML = '';
-        var margin = { top: 30, right: 60, bottom: 60, left: 60 };
+        var margin = { top: 40, right: 70, bottom: 60, left: 60 };
         var width = container.clientWidth - margin.left - margin.right;
         var height = 320 - margin.top - margin.bottom;
 
@@ -44,16 +76,16 @@ export function generateVelocityChartScript(): string {
           .append('g')
           .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
 
-        // X scale - weeks
+        // X scale - weeks/months
         var x = d3.scaleBand()
           .domain(data.map(function(d) { return d.weekStart; }))
           .range([0, width])
           .padding(0.2);
 
-        // Y scale left - story points
-        var maxSP = d3.max(data, function(d) { return d.storyPoints; }) || 10;
+        // Y scale left - story points (team total as max)
+        var maxTeamSP = d3.max(data, function(d) { return d.teamStoryPoints || d.storyPoints; }) || 10;
         var yLeft = d3.scaleLinear()
-          .domain([0, maxSP])
+          .domain([0, maxTeamSP])
           .nice()
           .range([height, 0]);
 
@@ -64,61 +96,109 @@ export function generateVelocityChartScript(): string {
           .nice()
           .range([height, 0]);
 
-        // Draw bars for story points (left axis)
-        svg.selectAll('.bar-sp')
-          .data(data)
-          .enter()
-          .append('rect')
-          .attr('class', 'bar-sp')
-          .attr('x', function(d) { return x(d.weekStart); })
-          .attr('y', function(d) { return yLeft(d.storyPoints); })
-          .attr('width', x.bandwidth() / 2)
-          .attr('height', function(d) { return height - yLeft(d.storyPoints); })
-          .attr('fill', CHART_COLORS[0])
-          .attr('tabindex', 0)
-          .attr('role', 'img')
-          .attr('aria-label', function(d) {
-            return 'Week ' + d.weekStart + ': ' + d.storyPoints + ' story points, ' + d.issueCount + ' issues';
-          })
-          .append('title')
-          .text(function(d) {
-            return d.weekStart + '\\nStory Points: ' + d.storyPoints + '\\nIssues: ' + d.issueCount;
-          });
+        // GITX-199: Draw stacked bars - Rest of Team (bottom/muted) + Your Contribution (top/colored)
+        if (hasStoryPointData) {
+          // Draw "rest of team" bars first (full height = team total)
+          svg.selectAll('.bar-team')
+            .data(data)
+            .enter()
+            .append('rect')
+            .attr('class', 'bar-team')
+            .attr('x', function(d) { return x(d.weekStart); })
+            .attr('y', function(d) { return yLeft(d.teamStoryPoints || 0); })
+            .attr('width', x.bandwidth() * 0.6)
+            .attr('height', function(d) { return height - yLeft(d.teamStoryPoints || 0); })
+            .attr('fill', VELOCITY_COLOR_TEAM)
+            .attr('opacity', 0.6);
 
-        // Draw LOC line (right axis)
-        var line = d3.line()
-          .x(function(d) { return x(d.weekStart) + x.bandwidth() / 2; })
-          .y(function(d) { return yRight(d.linesOfCode); })
-          .curve(d3.curveMonotoneX);
+          // Draw "your contribution" bars on top (stacked from bottom)
+          svg.selectAll('.bar-dev')
+            .data(data)
+            .enter()
+            .append('rect')
+            .attr('class', 'bar-dev')
+            .attr('x', function(d) { return x(d.weekStart); })
+            .attr('y', function(d) { return yLeft(d.storyPoints || 0); })
+            .attr('width', x.bandwidth() * 0.6)
+            .attr('height', function(d) { return height - yLeft(d.storyPoints || 0); })
+            .attr('fill', VELOCITY_COLOR_DEV)
+            .attr('tabindex', 0)
+            .attr('role', 'img')
+            .attr('aria-label', function(d) {
+              var pct = d.teamStoryPoints > 0 ? Math.round((d.storyPoints / d.teamStoryPoints) * 100) : 0;
+              return formatXAxisDate(d.weekStart) + ': ' + d.storyPoints + ' of ' + d.teamStoryPoints + ' story points (' + pct + '% of team)';
+            })
+            .append('title')
+            .text(function(d) {
+              var pct = d.teamStoryPoints > 0 ? Math.round((d.storyPoints / d.teamStoryPoints) * 100) : 0;
+              return formatXAxisDate(d.weekStart) +
+                '\\nYour SP: ' + d.storyPoints +
+                '\\nTeam Total: ' + d.teamStoryPoints +
+                '\\nYour Share: ' + pct + '%' +
+                '\\nIssues: ' + d.issueCount;
+            });
+        } else {
+          // GITX-199: Graceful degradation - show LOC as bars when no Jira data
+          svg.selectAll('.bar-loc-fallback')
+            .data(data)
+            .enter()
+            .append('rect')
+            .attr('class', 'bar-loc-fallback')
+            .attr('x', function(d) { return x(d.weekStart); })
+            .attr('y', function(d) { return yRight(d.linesOfCode || 0); })
+            .attr('width', x.bandwidth() * 0.6)
+            .attr('height', function(d) { return height - yRight(d.linesOfCode || 0); })
+            .attr('fill', VELOCITY_COLOR_LOC)
+            .attr('opacity', 0.7)
+            .attr('tabindex', 0)
+            .attr('role', 'img')
+            .attr('aria-label', function(d) {
+              return formatXAxisDate(d.weekStart) + ': ' + formatNumber(d.linesOfCode) + ' lines of code';
+            })
+            .append('title')
+            .text(function(d) {
+              return formatXAxisDate(d.weekStart) +
+                '\\nLOC: ' + formatNumber(d.linesOfCode) +
+                '\\nCommits: ' + d.commitCount;
+            });
+        }
 
-        svg.append('path')
-          .datum(data)
-          .attr('fill', 'none')
-          .attr('stroke', CHART_COLORS[1])
-          .attr('stroke-width', 2.5)
-          .attr('d', line);
+        // Draw LOC line (right axis) - only if we have story point data
+        if (hasStoryPointData && hasLocData) {
+          var line = d3.line()
+            .x(function(d) { return x(d.weekStart) + x.bandwidth() * 0.3; })
+            .y(function(d) { return yRight(d.linesOfCode); })
+            .curve(d3.curveMonotoneX);
 
-        // Draw LOC data points
-        svg.selectAll('.point-loc')
-          .data(data)
-          .enter()
-          .append('circle')
-          .attr('class', 'point-loc')
-          .attr('cx', function(d) { return x(d.weekStart) + x.bandwidth() / 2; })
-          .attr('cy', function(d) { return yRight(d.linesOfCode); })
-          .attr('r', 5)
-          .attr('fill', CHART_COLORS[1])
-          .attr('stroke', 'var(--vscode-editor-background)')
-          .attr('stroke-width', 2)
-          .attr('tabindex', 0)
-          .attr('role', 'img')
-          .attr('aria-label', function(d) {
-            return 'Week ' + d.weekStart + ': ' + formatNumber(d.linesOfCode) + ' lines of code, ' + d.commitCount + ' commits';
-          })
-          .append('title')
-          .text(function(d) {
-            return d.weekStart + '\\nLOC: ' + formatNumber(d.linesOfCode) + '\\nCommits: ' + d.commitCount;
-          });
+          svg.append('path')
+            .datum(data)
+            .attr('fill', 'none')
+            .attr('stroke', VELOCITY_COLOR_LOC)
+            .attr('stroke-width', 2.5)
+            .attr('d', line);
+
+          // Draw LOC data points
+          svg.selectAll('.point-loc')
+            .data(data)
+            .enter()
+            .append('circle')
+            .attr('class', 'point-loc')
+            .attr('cx', function(d) { return x(d.weekStart) + x.bandwidth() * 0.3; })
+            .attr('cy', function(d) { return yRight(d.linesOfCode); })
+            .attr('r', 5)
+            .attr('fill', VELOCITY_COLOR_LOC)
+            .attr('stroke', 'var(--vscode-editor-background)')
+            .attr('stroke-width', 2)
+            .attr('tabindex', 0)
+            .attr('role', 'img')
+            .attr('aria-label', function(d) {
+              return formatXAxisDate(d.weekStart) + ': ' + formatNumber(d.linesOfCode) + ' lines of code, ' + d.commitCount + ' commits';
+            })
+            .append('title')
+            .text(function(d) {
+              return formatXAxisDate(d.weekStart) + '\\nLOC: ' + formatNumber(d.linesOfCode) + '\\nCommits: ' + d.commitCount;
+            });
+        }
 
         // X axis - GITX-179: Use formatXAxisDate for dynamic week/month formatting
         svg.append('g')
@@ -128,40 +208,69 @@ export function generateVelocityChartScript(): string {
           .attr('transform', 'rotate(-45)')
           .style('text-anchor', 'end');
 
-        // Y axis left (story points)
-        svg.append('g')
-          .call(d3.axisLeft(yLeft).ticks(5))
-          .append('text')
-          .attr('transform', 'rotate(-90)')
-          .attr('y', -margin.left + 15)
-          .attr('x', -height / 2)
-          .attr('text-anchor', 'middle')
-          .style('fill', CHART_COLORS[0])
-          .style('font-weight', '600')
-          .text('Story Points');
+        // Y axis left (story points) - only if we have story point data
+        if (hasStoryPointData) {
+          svg.append('g')
+            .call(d3.axisLeft(yLeft).ticks(5))
+            .append('text')
+            .attr('transform', 'rotate(-90)')
+            .attr('y', -margin.left + 15)
+            .attr('x', -height / 2)
+            .attr('text-anchor', 'middle')
+            .style('fill', VELOCITY_COLOR_DEV)
+            .style('font-weight', '600')
+            .text('Story Points');
 
-        // Y axis right (lines of code)
-        svg.append('g')
-          .attr('transform', 'translate(' + width + ',0)')
-          .call(d3.axisRight(yRight).ticks(5).tickFormat(d3.format('.2s')))
-          .append('text')
-          .attr('transform', 'rotate(-90)')
-          .attr('y', margin.right - 15)
-          .attr('x', -height / 2)
-          .attr('text-anchor', 'middle')
-          .style('fill', CHART_COLORS[1])
-          .style('font-weight', '600')
-          .text('Lines of Code');
+          // Y axis right (lines of code) - only when showing LOC line
+          if (hasLocData) {
+            svg.append('g')
+              .attr('transform', 'translate(' + width + ',0)')
+              .call(d3.axisRight(yRight).ticks(5).tickFormat(d3.format('.2s')))
+              .append('text')
+              .attr('transform', 'rotate(-90)')
+              .attr('y', margin.right - 15)
+              .attr('x', -height / 2)
+              .attr('text-anchor', 'middle')
+              .style('fill', VELOCITY_COLOR_LOC)
+              .style('font-weight', '600')
+              .text('Lines of Code');
+          }
+        } else {
+          // GITX-199: When no story points, show LOC axis on left
+          svg.append('g')
+            .call(d3.axisLeft(yRight).ticks(5).tickFormat(d3.format('.2s')))
+            .append('text')
+            .attr('transform', 'rotate(-90)')
+            .attr('y', -margin.left + 15)
+            .attr('x', -height / 2)
+            .attr('text-anchor', 'middle')
+            .style('fill', VELOCITY_COLOR_LOC)
+            .style('font-weight', '600')
+            .text('Lines of Code');
+        }
 
-        // Legend
+        // GITX-199: Legend with "Your Contribution", "Team Total", "Lines of Code"
         var legend = svg.append('g')
-          .attr('transform', 'translate(' + (width / 2 - 80) + ',-15)');
+          .attr('transform', 'translate(' + (width / 2 - 140) + ',-25)');
 
-        legend.append('rect').attr('width', 12).attr('height', 12).attr('fill', CHART_COLORS[0]);
-        legend.append('text').attr('x', 16).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Story Points');
+        if (hasStoryPointData) {
+          // Full legend with all three items
+          legend.append('rect').attr('width', 12).attr('height', 12).attr('fill', VELOCITY_COLOR_DEV);
+          legend.append('text').attr('x', 16).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Your Contribution');
 
-        legend.append('rect').attr('x', 100).attr('width', 12).attr('height', 12).attr('fill', CHART_COLORS[1]);
-        legend.append('text').attr('x', 116).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Lines of Code');
+          legend.append('rect').attr('x', 120).attr('width', 12).attr('height', 12).attr('fill', VELOCITY_COLOR_TEAM).attr('opacity', 0.6);
+          legend.append('text').attr('x', 136).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Team Total');
+
+          if (hasLocData) {
+            legend.append('line').attr('x1', 210).attr('y1', 6).attr('x2', 230).attr('y2', 6).attr('stroke', VELOCITY_COLOR_LOC).attr('stroke-width', 2.5);
+            legend.append('circle').attr('cx', 220).attr('cy', 6).attr('r', 4).attr('fill', VELOCITY_COLOR_LOC);
+            legend.append('text').attr('x', 236).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Lines of Code');
+          }
+        } else {
+          // LOC only legend
+          legend.append('rect').attr('width', 12).attr('height', 12).attr('fill', VELOCITY_COLOR_LOC).attr('opacity', 0.7);
+          legend.append('text').attr('x', 16).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Lines of Code');
+        }
       }
 
       // ======================================================================
@@ -211,8 +320,7 @@ export function generateVelocityChartScript(): string {
           { key: '5', id: 'velocityCard', label: 'Sprint Velocity' },
           { key: '6', id: 'techStackCard', label: 'Technology Stack' },
           { key: '7', id: 'hygieneCard', label: 'Commit Hygiene' },
-          { key: '8', id: 'commentsWeekCard', label: 'Comments per Week' },
-          { key: '9', id: 'testDebtCard', label: 'Test Debt Analysis' }
+          { key: '8', id: 'commentsWeekCard', label: 'Comments per Week' }
         ];
 
         document.addEventListener('keydown', function(e) {
