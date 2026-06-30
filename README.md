@@ -347,6 +347,7 @@ If you installed CommitPulse before version 0.1.54, you need to manually apply n
 
 **Apply all pending migrations:**
 
+*Bash (macOS/Linux):*
 ```bash
 # From the repository root directory
 for migration in docker/migrations/*.sql; do
@@ -357,21 +358,76 @@ for migration in docker/migrations/*.sql; do
 done
 ```
 
+*PowerShell (Windows):*
+```powershell
+# From the repository root directory
+Get-ChildItem docker/migrations/*.sql | Where-Object { $_.Name -notlike "*.rollback.sql" } | ForEach-Object {
+    Write-Host "Applying: $($_.FullName)"
+    Get-Content $_.FullName | docker exec -i gitrx-postgres psql -U gitrx_admin -d gitrx
+}
+```
+
 **Or apply a specific migration:**
 
+*Bash (macOS/Linux):*
 ```bash
 docker exec -i gitrx-postgres psql -U gitrx_admin -d gitrx < docker/migrations/030_create_organizations_teams_tables.sql
 ```
 
+*PowerShell (Windows):*
+```powershell
+Get-Content docker/migrations/030_create_organizations_teams_tables.sql | docker exec -i gitrx-postgres psql -U gitrx_admin -d gitrx
+```
+
 **Alternative — Fresh start (loses all data):**
 
+*Bash (macOS/Linux):*
 ```bash
 docker compose down -v && docker compose up -d
+```
+
+*PowerShell (Windows):*
+```powershell
+docker compose down -v; docker compose up -d
 ```
 
 This removes the data volume and recreates the container, which runs all migrations automatically.
 
 > **Note:** Migration 030 introduces the `organizations` and `teams` tables required for the Organization Profile Dashboard. Without this migration, opening the Organization Profile will show a "relation does not exist" error.
+
+### Seed Required Tables (Migration 030+)
+
+Migration 030 creates the `organizations` and `teams` tables but does not populate them. You must insert seed data for the Organization Profile Dashboard to function.
+
+The data model follows this hierarchy: **Organizations → Teams → Contributors**
+
+**Step 1: Create your organization**
+
+```sql
+INSERT INTO organizations (name) VALUES ('Your Company Name');
+```
+
+**Step 2: Create teams linked to the organization**
+
+```sql
+INSERT INTO teams (name, organization_id) VALUES
+  ('Engineering', 1),
+  ('Platform', 1),
+  ('Product', 1);
+```
+
+**Step 3: Verify the setup**
+
+```sql
+SELECT o.name AS organization, t.name AS team
+FROM organizations o
+LEFT JOIN teams t ON t.organization_id = o.id;
+```
+
+> **Note:** If you previously had teams in `commit_contributors.team`, migration 030 automatically migrated those team names to the `teams` table. However, they will have `organization_id = NULL` until you manually update them:
+> ```sql
+> UPDATE teams SET organization_id = 1 WHERE organization_id IS NULL;
+> ```
 
 ---
 
