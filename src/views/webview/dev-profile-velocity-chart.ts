@@ -82,36 +82,27 @@ export function generateVelocityChartScript(): string {
           .range([0, width])
           .padding(0.2);
 
-        // Y scale left - story points (team total as max)
-        var maxTeamSP = d3.max(data, function(d) { return d.teamStoryPoints || d.storyPoints; }) || 10;
+        // GITX-218: Y scale left - story points (individual developer max, not team)
+        var maxDevSP = d3.max(data, function(d) { return d.storyPoints; }) || 10;
         var yLeft = d3.scaleLinear()
-          .domain([0, maxTeamSP])
+          .domain([0, maxDevSP])
           .nice()
           .range([height, 0]);
 
-        // Y scale right - lines of code
-        var maxLoc = d3.max(data, function(d) { return d.linesOfCode; }) || 1000;
+        // GITX-218: Y scale right - lines of code (handle negative values gracefully)
+        var locValues = data.map(function(d) { return d.linesOfCode || 0; });
+        var minLoc = Math.min.apply(null, locValues);
+        var maxLoc = Math.max.apply(null, locValues) || 1000;
+        // If all values are non-negative, start at 0; otherwise include the min
+        var locDomainMin = minLoc < 0 ? minLoc : 0;
         var yRight = d3.scaleLinear()
-          .domain([0, maxLoc])
+          .domain([locDomainMin, maxLoc])
           .nice()
           .range([height, 0]);
 
-        // GITX-199: Draw stacked bars - Rest of Team (bottom/muted) + Your Contribution (top/colored)
+        // GITX-218: Draw only developer's story points bars (removed team total bars)
         if (hasStoryPointData) {
-          // Draw "rest of team" bars first (full height = team total)
-          svg.selectAll('.bar-team')
-            .data(data)
-            .enter()
-            .append('rect')
-            .attr('class', 'bar-team')
-            .attr('x', function(d) { return x(d.weekStart); })
-            .attr('y', function(d) { return yLeft(d.teamStoryPoints || 0); })
-            .attr('width', x.bandwidth() * 0.6)
-            .attr('height', function(d) { return height - yLeft(d.teamStoryPoints || 0); })
-            .attr('fill', VELOCITY_COLOR_TEAM)
-            .attr('opacity', 0.6);
-
-          // Draw "your contribution" bars on top (stacked from bottom)
+          // Draw developer's contribution bars only (no team comparison on Developer Profile)
           svg.selectAll('.bar-dev')
             .data(data)
             .enter()
@@ -125,16 +116,12 @@ export function generateVelocityChartScript(): string {
             .attr('tabindex', 0)
             .attr('role', 'img')
             .attr('aria-label', function(d) {
-              var pct = d.teamStoryPoints > 0 ? Math.round((d.storyPoints / d.teamStoryPoints) * 100) : 0;
-              return formatXAxisDate(d.weekStart) + ': ' + d.storyPoints + ' of ' + d.teamStoryPoints + ' story points (' + pct + '% of team)';
+              return formatXAxisDate(d.weekStart) + ': ' + d.storyPoints + ' story points';
             })
             .append('title')
             .text(function(d) {
-              var pct = d.teamStoryPoints > 0 ? Math.round((d.storyPoints / d.teamStoryPoints) * 100) : 0;
               return formatXAxisDate(d.weekStart) +
-                '\\nYour SP: ' + d.storyPoints +
-                '\\nTeam Total: ' + d.teamStoryPoints +
-                '\\nYour Share: ' + pct + '%' +
+                '\\nStory Points: ' + d.storyPoints +
                 '\\nIssues: ' + d.issueCount;
             });
         } else {
@@ -249,22 +236,19 @@ export function generateVelocityChartScript(): string {
             .text('Lines of Code');
         }
 
-        // GITX-199: Legend with "Your Contribution", "Team Total", "Lines of Code"
+        // GITX-218: Legend with "Your Contribution" and "Lines of Code" (removed Team Total)
         var legend = svg.append('g')
-          .attr('transform', 'translate(' + (width / 2 - 140) + ',-25)');
+          .attr('transform', 'translate(' + (width / 2 - 100) + ',-25)');
 
         if (hasStoryPointData) {
-          // Full legend with all three items
+          // Legend with developer contribution and LOC (no team total on Developer Profile)
           legend.append('rect').attr('width', 12).attr('height', 12).attr('fill', VELOCITY_COLOR_DEV);
-          legend.append('text').attr('x', 16).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Your Contribution');
-
-          legend.append('rect').attr('x', 120).attr('width', 12).attr('height', 12).attr('fill', VELOCITY_COLOR_TEAM).attr('opacity', 0.6);
-          legend.append('text').attr('x', 136).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Team Total');
+          legend.append('text').attr('x', 16).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Story Points');
 
           if (hasLocData) {
-            legend.append('line').attr('x1', 210).attr('y1', 6).attr('x2', 230).attr('y2', 6).attr('stroke', VELOCITY_COLOR_LOC).attr('stroke-width', 2.5);
-            legend.append('circle').attr('cx', 220).attr('cy', 6).attr('r', 4).attr('fill', VELOCITY_COLOR_LOC);
-            legend.append('text').attr('x', 236).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Lines of Code');
+            legend.append('line').attr('x1', 100).attr('y1', 6).attr('x2', 120).attr('y2', 6).attr('stroke', VELOCITY_COLOR_LOC).attr('stroke-width', 2.5);
+            legend.append('circle').attr('cx', 110).attr('cy', 6).attr('r', 4).attr('fill', VELOCITY_COLOR_LOC);
+            legend.append('text').attr('x', 126).attr('y', 10).style('fill', 'var(--vscode-foreground)').style('font-size', '11px').text('Lines of Code');
           }
         } else {
           // LOC only legend

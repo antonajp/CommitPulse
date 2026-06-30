@@ -296,7 +296,8 @@ export function generateOrgProfileRiskChartsScript(): string {
             }
           });
 
-        // GITX-216: Add permanent file name labels to bubbles (no truncation)
+        // GITX-216/GITX-218: Add permanent file name labels to bubbles with dark mode support
+        // Use text stroke (halo effect) for readability on any background color
         g.selectAll('.bubble-label')
           .data(data)
           .enter()
@@ -305,7 +306,10 @@ export function generateOrgProfileRiskChartsScript(): string {
           .attr('x', function(d) { return x(d.complexity || 0); })
           .attr('y', function(d) { return y(d.churnCount || 0) + 4; })
           .attr('text-anchor', 'middle')
-          .attr('fill', 'var(--vscode-editor-background, #1e1e1e)')
+          .attr('fill', 'var(--vscode-foreground, #ccc)')
+          .attr('stroke', 'var(--vscode-editor-background, #1e1e1e)')
+          .attr('stroke-width', '3')
+          .attr('paint-order', 'stroke')
           .attr('font-size', '9px')
           .attr('font-weight', 'bold')
           .attr('pointer-events', 'none')
@@ -556,14 +560,14 @@ export function generateOrgProfileRiskChartsScript(): string {
             }
           });
 
-        // Add labels for larger cells
+        // GITX-218: Add labels for larger cells with dark mode support (white text for visibility)
         cells.filter(function(d) {
           return (d.x1 - d.x0) > 60 && (d.y1 - d.y0) > 30;
         })
         .append('text')
           .attr('x', 4)
           .attr('y', 14)
-          .attr('fill', 'var(--vscode-editor-background, #1e1e1e)')
+          .attr('fill', '#fff')
           .attr('font-size', '10px')
           .attr('font-weight', 'bold')
           .text(function(d) {
@@ -578,7 +582,8 @@ export function generateOrgProfileRiskChartsScript(): string {
         .append('text')
           .attr('x', 4)
           .attr('y', 26)
-          .attr('fill', 'var(--vscode-editor-background, #1e1e1e)')
+          .attr('fill', '#fff')
+          .attr('fill-opacity', '0.9')
           .attr('font-size', '9px')
           .text(function(d) {
             var fd = d.data.data;

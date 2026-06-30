@@ -226,7 +226,8 @@ export function generateTeamProfileRiskChartsScript(): string {
               }
             });
 
-          // GITX-216: Add permanent file name label to bubble (no truncation)
+          // GITX-216/GITX-218: Add permanent file name label to bubble with dark mode support
+          // Use text stroke (halo effect) for readability on any background color
           var path = d.filePath || '';
           var parts = path.split('/');
           var filename = parts[parts.length - 1] || path;
@@ -236,7 +237,10 @@ export function generateTeamProfileRiskChartsScript(): string {
             .attr('x', cx)
             .attr('y', cy + 4)
             .attr('text-anchor', 'middle')
-            .attr('fill', 'var(--vscode-editor-background, #1e1e1e)')
+            .attr('fill', 'var(--vscode-foreground, #ccc)')
+            .attr('stroke', 'var(--vscode-editor-background, #1e1e1e)')
+            .attr('stroke-width', '3')
+            .attr('paint-order', 'stroke')
             .attr('font-size', '9px')
             .attr('font-weight', 'bold')
             .attr('pointer-events', 'none')
