@@ -161,23 +161,63 @@ describe('DevProfileDataService', () => {
   // getSummary
   // ==========================================================================
   describe('getSummary', () => {
-    it('should return summary statistics for a developer with GITX-179 average metrics', async () => {
-      // Mock summary query
+    // Helper to set up common mocks for getSummary tests
+    // GITX-219: Now fetches in parallel: summary, story points, team (via getTeamAverages)
+    function setupSummaryMocks(options: {
+      summary?: { total_commits: number; total_loc_added: string; avg_complexity: string; repos_worked_on: number };
+      storyPoints?: { total_points: number; has_data: boolean };
+      team?: string | null;
+      teamAvg?: { member_count: number; avg_commits: string; avg_loc: string; avg_complexity: string; avg_repos: string };
+      teamSp?: { member_count: number; avg_story_points: string };
+    }) {
+      // Summary query (parallel call 1)
       vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [
-          {
-            total_commits: 50,
-            total_loc_added: '25000',
-            avg_complexity: '8.5',
-            repos_worked_on: 3,
-          },
-        ],
+        rows: options.summary ? [options.summary] : [],
+        rowCount: options.summary ? 1 : 0,
+      });
+      // Story points query (parallel call 2)
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [options.storyPoints ?? { total_points: 0, has_data: false }],
         rowCount: 1,
       });
-      // Mock story points query (GITX-179)
+      // Team lookup query (parallel call 3 - getTeamAverages)
       vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [{ total_points: 26, has_data: true }],
-        rowCount: 1,
+        rows: options.team !== undefined ? [{ team: options.team }] : [],
+        rowCount: options.team !== undefined ? 1 : 0,
+      });
+      // If team exists, mock team averages queries
+      if (options.team) {
+        // Team averages query
+        vi.mocked(mockDb.query).mockResolvedValueOnce({
+          rows: options.teamAvg ? [options.teamAvg] : [],
+          rowCount: options.teamAvg ? 1 : 0,
+        });
+        // Team story points query
+        vi.mocked(mockDb.query).mockResolvedValueOnce({
+          rows: options.teamSp ? [options.teamSp] : [],
+          rowCount: options.teamSp ? 1 : 0,
+        });
+      }
+    }
+
+    it('should return summary statistics for a developer with GITX-179 average metrics and GITX-219 team averages', async () => {
+      setupSummaryMocks({
+        summary: {
+          total_commits: 50,
+          total_loc_added: '25000',
+          avg_complexity: '8.5',
+          repos_worked_on: 3,
+        },
+        storyPoints: { total_points: 26, has_data: true },
+        team: 'Engineering',
+        teamAvg: {
+          member_count: 5,
+          avg_commits: '40',
+          avg_loc: '20000',
+          avg_complexity: '7.5',
+          avg_repos: '2.5',
+        },
+        teamSp: { member_count: 5, avg_story_points: '20' },
       });
 
       const result = await service.getSummary({
@@ -185,23 +225,27 @@ describe('DevProfileDataService', () => {
         timeframeDays: '90',
       });
 
-      expect(result).toEqual({
-        totalCommits: 50,
-        totalLoc: 25000,
-        avgComplexity: 8.5,
-        repositoriesWorkedOn: 3,
-        avgLocPerPeriod: expect.any(Number), // GITX-179
-        avgStoryPointsPerPeriod: expect.any(Number), // GITX-179
-        aggregationPeriod: 'week', // GITX-179
-      });
-      // GITX-179: Verify average LOC calculation (25000 / 13 weeks ≈ 1923)
+      expect(result.totalCommits).toBe(50);
+      expect(result.totalLoc).toBe(25000);
+      expect(result.avgComplexity).toBe(8.5);
+      expect(result.repositoriesWorkedOn).toBe(3);
       expect(result.avgLocPerPeriod).toBeGreaterThan(0);
+      expect(result.avgStoryPointsPerPeriod).toBeGreaterThan(0);
+      expect(result.aggregationPeriod).toBe('week');
+      // GITX-219: Team averages
+      expect(result.teamAvgCommits).toBe(40);
+      expect(result.teamAvgLoc).toBe(20000);
+      expect(result.teamAvgLocPerPeriod).toBeGreaterThan(0);
+      expect(result.teamAvgStoryPointsPerPeriod).toBeGreaterThan(0);
+      expect(result.teamAvgComplexity).toBe(7.5);
+      expect(result.teamAvgRepos).toBe(3); // Rounded from 2.5
     });
 
-    it('should return zero summary when no data with GITX-179 fields', async () => {
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [],
-        rowCount: 0,
+    it('should return zero summary when no data with GITX-179 and GITX-219 fields', async () => {
+      setupSummaryMocks({
+        summary: undefined,
+        storyPoints: { total_points: 0, has_data: false },
+        team: null,
       });
 
       const result = await service.getSummary({
@@ -209,18 +253,34 @@ describe('DevProfileDataService', () => {
         timeframeDays: '30',
       });
 
-      expect(result).toEqual({
-        totalCommits: 0,
-        totalLoc: 0,
-        avgComplexity: 0,
-        repositoriesWorkedOn: 0,
-        avgLocPerPeriod: 0, // GITX-179
-        avgStoryPointsPerPeriod: null, // GITX-179
-        aggregationPeriod: 'week', // GITX-179
-      });
+      expect(result.totalCommits).toBe(0);
+      expect(result.totalLoc).toBe(0);
+      expect(result.avgComplexity).toBe(0);
+      expect(result.repositoriesWorkedOn).toBe(0);
+      expect(result.avgLocPerPeriod).toBe(0);
+      expect(result.avgStoryPointsPerPeriod).toBeNull();
+      expect(result.aggregationPeriod).toBe('week');
+      // GITX-219: Team averages null when no team
+      expect(result.teamAvgCommits).toBeNull();
+      expect(result.teamAvgLoc).toBeNull();
+      expect(result.teamAvgLocPerPeriod).toBeNull();
+      expect(result.teamAvgStoryPointsPerPeriod).toBeNull();
+      expect(result.teamAvgComplexity).toBeNull();
+      expect(result.teamAvgRepos).toBeNull();
     });
 
     it('should use parameterized queries', async () => {
+      setupSummaryMocks({
+        summary: {
+          total_commits: 10,
+          total_loc_added: '1000',
+          avg_complexity: '5.0',
+          repos_worked_on: 1,
+        },
+        storyPoints: { total_points: 0, has_data: false },
+        team: null,
+      });
+
       await service.getSummary({
         developer: 'john.doe',
         timeframeDays: '90',
@@ -239,22 +299,15 @@ describe('DevProfileDataService', () => {
 
     // GITX-179: Test monthly aggregation for 365+ day timeframes
     it('should use month aggregation for 365+ day timeframes (GITX-179)', async () => {
-      // Mock summary query
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [
-          {
-            total_commits: 100,
-            total_loc_added: '60000',
-            avg_complexity: '10.0',
-            repos_worked_on: 5,
-          },
-        ],
-        rowCount: 1,
-      });
-      // Mock story points query
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [{ total_points: 120, has_data: true }],
-        rowCount: 1,
+      setupSummaryMocks({
+        summary: {
+          total_commits: 100,
+          total_loc_added: '60000',
+          avg_complexity: '10.0',
+          repos_worked_on: 5,
+        },
+        storyPoints: { total_points: 120, has_data: true },
+        team: null,
       });
 
       const result = await service.getSummary({
@@ -271,22 +324,15 @@ describe('DevProfileDataService', () => {
 
     // GITX-179: Test null story points when no Jira/Linear data
     it('should return null avgStoryPointsPerPeriod when no Jira/Linear data (GITX-179)', async () => {
-      // Mock summary query
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [
-          {
-            total_commits: 50,
-            total_loc_added: '25000',
-            avg_complexity: '8.5',
-            repos_worked_on: 3,
-          },
-        ],
-        rowCount: 1,
-      });
-      // Mock story points query - no data
-      vi.mocked(mockDb.query).mockResolvedValueOnce({
-        rows: [{ total_points: 0, has_data: false }],
-        rowCount: 1,
+      setupSummaryMocks({
+        summary: {
+          total_commits: 50,
+          total_loc_added: '25000',
+          avg_complexity: '8.5',
+          repos_worked_on: 3,
+        },
+        storyPoints: { total_points: 0, has_data: false },
+        team: null,
       });
 
       const result = await service.getSummary({
@@ -295,6 +341,160 @@ describe('DevProfileDataService', () => {
       });
 
       expect(result.avgStoryPointsPerPeriod).toBeNull();
+    });
+
+    // ========================================================================
+    // GITX-219: Team Average Tests
+    // ========================================================================
+    describe('GITX-219: Team Averages', () => {
+      it('should return null team averages when developer not assigned to team (KPI-5)', async () => {
+        setupSummaryMocks({
+          summary: {
+            total_commits: 50,
+            total_loc_added: '25000',
+            avg_complexity: '8.5',
+            repos_worked_on: 3,
+          },
+          storyPoints: { total_points: 26, has_data: true },
+          team: null, // Developer not assigned to a team
+        });
+
+        const result = await service.getSummary({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        expect(result.teamAvgCommits).toBeNull();
+        expect(result.teamAvgLoc).toBeNull();
+        expect(result.teamAvgLocPerPeriod).toBeNull();
+        expect(result.teamAvgStoryPointsPerPeriod).toBeNull();
+        expect(result.teamAvgComplexity).toBeNull();
+        expect(result.teamAvgRepos).toBeNull();
+      });
+
+      it('should return team averages when developer is assigned to a team (KPI-1, KPI-3)', async () => {
+        setupSummaryMocks({
+          summary: {
+            total_commits: 50,
+            total_loc_added: '25000',
+            avg_complexity: '8.5',
+            repos_worked_on: 3,
+          },
+          storyPoints: { total_points: 26, has_data: true },
+          team: 'Platform',
+          teamAvg: {
+            member_count: 4,
+            avg_commits: '45',
+            avg_loc: '22000',
+            avg_complexity: '8.0',
+            avg_repos: '2.8',
+          },
+          teamSp: { member_count: 4, avg_story_points: '22' },
+        });
+
+        const result = await service.getSummary({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        expect(result.teamAvgCommits).toBe(45);
+        expect(result.teamAvgLoc).toBe(22000);
+        expect(result.teamAvgLocPerPeriod).toBeGreaterThan(0);
+        expect(result.teamAvgStoryPointsPerPeriod).toBeGreaterThan(0);
+        expect(result.teamAvgComplexity).toBe(8.0);
+        expect(result.teamAvgRepos).toBe(3); // Rounded from 2.8
+      });
+
+      it('should handle solo developer case (KPI-4: team avg equals individual value)', async () => {
+        // When there's only one team member, the team average equals their individual value
+        setupSummaryMocks({
+          summary: {
+            total_commits: 50,
+            total_loc_added: '25000',
+            avg_complexity: '8.5',
+            repos_worked_on: 3,
+          },
+          storyPoints: { total_points: 26, has_data: true },
+          team: 'Solo Team',
+          teamAvg: {
+            member_count: 1,
+            avg_commits: '50', // Same as individual
+            avg_loc: '25000',
+            avg_complexity: '8.5',
+            avg_repos: '3',
+          },
+          teamSp: { member_count: 1, avg_story_points: '26' },
+        });
+
+        const result = await service.getSummary({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        // Team avg should equal individual value
+        expect(result.teamAvgCommits).toBe(result.totalCommits);
+        expect(result.teamAvgLoc).toBe(result.totalLoc);
+      });
+
+      it('should return null team story points when no Jira/Linear data for team', async () => {
+        setupSummaryMocks({
+          summary: {
+            total_commits: 50,
+            total_loc_added: '25000',
+            avg_complexity: '8.5',
+            repos_worked_on: 3,
+          },
+          storyPoints: { total_points: 0, has_data: false },
+          team: 'Engineering',
+          teamAvg: {
+            member_count: 5,
+            avg_commits: '40',
+            avg_loc: '20000',
+            avg_complexity: '7.5',
+            avg_repos: '2.5',
+          },
+          teamSp: { member_count: 0, avg_story_points: '0' }, // No SP data
+        });
+
+        const result = await service.getSummary({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        expect(result.teamAvgStoryPointsPerPeriod).toBeNull();
+        // Other team averages should still be present
+        expect(result.teamAvgCommits).toBe(40);
+      });
+
+      it('should fetch team averages in parallel with summary data (PERF-1)', async () => {
+        setupSummaryMocks({
+          summary: {
+            total_commits: 50,
+            total_loc_added: '25000',
+            avg_complexity: '8.5',
+            repos_worked_on: 3,
+          },
+          storyPoints: { total_points: 26, has_data: true },
+          team: 'Engineering',
+          teamAvg: {
+            member_count: 5,
+            avg_commits: '40',
+            avg_loc: '20000',
+            avg_complexity: '7.5',
+            avg_repos: '2.5',
+          },
+          teamSp: { member_count: 5, avg_story_points: '20' },
+        });
+
+        await service.getSummary({
+          developer: 'john.doe',
+          timeframeDays: '90',
+        });
+
+        // Should make multiple parallel queries
+        // 1. Summary, 2. Story points, 3. Team lookup, 4. Team avg, 5. Team SP
+        expect(mockDb.query).toHaveBeenCalledTimes(5);
+      });
     });
   });
 
@@ -534,13 +734,18 @@ describe('DevProfileDataService', () => {
       it('should accept valid timeframe values', async () => {
         const validTimeframes = ['30', '60', '90', '180', '365', '730'] as const;
         for (const timeframe of validTimeframes) {
-          vi.mocked(mockDb.query).mockResolvedValueOnce({ rows: [], rowCount: 0 });
+          // GITX-219: Each getSummary call now makes 3 parallel queries + team lookup
+          // Mock: 1. summary, 2. story points, 3. team lookup (returns no team)
+          vi.mocked(mockDb.query).mockResolvedValueOnce({ rows: [], rowCount: 0 }); // summary
+          vi.mocked(mockDb.query).mockResolvedValueOnce({ rows: [{ total_points: 0, has_data: false }], rowCount: 1 }); // story points
+          vi.mocked(mockDb.query).mockResolvedValueOnce({ rows: [], rowCount: 0 }); // team lookup
           await service.getSummary({
             developer: 'john.doe',
             timeframeDays: timeframe,
           });
         }
-        expect(mockDb.query).toHaveBeenCalledTimes(6);
+        // 6 timeframes * 3 queries each = 18 total
+        expect(mockDb.query).toHaveBeenCalledTimes(18);
       });
 
       it('should reject invalid timeframe value', async () => {

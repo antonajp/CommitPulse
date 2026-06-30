@@ -90,48 +90,54 @@ export function generateDevProfileHtml(config: DevProfileHtmlConfig): string {
       </div>
     </header>
 
-    <!-- Summary Cards -->
+    <!-- Summary Cards (GITX-219: Vertical layout with team averages below) -->
     <section class="summary-cards" id="summaryCards" aria-label="Developer Summary Statistics">
       <div class="summary-card" id="summaryCommits">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
         <div class="summary-card-content hidden">
           <span class="summary-label">Total Commits</span>
-          <span class="summary-value" id="summaryCommitsValue">0</span>
+          <span class="summary-value" id="summaryCommitsValue" aria-label="Your commits">0</span>
+          <span class="summary-comparison" id="summaryCommitsTeamAvg" aria-label="Team average commits"></span>
         </div>
       </div>
       <div class="summary-card" id="summaryLoc">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
         <div class="summary-card-content hidden">
           <span class="summary-label">Total LOC</span>
-          <span class="summary-value" id="summaryLocValue">0</span>
+          <span class="summary-value" id="summaryLocValue" aria-label="Your lines of code">0</span>
+          <span class="summary-comparison" id="summaryLocTeamAvg" aria-label="Team average lines of code"></span>
         </div>
       </div>
       <div class="summary-card" id="summaryAvgLoc">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
         <div class="summary-card-content hidden">
           <span class="summary-label" id="summaryAvgLocLabel">Avg LOC/Week</span>
-          <span class="summary-value" id="summaryAvgLocValue">—</span>
+          <span class="summary-value" id="summaryAvgLocValue" aria-label="Your average lines of code per period">—</span>
+          <span class="summary-comparison" id="summaryAvgLocTeamAvg" aria-label="Team average lines of code per period"></span>
         </div>
       </div>
       <div class="summary-card" id="summaryAvgSp">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
         <div class="summary-card-content hidden">
           <span class="summary-label" id="summaryAvgSpLabel">Avg SP/Week</span>
-          <span class="summary-value" id="summaryAvgSpValue">—</span>
+          <span class="summary-value" id="summaryAvgSpValue" aria-label="Your average story points per period">—</span>
+          <span class="summary-comparison" id="summaryAvgSpTeamAvg" aria-label="Team average story points per period"></span>
         </div>
       </div>
       <div class="summary-card" id="summaryComplexity">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
         <div class="summary-card-content hidden">
           <span class="summary-label">Avg Complexity</span>
-          <span class="summary-value" id="summaryComplexityValue">0</span>
+          <span class="summary-value" id="summaryComplexityValue" aria-label="Your average complexity">0</span>
+          <span class="summary-comparison" id="summaryComplexityTeamAvg" aria-label="Team average complexity"></span>
         </div>
       </div>
       <div class="summary-card" id="summaryRepos">
         <div class="summary-card-skeleton" aria-hidden="true"></div>
         <div class="summary-card-content hidden">
           <span class="summary-label">Repositories</span>
-          <span class="summary-value" id="summaryReposValue">0</span>
+          <span class="summary-value" id="summaryReposValue" aria-label="Your repositories count">0</span>
+          <span class="summary-comparison" id="summaryReposTeamAvg" aria-label="Team average repositories count"></span>
         </div>
       </div>
     </section>
@@ -456,6 +462,15 @@ ${generateGitx156HtmlSections()}
           document.getElementById('summaryAvgSpValue').textContent = '—';
         }
 
+        // GITX-219: Display team averages for all KPI cards
+        // Format: "Team avg: X" or "—" if developer not assigned to team
+        renderTeamAverage('summaryCommitsTeamAvg', summary.teamAvgCommits, formatNumber);
+        renderTeamAverage('summaryLocTeamAvg', summary.teamAvgLoc, formatNumber);
+        renderTeamAverage('summaryAvgLocTeamAvg', summary.teamAvgLocPerPeriod, formatNumber);
+        renderTeamAverage('summaryAvgSpTeamAvg', summary.teamAvgStoryPointsPerPeriod, function(v) { return v.toFixed(1); });
+        renderTeamAverage('summaryComplexityTeamAvg', summary.teamAvgComplexity, function(v) { return v.toFixed(2); });
+        renderTeamAverage('summaryReposTeamAvg', summary.teamAvgRepos, formatNumber);
+
         if (summary.totalCommits === 0) {
           // Find developer by either fullName or login
           var dev = cachedDevelopers.find(function(d) {
@@ -466,6 +481,26 @@ ${generateGitx156HtmlSections()}
             'No commits found for ' + escapeHtml(devName),
             'Try expanding the date range or selecting a different developer.'
           );
+        }
+      }
+
+      /**
+       * GITX-219: Render team average value in a KPI card (vertical layout).
+       * Displays "Team avg: X" below the primary value, or hides if no team.
+       * @param {string} elementId - The ID of the team average element
+       * @param {number|null} value - The team average value (null if no team)
+       * @param {function} formatter - Function to format the value
+       */
+      function renderTeamAverage(elementId, value, formatter) {
+        var el = document.getElementById(elementId);
+        if (!el) { return; }
+        if (value === null || value === undefined) {
+          // GITX-219/KPI-5: Developer not assigned to team - hide comparison
+          el.textContent = '';
+          el.classList.add('hidden');
+        } else {
+          el.textContent = 'Team avg: ' + formatter(value);
+          el.classList.remove('hidden');
         }
       }
 

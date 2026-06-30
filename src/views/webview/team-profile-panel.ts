@@ -326,6 +326,7 @@ export class TeamProfilePanel implements vscode.Disposable {
           // GITX-186: Added per-author contribution chart data
           // GITX-188: Added hot spots and knowledge concentration, removed test debt
           // GITX-196: Use setTeam to update title and state together
+          // GITX-220: Added organization averages for KPI comparison
           this.setTeam(message.team);
           this.selectedTimeframe = message.timeframeDays;
           const filters = {
@@ -333,7 +334,8 @@ export class TeamProfilePanel implements vscode.Disposable {
             timeframeDays: message.timeframeDays,
           };
           // GITX-200: Added velocityWithMembers for stacked member chart
-          const [summary, locPerWeek, complexFilesChart, frequentFilesChart, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, velocityWithMembers, hasVelocityData, hotSpots, knowledgeConcentration] = await Promise.all([
+          // GITX-220: Added orgAverages for KPI comparison
+          const [summary, locPerWeek, complexFilesChart, frequentFilesChart, techStack, commentsPerWeek, testsPerWeek, hygieneScore, velocityVsLoc, velocityWithMembers, hasVelocityData, hotSpots, knowledgeConcentration, orgAverages] = await Promise.all([
             this.dataService.getSummary(filters),
             this.dataService.getLocPerWeek(filters),
             this.dataService.getTopComplexFilesWithContributors(filters),
@@ -347,6 +349,7 @@ export class TeamProfilePanel implements vscode.Disposable {
             this.dataService.hasVelocityData(filters.team),
             this.dataService.getTeamHotSpots(filters.team),
             this.dataService.getTeamKnowledgeConcentration(filters.team),
+            this.dataService.getOrganizationAverages(filters),
           ]);
           this.postMessage({ type: 'teamSummaryData', data: summary });
           this.postMessage({ type: 'teamLocPerWeekData', data: locPerWeek });
@@ -364,6 +367,8 @@ export class TeamProfilePanel implements vscode.Disposable {
           // GITX-188: Send hot spots and knowledge concentration data
           this.postMessage({ type: 'teamHotSpotsData', data: hotSpots });
           this.postMessage({ type: 'teamKnowledgeConcentrationData', data: knowledgeConcentration });
+          // GITX-220: Send organization averages for KPI comparison
+          this.postMessage({ type: 'teamOrgAveragesData', data: orgAverages });
           break;
         }
 
@@ -467,6 +472,16 @@ export class TeamProfilePanel implements vscode.Disposable {
             timeframeDays: message.timeframeDays,
           });
           this.postMessage({ type: 'teamVelocityWithMembersData', data: velocityMembersData });
+          break;
+        }
+
+        // GITX-220: Organization averages for KPI comparison
+        case 'requestTeamOrgAverages': {
+          const orgAvgData = await this.dataService.getOrganizationAverages({
+            team: message.team,
+            timeframeDays: message.timeframeDays,
+          });
+          this.postMessage({ type: 'teamOrgAveragesData', data: orgAvgData });
           break;
         }
 

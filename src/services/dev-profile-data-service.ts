@@ -8,6 +8,9 @@ import { LoggerService } from '../logging/logger.js';
 import {
   QUERY_DEV_PROFILE_VELOCITY_VS_LOC_WITH_TEAM,
   QUERY_DEV_PROFILE_HAS_VELOCITY_DATA,
+  QUERY_DEV_PROFILE_GET_TEAM,
+  QUERY_DEV_PROFILE_TEAM_AVERAGES,
+  QUERY_DEV_PROFILE_TEAM_AVG_STORY_POINTS,
 } from '../database/queries/dev-profile-queries.js';
 import type {
   DevProfileSummary,
@@ -193,9 +196,10 @@ export class DevProfileDataService {
    * Get summary statistics for a developer.
    * Filters by full_name with fallback to login for NULL full_name.
    * GITX-179: Added average LOC per period and average story points per period.
+   * GITX-219: Added team average comparisons fetched in parallel.
    *
    * @param filters - Developer and timeframe filters (developer is full_name)
-   * @returns Summary statistics including averages per week/month
+   * @returns Summary statistics including averages per week/month and team comparisons
    */
   async getSummary(filters: DevProfileFilters): Promise<DevProfileSummary> {
     this.validateDeveloper(filters.developer, 'getSummary');
@@ -222,14 +226,19 @@ export class DevProfileDataService {
         AND ch.is_merge = FALSE
     `;
 
-    const result = await this.db.query<{
-      total_commits: number;
-      total_loc_added: string;
-      avg_complexity: string;
-      repos_worked_on: number;
-    }>(sql, [filters.developer, startDate]);
+    // GITX-219: Fetch developer summary, story points, and team averages in parallel
+    const [summaryResult, storyPointsTotal, teamAverages] = await Promise.all([
+      this.db.query<{
+        total_commits: number;
+        total_loc_added: string;
+        avg_complexity: string;
+        repos_worked_on: number;
+      }>(sql, [filters.developer, startDate]),
+      this.getTotalStoryPoints(filters.developer, startDate),
+      this.getTeamAverages(filters.developer, startDate, periodsCount),
+    ]);
 
-    const row = result.rows[0];
+    const row = summaryResult.rows[0];
     if (!row) {
       return {
         totalCommits: 0,
@@ -239,6 +248,13 @@ export class DevProfileDataService {
         avgLocPerPeriod: 0,
         avgStoryPointsPerPeriod: null,
         aggregationPeriod,
+        // GITX-219: Team averages (null when no developer data)
+        teamAvgCommits: teamAverages.teamAvgCommits,
+        teamAvgLoc: teamAverages.teamAvgLoc,
+        teamAvgLocPerPeriod: teamAverages.teamAvgLocPerPeriod,
+        teamAvgStoryPointsPerPeriod: teamAverages.teamAvgStoryPointsPerPeriod,
+        teamAvgComplexity: teamAverages.teamAvgComplexity,
+        teamAvgRepos: teamAverages.teamAvgRepos,
       };
     }
 
@@ -246,7 +262,6 @@ export class DevProfileDataService {
     const avgLocPerPeriod = Math.round(totalLoc / periodsCount);
 
     // GITX-179: Get story points for average calculation
-    const storyPointsTotal = await this.getTotalStoryPoints(filters.developer, startDate);
     const avgStoryPointsPerPeriod = storyPointsTotal !== null
       ? Math.round((storyPointsTotal / periodsCount) * 10) / 10
       : null;
@@ -261,6 +276,109 @@ export class DevProfileDataService {
       avgLocPerPeriod,
       avgStoryPointsPerPeriod,
       aggregationPeriod,
+      // GITX-219: Team average comparisons
+      teamAvgCommits: teamAverages.teamAvgCommits,
+      teamAvgLoc: teamAverages.teamAvgLoc,
+      teamAvgLocPerPeriod: teamAverages.teamAvgLocPerPeriod,
+      teamAvgStoryPointsPerPeriod: teamAverages.teamAvgStoryPointsPerPeriod,
+      teamAvgComplexity: teamAverages.teamAvgComplexity,
+      teamAvgRepos: teamAverages.teamAvgRepos,
+    };
+  }
+
+  /**
+   * Get team average statistics for KPI comparison.
+   * GITX-219: Fetches team averages for commits, LOC, complexity, repos, and story points.
+   * Returns null values if developer is not assigned to a team.
+   *
+   * @param developer - Developer full_name or login
+   * @param startDate - Start date for the timeframe
+   * @param periodsCount - Number of periods for average calculation
+   * @returns Team average metrics or null values if no team
+   */
+  private async getTeamAverages(
+    developer: string,
+    startDate: string,
+    periodsCount: number
+  ): Promise<{
+    teamAvgCommits: number | null;
+    teamAvgLoc: number | null;
+    teamAvgLocPerPeriod: number | null;
+    teamAvgStoryPointsPerPeriod: number | null;
+    teamAvgComplexity: number | null;
+    teamAvgRepos: number | null;
+  }> {
+    const nullTeamAverages = {
+      teamAvgCommits: null,
+      teamAvgLoc: null,
+      teamAvgLocPerPeriod: null,
+      teamAvgStoryPointsPerPeriod: null,
+      teamAvgComplexity: null,
+      teamAvgRepos: null,
+    };
+
+    // Get developer's team
+    const teamResult = await this.db.query<{ team: string | null }>(
+      QUERY_DEV_PROFILE_GET_TEAM,
+      [developer]
+    );
+
+    const teamName = teamResult.rows[0]?.team;
+    if (!teamName) {
+      this.logger.debug(CLASS_NAME, 'getTeamAverages', `Developer ${developer} not assigned to a team`);
+      return nullTeamAverages;
+    }
+
+    this.logger.debug(CLASS_NAME, 'getTeamAverages', `Fetching team averages for team: ${teamName}`);
+
+    // Fetch team summary averages and story points in parallel
+    const [avgResult, spResult] = await Promise.all([
+      this.db.query<{
+        member_count: number;
+        avg_commits: string;
+        avg_loc: string;
+        avg_complexity: string;
+        avg_repos: string;
+      }>(QUERY_DEV_PROFILE_TEAM_AVERAGES, [teamName, startDate]),
+      this.db.query<{
+        member_count: number;
+        avg_story_points: string;
+      }>(QUERY_DEV_PROFILE_TEAM_AVG_STORY_POINTS, [teamName, startDate]),
+    ]);
+
+    const avgRow = avgResult.rows[0];
+    const spRow = spResult.rows[0];
+
+    // GITX-219/KPI-4: Solo developer case - team avg equals individual value
+    // This is handled naturally by the SQL - average of one member equals their value
+    if (!avgRow || avgRow.member_count === 0) {
+      this.logger.debug(CLASS_NAME, 'getTeamAverages', 'No active team members found in timeframe');
+      return nullTeamAverages;
+    }
+
+    const teamAvgLoc = Math.round(Number(avgRow.avg_loc));
+    const teamAvgLocPerPeriod = Math.round(teamAvgLoc / periodsCount);
+
+    // Story points average per period
+    let teamAvgStoryPointsPerPeriod: number | null = null;
+    if (spRow && spRow.member_count > 0) {
+      const totalAvgSp = Number(spRow.avg_story_points);
+      teamAvgStoryPointsPerPeriod = Math.round((totalAvgSp / periodsCount) * 10) / 10;
+    }
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getTeamAverages',
+      `Team averages (${avgRow.member_count} members): commits=${avgRow.avg_commits}, loc=${teamAvgLoc}`
+    );
+
+    return {
+      teamAvgCommits: Math.round(Number(avgRow.avg_commits)),
+      teamAvgLoc,
+      teamAvgLocPerPeriod,
+      teamAvgStoryPointsPerPeriod,
+      teamAvgComplexity: Number(parseFloat(avgRow.avg_complexity).toFixed(2)),
+      teamAvgRepos: Math.round(Number(avgRow.avg_repos)),
     };
   }
 

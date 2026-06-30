@@ -483,4 +483,178 @@ describe('TeamProfileDataService', () => {
       ).rejects.toThrow('Invalid timeframe');
     });
   });
+
+  // ==========================================================================
+  // GITX-220: getOrganizationAverages
+  // ==========================================================================
+  describe('getOrganizationAverages', () => {
+    it('should return null values when teams table does not have organization_id', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ has_org_column: false }],
+        rowCount: 1,
+      });
+
+      const result = await service.getOrganizationAverages({
+        team: 'CRMREO',
+        timeframeDays: '90',
+      });
+
+      expect(result.organizationId).toBeNull();
+      expect(result.organizationName).toBeNull();
+      expect(result.orgAvgTotalCommits).toBe(0);
+      expect(result.orgAvgTotalLoc).toBe(0);
+    });
+
+    it('should return null values when team has no organization', async () => {
+      // First call: check if org column exists
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ has_org_column: true }],
+        rowCount: 1,
+      });
+      // Second call: get org averages (returns null org_id)
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          org_id: null,
+          org_name: null,
+          avg_total_commits: 0,
+          avg_total_loc: '0',
+          avg_complexity: '0',
+          avg_repos_count: 0,
+          team_count: 0,
+        }],
+        rowCount: 1,
+      });
+
+      const result = await service.getOrganizationAverages({
+        team: 'UnassignedTeam',
+        timeframeDays: '90',
+      });
+
+      expect(result.organizationId).toBeNull();
+      expect(result.organizationName).toBeNull();
+      expect(result.orgAvgTotalCommits).toBe(0);
+    });
+
+    it('should return organization averages when team has organization', async () => {
+      // First call: check if org column exists
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ has_org_column: true }],
+        rowCount: 1,
+      });
+      // Second call: get org averages
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          org_id: 1,
+          org_name: 'Acme Corp',
+          avg_total_commits: 150,
+          avg_total_loc: '5000',
+          avg_complexity: '4.25',
+          avg_repos_count: 3,
+          team_count: 5,
+        }],
+        rowCount: 1,
+      });
+      // Third call: get org average story points
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ avg_total_sp: 130, has_data: true }],
+        rowCount: 1,
+      });
+
+      const result = await service.getOrganizationAverages({
+        team: 'CRMREO',
+        timeframeDays: '90',
+      });
+
+      expect(result.organizationId).toBe(1);
+      expect(result.organizationName).toBe('Acme Corp');
+      expect(result.orgAvgTotalCommits).toBe(150);
+      expect(result.orgAvgTotalLoc).toBe(5000);
+      expect(result.orgAvgComplexity).toBe(4.25);
+      expect(result.orgAvgReposCount).toBe(3);
+      // 5000 LOC / 13 weeks = 385 (rounded)
+      expect(result.orgAvgLocPerPeriod).toBe(385);
+      // 130 SP / 13 weeks = 10.0 (rounded to 1 decimal)
+      expect(result.orgAvgSpPerPeriod).toBe(10);
+    });
+
+    it('should return null for story points when no SP data available', async () => {
+      // First call: check if org column exists
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ has_org_column: true }],
+        rowCount: 1,
+      });
+      // Second call: get org averages
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          org_id: 1,
+          org_name: 'Acme Corp',
+          avg_total_commits: 100,
+          avg_total_loc: '3000',
+          avg_complexity: '3.5',
+          avg_repos_count: 2,
+          team_count: 3,
+        }],
+        rowCount: 1,
+      });
+      // Third call: get org average story points (no data)
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ avg_total_sp: 0, has_data: false }],
+        rowCount: 1,
+      });
+
+      const result = await service.getOrganizationAverages({
+        team: 'CRMREO',
+        timeframeDays: '90',
+      });
+
+      expect(result.organizationId).toBe(1);
+      expect(result.orgAvgSpPerPeriod).toBeNull();
+    });
+
+    it('should reject invalid team names', async () => {
+      await expect(
+        service.getOrganizationAverages({ team: '', timeframeDays: '90' })
+      ).rejects.toThrow('Team name is required');
+    });
+
+    it('should reject invalid timeframes', async () => {
+      await expect(
+        service.getOrganizationAverages({ team: 'CRMREO', timeframeDays: '999' as '90' })
+      ).rejects.toThrow('Invalid timeframe');
+    });
+
+    it('should calculate correct avgLocPerPeriod for monthly aggregation', async () => {
+      // First call: check if org column exists
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ has_org_column: true }],
+        rowCount: 1,
+      });
+      // Second call: get org averages
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          org_id: 1,
+          org_name: 'Acme Corp',
+          avg_total_commits: 200,
+          avg_total_loc: '12000',
+          avg_complexity: '5.0',
+          avg_repos_count: 4,
+          team_count: 4,
+        }],
+        rowCount: 1,
+      });
+      // Third call: get org average story points
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ avg_total_sp: 0, has_data: false }],
+        rowCount: 1,
+      });
+
+      const result = await service.getOrganizationAverages({
+        team: 'CRMREO',
+        timeframeDays: '365',
+      });
+
+      // 12000 LOC / 12 months = 1000
+      expect(result.orgAvgLocPerPeriod).toBe(1000);
+    });
+  });
 });

@@ -260,3 +260,128 @@ export const QUERY_DEV_PROFILE_HAS_VELOCITY_DATA = `
       AND jh.to_value IN ('Done', 'Closed', 'Resolved')
   ) AS has_data
 `;
+
+// ============================================================================
+// GITX-219: Team Average Queries for Developer Profile
+// ============================================================================
+
+/**
+ * Query to fetch the team name for a developer.
+ * Returns the team column from commit_contributors for the given developer.
+ *
+ * Parameters:
+ *   $1 - developer full_name (TEXT)
+ * Ticket: GITX-219
+ */
+export const QUERY_DEV_PROFILE_GET_TEAM = `
+  SELECT team
+  FROM commit_contributors
+  WHERE (full_name = $1 OR (full_name IS NULL AND login = $1))
+  LIMIT 1
+`;
+
+/**
+ * Query to fetch team average summary statistics.
+ * Calculates averages across all team members with commits in the timeframe.
+ * Team average = SUM(team member values) / COUNT(active team members in timeframe).
+ * GITX-219: Used for KPI cards team comparison display.
+ *
+ * Parameters:
+ *   $1 - team name (TEXT)
+ *   $2 - start date (DATE)
+ * Ticket: GITX-219
+ */
+export const QUERY_DEV_PROFILE_TEAM_AVERAGES = `
+  WITH team_members AS (
+    SELECT DISTINCT login, full_name
+    FROM commit_contributors
+    WHERE team = $1
+  ),
+  member_stats AS (
+    SELECT
+      tm.full_name,
+      tm.login,
+      COUNT(DISTINCT ch.sha)::int AS total_commits,
+      COALESCE(SUM(cf.line_inserts), 0)::bigint AS total_loc,
+      COALESCE(AVG(NULLIF(cf.complexity, 0)), 0)::numeric AS avg_complexity,
+      COUNT(DISTINCT ch.repository)::int AS repos_worked_on
+    FROM team_members tm
+    LEFT JOIN commit_history ch ON (
+      ch.author = tm.full_name
+      OR (tm.full_name IS NULL AND ch.author = tm.login)
+    )
+    LEFT JOIN commit_files cf ON cf.sha = ch.sha
+    WHERE (ch.commit_date >= $2 OR ch.commit_date IS NULL)
+      AND (ch.is_merge = FALSE OR ch.is_merge IS NULL)
+    GROUP BY tm.full_name, tm.login
+  ),
+  active_members AS (
+    SELECT * FROM member_stats WHERE total_commits > 0
+  )
+  SELECT
+    COUNT(*)::int AS member_count,
+    COALESCE(AVG(total_commits), 0)::numeric AS avg_commits,
+    COALESCE(AVG(total_loc), 0)::numeric AS avg_loc,
+    COALESCE(AVG(avg_complexity), 0)::numeric AS avg_complexity,
+    COALESCE(AVG(repos_worked_on), 0)::numeric AS avg_repos
+  FROM active_members
+`;
+
+/**
+ * Query to fetch team average story points per period.
+ * Calculates mean story points across active team members with Jira/Linear data.
+ * GITX-219: Used for Avg SP/Period team comparison.
+ *
+ * Parameters:
+ *   $1 - team name (TEXT)
+ *   $2 - start date (DATE)
+ * Ticket: GITX-219
+ */
+export const QUERY_DEV_PROFILE_TEAM_AVG_STORY_POINTS = `
+  WITH team_members AS (
+    SELECT DISTINCT login, full_name, email, jira_name
+    FROM commit_contributors
+    WHERE team = $1
+  ),
+  linear_points AS (
+    SELECT
+      COALESCE(tm.full_name, tm.login) AS member_name,
+      COALESCE(SUM(ld.calculated_story_points), 0)::int AS points
+    FROM team_members tm
+    JOIN linear_detail ld ON (
+      ld.assignee = tm.email OR ld.assignee = tm.login OR ld.assignee = tm.full_name
+    )
+    WHERE ld.completed_date >= $2
+      AND ld.state IN ('Done', 'Completed')
+    GROUP BY member_name
+  ),
+  jira_points AS (
+    SELECT
+      COALESCE(tm.full_name, tm.login) AS member_name,
+      COALESCE(SUM(jd.calculated_story_points), 0)::int AS points
+    FROM team_members tm
+    JOIN jira_history jh ON TRUE
+    JOIN jira_detail jd ON jh.jira_key = jd.jira_key
+      AND jd.assignee = COALESCE(tm.jira_name, tm.full_name)
+    WHERE jh.change_date >= $2
+      AND jh.field = 'status'
+      AND jh.to_value IN ('Done', 'Closed', 'Resolved')
+    GROUP BY member_name
+  ),
+  combined_points AS (
+    SELECT member_name, SUM(points)::int AS total_points
+    FROM (
+      SELECT member_name, points FROM linear_points
+      UNION ALL
+      SELECT member_name, points FROM jira_points
+    ) sub
+    GROUP BY member_name
+  ),
+  members_with_points AS (
+    SELECT * FROM combined_points WHERE total_points > 0
+  )
+  SELECT
+    COUNT(*)::int AS member_count,
+    COALESCE(AVG(total_points), 0)::numeric AS avg_story_points
+  FROM members_with_points
+`;
