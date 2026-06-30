@@ -24,6 +24,30 @@ export interface TeamProfileSummary {
 }
 
 /**
+ * GITX-220: Organization-wide team averages for KPI comparison.
+ * Each metric represents the average across all teams in the same organization.
+ * Displayed in lighter/grayer styling beside the focal team's primary value.
+ */
+export interface TeamProfileOrgAverages {
+  /** Average total commits across all org teams in the timeframe */
+  readonly orgAvgTotalCommits: number;
+  /** Average total LOC across all org teams in the timeframe */
+  readonly orgAvgTotalLoc: number;
+  /** Average LOC per period across all org teams */
+  readonly orgAvgLocPerPeriod: number;
+  /** Average story points per period across all org teams (null if no SP data) */
+  readonly orgAvgSpPerPeriod: number | null;
+  /** Average complexity across all org teams */
+  readonly orgAvgComplexity: number;
+  /** Average repository count across all org teams */
+  readonly orgAvgReposCount: number;
+  /** Organization ID (null if team has no organization) */
+  readonly organizationId: number | null;
+  /** Organization name (null if team has no organization) */
+  readonly organizationName: string | null;
+}
+
+/**
  * LOC per period data point for stacked bar chart.
  * Can represent weekly or monthly data depending on timeframe.
  */

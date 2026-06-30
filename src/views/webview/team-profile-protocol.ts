@@ -30,6 +30,7 @@ import type {
   TeamProfileFrequentFileWithContributors,
   TeamProfileHotSpot,
   TeamProfileKnowledgeConcentration,
+  TeamProfileOrgAverages,
 } from '../../services/team-profile-data-types.js';
 
 // Re-export types for convenience
@@ -51,6 +52,7 @@ export type {
   TeamProfileFrequentFileWithContributors,
   TeamProfileHotSpot,
   TeamProfileKnowledgeConcentration,
+  TeamProfileOrgAverages,
 } from '../../services/team-profile-data-types.js';
 
 // ============================================================================
@@ -236,6 +238,16 @@ export interface RequestTeamVelocityWithMembers {
 }
 
 /**
+ * Request to load organization-wide team averages for KPI comparison.
+ * GITX-220: Displayed beside focal KPI values in lighter styling.
+ */
+export interface RequestTeamOrgAverages {
+  readonly type: 'requestTeamOrgAverages';
+  readonly team: string;
+  readonly timeframeDays: TeamProfileTimeframe;
+}
+
+/**
  * Union type of all messages sent from the webview to the extension host.
  */
 export type TeamProfileWebviewToHost =
@@ -257,7 +269,8 @@ export type TeamProfileWebviewToHost =
   | RequestTeamComplexFilesChart
   | RequestTeamFrequentFilesChart
   | RequestTeamHotSpots
-  | RequestTeamKnowledgeConcentration;
+  | RequestTeamKnowledgeConcentration
+  | RequestTeamOrgAverages;
 
 // ============================================================================
 // Extension -> Webview (Responses)
@@ -430,6 +443,15 @@ export interface ResponseTeamVelocityWithMembers {
 }
 
 /**
+ * Response with organization-wide team averages for KPI comparison.
+ * GITX-220: Displayed beside focal KPI values in lighter styling.
+ */
+export interface ResponseTeamOrgAverages {
+  readonly type: 'teamOrgAveragesData';
+  readonly data: TeamProfileOrgAverages;
+}
+
+/**
  * Union type of all messages sent from the extension host to the webview.
  */
 export type TeamProfileHostToWebview =
@@ -451,4 +473,5 @@ export type TeamProfileHostToWebview =
   | ResponseTeamFrequentFilesChart
   | ResponseTeamHotSpots
   | ResponseTeamKnowledgeConcentration
+  | ResponseTeamOrgAverages
   | ResponseTeamError;

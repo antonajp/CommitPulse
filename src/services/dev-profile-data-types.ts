@@ -9,6 +9,7 @@
 /**
  * Summary statistics for a developer.
  * GITX-179: Added avgLocPerPeriod and avgStoryPointsPerPeriod for averages per week/month.
+ * GITX-219: Added team average comparisons for KPI cards.
  */
 export interface DevProfileSummary {
   readonly totalCommits: number;
@@ -21,6 +22,20 @@ export interface DevProfileSummary {
   readonly avgStoryPointsPerPeriod: number | null;
   /** Aggregation period: 'week' for < 365 days, 'month' for >= 365 days. GITX-179 */
   readonly aggregationPeriod: 'week' | 'month';
+
+  // GITX-219: Team average comparisons
+  /** Team average commits in the timeframe. Null if developer not assigned to a team. */
+  readonly teamAvgCommits: number | null;
+  /** Team average LOC in the timeframe. Null if developer not assigned to a team. */
+  readonly teamAvgLoc: number | null;
+  /** Team average LOC per period. Null if developer not assigned to a team. */
+  readonly teamAvgLocPerPeriod: number | null;
+  /** Team average story points per period. Null if no team or no Jira/Linear data. */
+  readonly teamAvgStoryPointsPerPeriod: number | null;
+  /** Team average complexity. Null if developer not assigned to a team. */
+  readonly teamAvgComplexity: number | null;
+  /** Team average repositories count. Null if developer not assigned to a team. */
+  readonly teamAvgRepos: number | null;
 }
 
 /**

@@ -5,6 +5,17 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.56] - 2026-06-29
+
+### Added
+
+- Add organization team averages to Team Profile KPI cards
+- Add team average comparisons to Developer Profile KPI cards
+
+### Fixed
+
+- Change Developer Profile KPIs to vertical layout
+
 ## [0.1.55] - 2026-06-29
 
 ### Changed

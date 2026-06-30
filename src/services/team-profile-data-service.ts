@@ -14,6 +14,8 @@ import {
   QUERY_TEAM_PROFILE_HOT_SPOTS,
   QUERY_TEAM_KNOWLEDGE_VIEW_EXISTS,
   QUERY_TEAM_PROFILE_KNOWLEDGE_CONCENTRATION,
+  QUERY_TEAM_ORG_TABLE_EXISTS,
+  QUERY_TEAM_PROFILE_ORG_AVERAGES,
 } from '../database/queries/team-profile-queries.js';
 import type {
   TeamProfileSummary,
@@ -37,6 +39,7 @@ import type {
   TeamHotSpotRiskTier,
   TeamProfileKnowledgeConcentration,
   TeamConcentrationRisk,
+  TeamProfileOrgAverages,
 } from './team-profile-data-types.js';
 
 // Re-export types for convenience
@@ -63,6 +66,7 @@ export type {
   TeamHotSpotRiskTier,
   TeamProfileKnowledgeConcentration,
   TeamConcentrationRisk,
+  TeamProfileOrgAverages,
 } from './team-profile-data-types.js';
 
 const CLASS_NAME = 'TeamProfileDataService';
@@ -1455,5 +1459,169 @@ export class TeamProfileDataService {
       topContributorPct: Number(row.top_contributor_pct),
       concentrationRisk: row.concentration_risk,
     }));
+  }
+
+  // ============================================================================
+  // GITX-220: Organization-wide Team Averages for KPI Comparison
+  // ============================================================================
+
+  /**
+   * Get organization-wide team averages for KPI comparison.
+   * Returns averages across all teams in the same organization as the focal team.
+   * GITX-220: Used for displaying comparison metrics beside primary KPI values.
+   *
+   * @param filters - Team and timeframe filters
+   * @returns Organization averages or null values if team has no organization
+   */
+  async getOrganizationAverages(filters: TeamProfileFilters): Promise<TeamProfileOrgAverages> {
+    this.validateTeam(filters.team, 'getOrganizationAverages');
+    this.validateTimeframe(filters.timeframeDays, 'getOrganizationAverages');
+
+    this.logger.debug(CLASS_NAME, 'getOrganizationAverages', `Fetching org averages for team ${filters.team}`);
+
+    // Check if the teams table with organization_id exists (migration 030)
+    const tableExistsResult = await this.db.query<{ has_org_column: boolean }>(
+      QUERY_TEAM_ORG_TABLE_EXISTS
+    );
+
+    if (!tableExistsResult.rows[0]?.has_org_column) {
+      this.logger.warn(CLASS_NAME, 'getOrganizationAverages', 'teams.organization_id column not found - graceful degradation');
+      return {
+        orgAvgTotalCommits: 0,
+        orgAvgTotalLoc: 0,
+        orgAvgLocPerPeriod: 0,
+        orgAvgSpPerPeriod: null,
+        orgAvgComplexity: 0,
+        orgAvgReposCount: 0,
+        organizationId: null,
+        organizationName: null,
+      };
+    }
+
+    const startDate = this.getStartDate(filters.timeframeDays);
+    const periodsCount = this.getPeriodsCount(filters.timeframeDays);
+
+    const result = await this.db.query<{
+      org_id: number | null;
+      org_name: string | null;
+      avg_total_commits: number;
+      avg_total_loc: string;
+      avg_complexity: string;
+      avg_repos_count: number;
+      team_count: number;
+    }>(QUERY_TEAM_PROFILE_ORG_AVERAGES, [filters.team, startDate]);
+
+    const row = result.rows[0];
+    if (!row || row.org_id === null) {
+      this.logger.debug(CLASS_NAME, 'getOrganizationAverages', `Team ${filters.team} has no organization - no comparison data`);
+      return {
+        orgAvgTotalCommits: 0,
+        orgAvgTotalLoc: 0,
+        orgAvgLocPerPeriod: 0,
+        orgAvgSpPerPeriod: null,
+        orgAvgComplexity: 0,
+        orgAvgReposCount: 0,
+        organizationId: null,
+        organizationName: null,
+      };
+    }
+
+    const avgTotalLoc = Number(row.avg_total_loc);
+    const avgLocPerPeriod = periodsCount > 0 ? Math.round(avgTotalLoc / periodsCount) : 0;
+
+    // Get org average story points
+    const orgAvgSp = await this.getOrgAverageStoryPoints(filters.team, startDate, periodsCount);
+
+    this.logger.debug(CLASS_NAME, 'getOrganizationAverages',
+      `Org ${row.org_name}: ${row.team_count} teams, avgCommits=${row.avg_total_commits}, avgLoc=${avgTotalLoc}`);
+
+    return {
+      orgAvgTotalCommits: row.avg_total_commits,
+      orgAvgTotalLoc: avgTotalLoc,
+      orgAvgLocPerPeriod: avgLocPerPeriod,
+      orgAvgSpPerPeriod: orgAvgSp,
+      orgAvgComplexity: Number(parseFloat(row.avg_complexity).toFixed(2)),
+      orgAvgReposCount: row.avg_repos_count,
+      organizationId: row.org_id,
+      organizationName: row.org_name,
+    };
+  }
+
+  /**
+   * Get organization average story points per period.
+   * Helper method for getOrganizationAverages.
+   * GITX-220: Calculates average SP/period across all teams in the organization.
+   *
+   * @param team - Team name (used to find organization)
+   * @param startDate - Start date for the timeframe
+   * @param periodsCount - Number of periods for averaging
+   * @returns Average story points per period or null if no data
+   */
+  private async getOrgAverageStoryPoints(team: string, startDate: string, periodsCount: number): Promise<number | null> {
+    // Defense-in-depth: Validate team even though callers should validate
+    this.validateTeam(team, 'getOrgAverageStoryPoints');
+    const sql = `
+      WITH focal_org AS (
+        SELECT t.organization_id
+        FROM teams t
+        WHERE t.name = $1
+      ),
+      org_teams AS (
+        SELECT t.name AS team_name
+        FROM teams t
+        JOIN focal_org fo ON t.organization_id = fo.organization_id
+        WHERE fo.organization_id IS NOT NULL
+      ),
+      team_sp AS (
+        SELECT
+          cc.team AS team_name,
+          COALESCE(SUM(ld.calculated_story_points), 0)::int AS linear_points
+        FROM commit_contributors cc
+        JOIN org_teams ot ON cc.team = ot.team_name
+        LEFT JOIN linear_detail ld ON (
+          ld.assignee = cc.email OR ld.assignee = cc.login OR ld.assignee = cc.full_name
+        )
+        WHERE ld.completed_date >= $2
+          AND ld.state IN ('Done', 'Completed')
+        GROUP BY cc.team
+      ),
+      team_jira_sp AS (
+        SELECT
+          cc.team AS team_name,
+          COALESCE(SUM(jd.calculated_story_points), 0)::int AS jira_points
+        FROM commit_contributors cc
+        JOIN org_teams ot ON cc.team = ot.team_name
+        LEFT JOIN jira_history jh ON jh.change_date >= $2
+          AND jh.field = 'status'
+          AND jh.to_value IN ('Done', 'Closed', 'Resolved')
+        LEFT JOIN jira_detail jd ON jh.jira_key = jd.jira_key
+          AND jd.assignee = COALESCE(cc.jira_name, cc.full_name)
+        WHERE jd.jira_key IS NOT NULL
+        GROUP BY cc.team
+      ),
+      combined_sp AS (
+        SELECT
+          COALESCE(ts.team_name, tjs.team_name) AS team_name,
+          COALESCE(ts.linear_points, 0) + COALESCE(tjs.jira_points, 0) AS total_sp
+        FROM team_sp ts
+        FULL OUTER JOIN team_jira_sp tjs ON ts.team_name = tjs.team_name
+      )
+      SELECT
+        COALESCE(ROUND(AVG(total_sp)), 0)::int AS avg_total_sp,
+        EXISTS (SELECT 1 FROM combined_sp WHERE total_sp > 0) AS has_data
+      FROM combined_sp
+    `;
+
+    const result = await this.db.query<{
+      avg_total_sp: number;
+      has_data: boolean;
+    }>(sql, [team, startDate]);
+
+    const row = result.rows[0];
+    if (!row || !row.has_data) {
+      return null;
+    }
+
+    return periodsCount > 0 ? Math.round((row.avg_total_sp / periodsCount) * 10) / 10 : null;
   }
 }

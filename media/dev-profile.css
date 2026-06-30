@@ -157,6 +157,22 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/**
+ * GITX-220: Organization average comparison text
+ * Displayed below primary KPI values in lighter/grayer styling.
+ * Visual treatment: 75% font size, description foreground color.
+ * A11Y: Uses high-contrast-safe color via --vscode-descriptionForeground.
+ */
+.summary-comparison {
+  font-size: 0.75em;
+  color: var(--vscode-descriptionForeground, #888888);
+  font-style: italic;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .summary-card-skeleton {
   width: 80%;
   height: 40px;

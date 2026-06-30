@@ -4,6 +4,87 @@
  * Ticket: GITX-185
  */
 
+// ============================================================================
+// GITX-220: Organization Team Averages Queries
+// ============================================================================
+
+/**
+ * Query to check if the teams table exists with organization_id.
+ * Used for graceful degradation if migration 030 has not been applied.
+ * GITX-220: Team Profile uses this to check if org averages are available.
+ */
+export const QUERY_TEAM_ORG_TABLE_EXISTS = `
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'teams'
+      AND column_name = 'organization_id'
+  ) AS has_org_column
+`;
+
+/**
+ * Query to fetch organization-wide team averages for KPI comparison.
+ * Returns averages across all teams in the same organization as the focal team.
+ * GITX-220: Used for displaying comparison metrics beside primary KPI values.
+ *
+ * Parameters:
+ *   $1 - team name (TEXT)
+ *   $2 - start date (DATE)
+ *
+ * Returns:
+ *   - org_id: Organization ID (null if team has no organization)
+ *   - org_name: Organization name
+ *   - avg_total_commits: Average commits per team
+ *   - avg_total_loc: Average LOC per team
+ *   - avg_complexity: Average complexity across org teams
+ *   - avg_repos_count: Average repository count per team
+ *   - team_count: Number of teams in organization (for validation)
+ */
+export const QUERY_TEAM_PROFILE_ORG_AVERAGES = `
+  WITH focal_team AS (
+    -- Get the organization of the focal team
+    SELECT t.id AS team_id, t.name AS team_name, t.organization_id, o.name AS org_name
+    FROM teams t
+    LEFT JOIN organizations o ON t.organization_id = o.id
+    WHERE t.name = $1
+  ),
+  org_teams AS (
+    -- Get all teams in the same organization
+    SELECT t.name AS team_name
+    FROM teams t
+    JOIN focal_team ft ON t.organization_id = ft.organization_id
+    WHERE ft.organization_id IS NOT NULL
+  ),
+  team_metrics AS (
+    -- Calculate metrics per team
+    SELECT
+      cc.team AS team_name,
+      COUNT(DISTINCT ch.sha)::int AS total_commits,
+      COALESCE(SUM(cf.line_inserts), 0)::bigint AS total_loc,
+      COALESCE(AVG(NULLIF(cf.complexity, 0)), 0)::numeric AS avg_complexity,
+      COUNT(DISTINCT ch.repository)::int AS repos_count
+    FROM commit_contributors cc
+    JOIN org_teams ot ON cc.team = ot.team_name
+    LEFT JOIN commit_history ch ON (
+      ch.author = COALESCE(cc.full_name, cc.login)
+    )
+    LEFT JOIN commit_files cf ON cf.sha = ch.sha
+    WHERE ch.commit_date >= $2
+      AND ch.is_merge = FALSE
+    GROUP BY cc.team
+  )
+  SELECT
+    ft.organization_id AS org_id,
+    ft.org_name,
+    COALESCE(ROUND(AVG(tm.total_commits)), 0)::int AS avg_total_commits,
+    COALESCE(ROUND(AVG(tm.total_loc)), 0)::bigint AS avg_total_loc,
+    COALESCE(ROUND(AVG(tm.avg_complexity)::numeric, 2), 0)::numeric AS avg_complexity,
+    COALESCE(ROUND(AVG(tm.repos_count)), 0)::int AS avg_repos_count,
+    COUNT(DISTINCT tm.team_name)::int AS team_count
+  FROM focal_team ft
+  LEFT JOIN team_metrics tm ON TRUE
+  GROUP BY ft.organization_id, ft.org_name
+`;
+
 /**
  * Query to fetch sprint velocity vs LOC data for a team.
  * Correlates story points from Linear/Jira with lines of code committed by all team members.
