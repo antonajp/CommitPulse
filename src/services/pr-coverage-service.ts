@@ -21,9 +21,11 @@ import { LoggerService } from '../logging/logger.js';
 import { isValidDateString } from '../utils/date-validation.js';
 import {
   QUERY_PR_COVERAGE_VIEW_EXISTS,
+  QUERY_PR_TABLE_COUNT,
   QUERY_PR_COVERAGE_OVERALL,
   QUERY_PR_COVERAGE_OVERALL_DATE_RANGE,
   QUERY_ORPHAN_COMMITS,
+  QUERY_ORPHAN_CATEGORY_BREAKDOWN,
   QUERY_PR_COVERAGE_BY_BRANCH,
   QUERY_PR_COVERAGE_BY_AUTHOR,
   QUERY_PR_COVERAGE_BY_CONTRIBUTOR,
@@ -33,10 +35,13 @@ import {
   QUERY_PR_COVERAGE_AUTHORS,
   QUERY_PR_COVERAGE_CONTRIBUTORS,
   QUERY_PR_COVERAGE_BRANCHES,
+  QUERY_PR_COVERAGE_TEAMS,
   QUERY_SYNC_PR_COVERAGE_FROM_MERGE_SHA,
   type ViewExistsRow,
+  type PRTableCountRow,
   type PRCoverageOverallRow,
   type OrphanCommitRow,
+  type OrphanCategoryBreakdownRow,
   type CoverageByBranchRow,
   type CoverageByAuthorRow,
   type CoverageByContributorRow,
@@ -46,12 +51,17 @@ import {
   type AuthorRow,
   type ContributorRow,
   type BranchRow,
+  type TeamRow,
 } from '../database/queries/pr-coverage-queries.js';
 import {
   PR_COVERAGE_MAX_FILTER_LENGTH,
+  PR_COVERAGE_MAX_ARRAY_LENGTH,
   PR_COVERAGE_DEFAULT_DAYS,
+  isValidOrphanCategory,
   type PRCoverageOverall,
   type OrphanCommit,
+  type OrphanCategoryBreakdown,
+  type OrphanCategory,
   type CoverageByBranch,
   type CoverageByAuthor,
   type CoverageByContributor,
@@ -100,6 +110,23 @@ export class PRCoverageService {
   }
 
   /**
+   * Check if the pull_request table has any data.
+   * Used to detect the 0.0% coverage bug when PRs haven't been synced.
+   *
+   * @returns true if the table has at least one row
+   */
+  async checkPRTableHasData(): Promise<boolean> {
+    this.logger.debug(CLASS_NAME, 'checkPRTableHasData', 'Checking pull_request table for data');
+
+    const result = await this.db.query<PRTableCountRow>(QUERY_PR_TABLE_COUNT);
+    const count = Number(result.rows[0]?.pr_count ?? 0);
+    const hasData = count > 0;
+
+    this.logger.debug(CLASS_NAME, 'checkPRTableHasData', `pull_request table has ${count} rows: ${hasData}`);
+    return hasData;
+  }
+
+  /**
    * Validate string filter inputs.
    * Enforces maximum length to prevent DoS attacks (CWE-20).
    *
@@ -117,6 +144,41 @@ export class PRCoverageService {
       throw new Error(
         `${fieldName} exceeds maximum length of ${PR_COVERAGE_MAX_FILTER_LENGTH} characters`,
       );
+    }
+  }
+
+  /**
+   * Validate string array filter inputs (teams, branches).
+   * Enforces maximum array length and per-element string length to prevent DoS attacks (CWE-20, CWE-770).
+   *
+   * @param values - Array of string values to validate
+   * @param fieldName - Name of the field for error message
+   * @throws Error if array size or any value exceeds maximum length
+   */
+  private validateStringArrayFilter(values: readonly string[] | undefined, fieldName: string): void {
+    if (values) {
+      if (values.length > PR_COVERAGE_MAX_ARRAY_LENGTH) {
+        this.logger.warn(
+          CLASS_NAME,
+          'validateStringArrayFilter',
+          `${fieldName} array exceeds max length: ${values.length} > ${PR_COVERAGE_MAX_ARRAY_LENGTH}`,
+        );
+        throw new Error(
+          `${fieldName} array exceeds maximum length of ${PR_COVERAGE_MAX_ARRAY_LENGTH} items`,
+        );
+      }
+      for (const value of values) {
+        if (value.length > PR_COVERAGE_MAX_FILTER_LENGTH) {
+          this.logger.warn(
+            CLASS_NAME,
+            'validateStringArrayFilter',
+            `${fieldName} item exceeds max length: ${value.length} > ${PR_COVERAGE_MAX_FILTER_LENGTH}`,
+          );
+          throw new Error(
+            `${fieldName} item exceeds maximum length of ${PR_COVERAGE_MAX_FILTER_LENGTH} characters`,
+          );
+        }
+      }
     }
   }
 
@@ -240,19 +302,31 @@ export class PRCoverageService {
   /**
    * Fetch orphan commits (commits without PRs).
    *
-   * @param filters - Date range, repository, author, and branch filters
+   * @param filters - Date range, repository, author, branch, team, and category filters
+   * @param orphanCategory - Optional filter by specific orphan category (GITX-227)
    * @returns Array of orphan commits
    */
-  async getOrphanCommits(filters: PRCoverageFilters = {}): Promise<readonly OrphanCommit[]> {
+  async getOrphanCommits(
+    filters: PRCoverageFilters = {},
+    orphanCategory?: OrphanCategory,
+  ): Promise<readonly OrphanCommit[]> {
     this.logger.debug(
       CLASS_NAME,
       'getOrphanCommits',
-      `Fetching orphan commits: filters=${JSON.stringify(filters)}`,
+      `Fetching orphan commits: filters=${JSON.stringify(filters)}, category=${orphanCategory ?? 'all'}`,
     );
 
     this.validateStringFilter(filters.repository, 'repository');
     this.validateStringFilter(filters.author, 'author');
+    this.validateStringArrayFilter(filters.branches, 'branches');
+    this.validateStringArrayFilter(filters.teams, 'teams');
     this.validateDateFilters(filters);
+
+    // Validate orphan category if provided (CWE-20)
+    if (orphanCategory !== undefined && !isValidOrphanCategory(orphanCategory)) {
+      this.logger.warn(CLASS_NAME, 'getOrphanCommits', `Invalid orphan category rejected: ${orphanCategory}`);
+      throw new Error(`Invalid orphan category: ${orphanCategory}`);
+    }
 
     const effectiveFilters = this.applyDefaultFilters(filters);
 
@@ -266,6 +340,10 @@ export class PRCoverageService {
         effectiveFilters.branches && effectiveFilters.branches.length > 0
           ? effectiveFilters.branches
           : null,
+        effectiveFilters.teams && effectiveFilters.teams.length > 0
+          ? effectiveFilters.teams
+          : null,
+        orphanCategory ?? null,
       ],
     );
 
@@ -279,9 +357,86 @@ export class PRCoverageService {
   }
 
   /**
+   * Fetch orphan category breakdown.
+   * Provides counts and percentages for each orphan category (GITX-227).
+   *
+   * @param filters - Date range, repository, and team filters
+   * @returns Orphan category breakdown with counts and direct push percentage
+   */
+  async getOrphanBreakdown(filters: PRCoverageFilters = {}): Promise<OrphanCategoryBreakdown> {
+    this.logger.debug(
+      CLASS_NAME,
+      'getOrphanBreakdown',
+      `Fetching orphan breakdown: filters=${JSON.stringify(filters)}`,
+    );
+
+    this.validateStringFilter(filters.repository, 'repository');
+    this.validateStringArrayFilter(filters.teams, 'teams');
+    this.validateDateFilters(filters);
+
+    const effectiveFilters = this.applyDefaultFilters(filters);
+
+    const result = await this.db.query<OrphanCategoryBreakdownRow>(
+      QUERY_ORPHAN_CATEGORY_BREAKDOWN,
+      [
+        effectiveFilters.startDate,
+        effectiveFilters.endDate,
+        effectiveFilters.repository ?? null,
+        effectiveFilters.teams && effectiveFilters.teams.length > 0
+          ? effectiveFilters.teams
+          : null,
+      ],
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      this.logger.debug(CLASS_NAME, 'getOrphanBreakdown', 'No orphan breakdown data found');
+      return {
+        preMergeOnPrBranch: 0,
+        directToProtected: 0,
+        unlinkedFeatureBranch: 0,
+        totalOrphans: 0,
+        directPushPercentage: 0,
+      };
+    }
+
+    const breakdown: OrphanCategoryBreakdown = {
+      preMergeOnPrBranch: Number(row.pre_merge_on_pr_branch_count),
+      directToProtected: Number(row.direct_to_protected_count),
+      unlinkedFeatureBranch: Number(row.unlinked_feature_branch_count),
+      totalOrphans: Number(row.total_orphans),
+      directPushPercentage: Number(row.direct_push_percentage),
+    };
+
+    this.logger.info(
+      CLASS_NAME,
+      'getOrphanBreakdown',
+      `Orphan breakdown: pre-merge=${breakdown.preMergeOnPrBranch}, ` +
+      `direct=${breakdown.directToProtected} (${breakdown.directPushPercentage}%), ` +
+      `unlinked=${breakdown.unlinkedFeatureBranch}`,
+    );
+
+    return breakdown;
+  }
+
+  /**
    * Map database row to OrphanCommit interface.
    */
   private mapOrphanCommitRow(row: OrphanCommitRow): OrphanCommit {
+    // Validate and map orphan_category (GITX-227)
+    let orphanCategory: OrphanCategory | null = null;
+    if (row.orphan_category) {
+      if (isValidOrphanCategory(row.orphan_category)) {
+        orphanCategory = row.orphan_category;
+      } else {
+        this.logger.warn(
+          CLASS_NAME,
+          'mapOrphanCommitRow',
+          `Invalid orphan_category in database: ${row.orphan_category} for SHA ${row.sha}`,
+        );
+      }
+    }
+
     return {
       sha: row.sha,
       repository: row.repository,
@@ -295,13 +450,14 @@ export class PRCoverageService {
       linesRemoved: Number(row.lines_removed ?? 0),
       fileCount: Number(row.file_count ?? 0),
       organization: row.organization,
+      orphanCategory,
     };
   }
 
   /**
    * Fetch coverage breakdown by branch.
    *
-   * @param filters - Date range and repository filters
+   * @param filters - Date range, repository, and team filters
    * @returns Array of coverage metrics per branch
    */
   async getCoverageByBranch(filters: PRCoverageFilters = {}): Promise<readonly CoverageByBranch[]> {
@@ -312,6 +468,7 @@ export class PRCoverageService {
     );
 
     this.validateStringFilter(filters.repository, 'repository');
+    this.validateStringArrayFilter(filters.teams, 'teams');
     this.validateDateFilters(filters);
 
     const effectiveFilters = this.applyDefaultFilters(filters);
@@ -322,6 +479,9 @@ export class PRCoverageService {
         effectiveFilters.startDate,
         effectiveFilters.endDate,
         effectiveFilters.repository ?? null,
+        effectiveFilters.teams && effectiveFilters.teams.length > 0
+          ? effectiveFilters.teams
+          : null,
       ],
     );
 
@@ -344,7 +504,7 @@ export class PRCoverageService {
   /**
    * Fetch coverage breakdown by author.
    *
-   * @param filters - Date range and repository filters
+   * @param filters - Date range, repository, and team filters
    * @returns Array of coverage metrics per author
    */
   async getCoverageByAuthor(filters: PRCoverageFilters = {}): Promise<readonly CoverageByAuthor[]> {
@@ -355,6 +515,7 @@ export class PRCoverageService {
     );
 
     this.validateStringFilter(filters.repository, 'repository');
+    this.validateStringArrayFilter(filters.teams, 'teams');
     this.validateDateFilters(filters);
 
     const effectiveFilters = this.applyDefaultFilters(filters);
@@ -365,6 +526,9 @@ export class PRCoverageService {
         effectiveFilters.startDate,
         effectiveFilters.endDate,
         effectiveFilters.repository ?? null,
+        effectiveFilters.teams && effectiveFilters.teams.length > 0
+          ? effectiveFilters.teams
+          : null,
       ],
     );
 
@@ -387,7 +551,7 @@ export class PRCoverageService {
   /**
    * Fetch coverage breakdown by contributor (full_name).
    *
-   * @param filters - Date range and repository filters
+   * @param filters - Date range, repository, and team filters
    * @returns Array of coverage metrics per contributor
    */
   async getCoverageByContributor(filters: PRCoverageFilters = {}): Promise<readonly CoverageByContributor[]> {
@@ -398,6 +562,7 @@ export class PRCoverageService {
     );
 
     this.validateStringFilter(filters.repository, 'repository');
+    this.validateStringArrayFilter(filters.teams, 'teams');
     this.validateDateFilters(filters);
 
     const effectiveFilters = this.applyDefaultFilters(filters);
@@ -408,6 +573,9 @@ export class PRCoverageService {
         effectiveFilters.startDate,
         effectiveFilters.endDate,
         effectiveFilters.repository ?? null,
+        effectiveFilters.teams && effectiveFilters.teams.length > 0
+          ? effectiveFilters.teams
+          : null,
       ],
     );
 
@@ -431,7 +599,7 @@ export class PRCoverageService {
   /**
    * Fetch coverage breakdown by team.
    *
-   * @param filters - Date range and repository filters
+   * @param filters - Date range, repository, and team filters
    * @returns Array of coverage metrics per team
    */
   async getCoverageByTeam(filters: PRCoverageFilters = {}): Promise<readonly CoverageByTeam[]> {
@@ -442,6 +610,7 @@ export class PRCoverageService {
     );
 
     this.validateStringFilter(filters.repository, 'repository');
+    this.validateStringArrayFilter(filters.teams, 'teams');
     this.validateDateFilters(filters);
 
     const effectiveFilters = this.applyDefaultFilters(filters);
@@ -452,6 +621,9 @@ export class PRCoverageService {
         effectiveFilters.startDate,
         effectiveFilters.endDate,
         effectiveFilters.repository ?? null,
+        effectiveFilters.teams && effectiveFilters.teams.length > 0
+          ? effectiveFilters.teams
+          : null,
       ],
     );
 
@@ -475,7 +647,7 @@ export class PRCoverageService {
   /**
    * Fetch weekly coverage trend.
    *
-   * @param filters - Date range and repository filters
+   * @param filters - Date range, repository, and team filters
    * @returns Array of weekly trend data points
    */
   async getWeeklyTrend(filters: PRCoverageFilters = {}): Promise<readonly WeeklyTrendPoint[]> {
@@ -486,6 +658,7 @@ export class PRCoverageService {
     );
 
     this.validateStringFilter(filters.repository, 'repository');
+    this.validateStringArrayFilter(filters.teams, 'teams');
     this.validateDateFilters(filters);
 
     const effectiveFilters = this.applyDefaultFilters(filters);
@@ -496,6 +669,9 @@ export class PRCoverageService {
         effectiveFilters.startDate,
         effectiveFilters.endDate,
         effectiveFilters.repository ?? null,
+        effectiveFilters.teams && effectiveFilters.teams.length > 0
+          ? effectiveFilters.teams
+          : null,
       ],
     );
 
@@ -517,10 +693,33 @@ export class PRCoverageService {
   }
 
   /**
+   * Fetch available teams from database.
+   *
+   * @param repository - Optional repository to scope teams
+   * @returns Array of team names
+   */
+  async getTeams(repository?: string): Promise<readonly string[]> {
+    this.logger.debug(
+      CLASS_NAME,
+      'getTeams',
+      `Fetching teams: repository=${repository ?? 'all'}`,
+    );
+
+    this.validateStringFilter(repository, 'repository');
+
+    const result = await this.db.query<TeamRow>(QUERY_PR_COVERAGE_TEAMS, [repository ?? null]);
+    const teams = result.rows.map((r) => r.team_name);
+
+    this.logger.debug(CLASS_NAME, 'getTeams', `Found ${teams.length} teams`);
+
+    return teams;
+  }
+
+  /**
    * Fetch available filter options from database.
    *
-   * @param repository - Optional repository to filter authors/branches/contributors
-   * @returns Lists of available repositories, authors, contributors, and branches
+   * @param repository - Optional repository to filter authors/branches/contributors/teams
+   * @returns Lists of available repositories, authors, contributors, branches, and teams
    */
   async getFilterOptions(repository?: string): Promise<PRCoverageFilterOptions> {
     this.logger.debug(
@@ -531,11 +730,12 @@ export class PRCoverageService {
 
     this.validateStringFilter(repository, 'repository');
 
-    const [repoResult, authorResult, contributorResult, branchResult] = await Promise.all([
+    const [repoResult, authorResult, contributorResult, branchResult, teams] = await Promise.all([
       this.db.query<RepositoryRow>(QUERY_PR_COVERAGE_REPOSITORIES),
       this.db.query<AuthorRow>(QUERY_PR_COVERAGE_AUTHORS, [repository ?? null]),
       this.db.query<ContributorRow>(QUERY_PR_COVERAGE_CONTRIBUTORS, [repository ?? null]),
       this.db.query<BranchRow>(QUERY_PR_COVERAGE_BRANCHES, [repository ?? null]),
+      this.getTeams(repository),
     ]);
 
     const options: PRCoverageFilterOptions = {
@@ -543,12 +743,13 @@ export class PRCoverageService {
       authors: authorResult.rows.map((a) => a.author),
       contributors: contributorResult.rows.map((c) => c.contributor_display),
       branches: branchResult.rows.map((b) => b.branch),
+      teams,
     };
 
     this.logger.debug(
       CLASS_NAME,
       'getFilterOptions',
-      `Found ${options.repositories.length} repos, ${options.authors.length} authors, ${options.contributors.length} contributors, ${options.branches.length} branches`,
+      `Found ${options.repositories.length} repos, ${options.authors.length} authors, ${options.contributors.length} contributors, ${options.branches.length} branches, ${options.teams.length} teams`,
     );
 
     return options;
@@ -557,7 +758,7 @@ export class PRCoverageService {
   /**
    * Get complete chart data including all metrics.
    *
-   * @param filters - Date range, repository, author filters
+   * @param filters - Date range, repository, author, and team filters
    * @returns Complete PR coverage chart data
    */
   async getChartData(filters: PRCoverageFilters = {}): Promise<PRCoverageChartData> {
@@ -590,13 +791,25 @@ export class PRCoverageService {
         byContributor: [],
         byTeam: [],
         orphanCommits: [],
+        orphanBreakdown: {
+          preMergeOnPrBranch: 0,
+          directToProtected: 0,
+          unlinkedFeatureBranch: 0,
+          totalOrphans: 0,
+          directPushPercentage: 0,
+        },
         hasData: false,
         viewExists: false,
+        hasPRData: false,
       };
     }
 
-    // Fetch all data in parallel for performance
-    const [overall, weeklyTrend, byAuthor, byBranch, byContributor, byTeam, orphanCommits] = await Promise.all([
+    // Check if pull_request table has data
+    const hasPRData = await this.checkPRTableHasData();
+    this.logger.debug(CLASS_NAME, 'getChartData', `pull_request table has data: ${hasPRData}`);
+
+    // Fetch all data in parallel for performance (including orphan breakdown - GITX-227)
+    const [overall, weeklyTrend, byAuthor, byBranch, byContributor, byTeam, orphanCommits, orphanBreakdown] = await Promise.all([
       this.getOverallCoverage(filters),
       this.getWeeklyTrend(filters),
       this.getCoverageByAuthor(filters),
@@ -604,6 +817,7 @@ export class PRCoverageService {
       this.getCoverageByContributor(filters),
       this.getCoverageByTeam(filters),
       this.getOrphanCommits(filters),
+      this.getOrphanBreakdown(filters),
     ]);
 
     const hasData = overall.totalCommits > 0;
@@ -611,7 +825,8 @@ export class PRCoverageService {
     this.logger.info(
       CLASS_NAME,
       'getChartData',
-      `Chart data ready: ${overall.totalCommits} commits, ${overall.coveragePercentage}% coverage`,
+      `Chart data ready: ${overall.totalCommits} commits, ${overall.coveragePercentage}% coverage, ` +
+      `directPush=${orphanBreakdown.directPushPercentage}%, hasPRData=${hasPRData}`,
     );
 
     return {
@@ -622,8 +837,10 @@ export class PRCoverageService {
       byContributor,
       byTeam,
       orphanCommits,
+      orphanBreakdown,
       hasData,
       viewExists: true,
+      hasPRData,
     };
   }
 

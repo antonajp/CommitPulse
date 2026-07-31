@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.57",
+  "version": "0.1.58",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -265,6 +265,12 @@
         "command": "gitrx.openPRCoverageDashboard",
         "title": "Gitr: Open PR Coverage Report",
         "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "gitr.syncGitHubPRs",
+        "title": "Gitr: Sync GitHub PRs",
+        "category": "Gitr",
+        "icon": "$(sync)"
       }
     ],
     "configuration": {

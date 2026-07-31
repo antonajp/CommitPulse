@@ -174,6 +174,7 @@ describe('PRCoverageService', () => {
           lines_removed: 5,
           file_count: 2,
           organization: 'myorg',
+          orphan_category: 'direct_to_protected',
         }],
         rowCount: 1,
         command: 'SELECT',
@@ -198,6 +199,7 @@ describe('PRCoverageService', () => {
         linesRemoved: 5,
         fileCount: 2,
         organization: 'myorg',
+        orphanCategory: 'direct_to_protected',
       });
     });
 
@@ -214,6 +216,7 @@ describe('PRCoverageService', () => {
           lines_removed: null,
           file_count: null,
           organization: null,
+          orphan_category: null,
         }],
         rowCount: 1,
         command: 'SELECT',
@@ -237,7 +240,116 @@ describe('PRCoverageService', () => {
         linesRemoved: 0,
         fileCount: 0,
         organization: null,
+        orphanCategory: null,
       });
+    });
+  });
+
+  describe('getOrphanBreakdown', () => {
+    it('should return breakdown with correct percentages', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          pre_merge_on_pr_branch_count: 10,
+          direct_to_protected_count: 5,
+          unlinked_feature_branch_count: 5,
+          total_orphans: 20,
+          direct_push_percentage: 25,
+        }],
+        rowCount: 1,
+        command: 'SELECT',
+        oid: 0,
+        fields: [],
+      });
+
+      const result = await service.getOrphanBreakdown({
+        startDate: '2024-01-01',
+        endDate: '2024-03-31',
+      });
+
+      expect(result).toEqual({
+        preMergeOnPrBranch: 10,
+        directToProtected: 5,
+        unlinkedFeatureBranch: 5,
+        totalOrphans: 20,
+        directPushPercentage: 25,
+      });
+    });
+
+    it('should return zeros when no orphan data exists', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+        command: 'SELECT',
+        oid: 0,
+        fields: [],
+      });
+
+      const result = await service.getOrphanBreakdown({
+        startDate: '2024-01-01',
+        endDate: '2024-03-31',
+      });
+
+      expect(result).toEqual({
+        preMergeOnPrBranch: 0,
+        directToProtected: 0,
+        unlinkedFeatureBranch: 0,
+        totalOrphans: 0,
+        directPushPercentage: 0,
+      });
+    });
+
+    it('should apply repository filter', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          pre_merge_on_pr_branch_count: 2,
+          direct_to_protected_count: 3,
+          unlinked_feature_branch_count: 0,
+          total_orphans: 5,
+          direct_push_percentage: 60,
+        }],
+        rowCount: 1,
+        command: 'SELECT',
+        oid: 0,
+        fields: [],
+      });
+
+      await service.getOrphanBreakdown({
+        startDate: '2024-01-01',
+        endDate: '2024-03-31',
+        repository: 'my-repo',
+      });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining(['my-repo']),
+      );
+    });
+
+    it('should apply team filter', async () => {
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{
+          pre_merge_on_pr_branch_count: 1,
+          direct_to_protected_count: 1,
+          unlinked_feature_branch_count: 1,
+          total_orphans: 3,
+          direct_push_percentage: 33.3,
+        }],
+        rowCount: 1,
+        command: 'SELECT',
+        oid: 0,
+        fields: [],
+      });
+
+      await service.getOrphanBreakdown({
+        startDate: '2024-01-01',
+        endDate: '2024-03-31',
+        teams: ['Backend Team'],
+      });
+
+      expect(mockDb.query).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining([['Backend Team']]),
+      );
     });
   });
 
@@ -403,6 +515,13 @@ describe('PRCoverageService', () => {
           command: 'SELECT',
           oid: 0,
           fields: [],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ team_name: 'Engineering' }, { team_name: 'Product' }],
+          rowCount: 2,
+          command: 'SELECT',
+          oid: 0,
+          fields: [],
         });
 
       const result = await service.getFilterOptions();
@@ -412,6 +531,7 @@ describe('PRCoverageService', () => {
         authors: ['alice', 'bob'],
         contributors: ['Alice Johnson (alice)', 'Bob Smith (bob)'],
         branches: ['main', 'develop'],
+        teams: ['Engineering', 'Product'],
       });
     });
   });
@@ -826,7 +946,16 @@ describe('PRCoverageService', () => {
         fields: [],
       });
 
-      // Mock parallel queries (overall, weeklyTrend, byAuthor, byBranch, byContributor, byTeam, orphanCommits)
+      // Mock checkPRTableHasData
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ pr_count: 10 }],
+        rowCount: 1,
+        command: 'SELECT',
+        oid: 0,
+        fields: [],
+      });
+
+      // Mock parallel queries (overall, weeklyTrend, byAuthor, byBranch, byContributor, byTeam, orphanCommits, orphanBreakdown)
       vi.mocked(mockDb.query)
         .mockResolvedValueOnce({ rows: [{ total_commits: 100, pr_linked_commits: 80, orphan_commits: 20, merge_commits: 5, repositories_analyzed: 2, coverage_percentage: 80 }], rowCount: 1, command: 'SELECT', oid: 0, fields: [] })
         .mockResolvedValueOnce({ rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] }) // weeklyTrend
@@ -848,7 +977,8 @@ describe('PRCoverageService', () => {
           fields: [],
         })
         .mockResolvedValueOnce({ rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] }) // byTeam
-        .mockResolvedValueOnce({ rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] }); // orphanCommits
+        .mockResolvedValueOnce({ rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] }) // orphanCommits
+        .mockResolvedValueOnce({ rows: [{ pre_merge_on_pr_branch_count: 10, direct_to_protected_count: 5, unlinked_feature_branch_count: 5, total_orphans: 20, direct_push_percentage: 25 }], rowCount: 1, command: 'SELECT', oid: 0, fields: [] }); // orphanBreakdown
 
       const result = await service.getChartData({
         startDate: '2024-01-01',
@@ -878,7 +1008,16 @@ describe('PRCoverageService', () => {
         fields: [],
       });
 
-      // Mock parallel queries
+      // Mock checkPRTableHasData
+      vi.mocked(mockDb.query).mockResolvedValueOnce({
+        rows: [{ pr_count: 10 }],
+        rowCount: 1,
+        command: 'SELECT',
+        oid: 0,
+        fields: [],
+      });
+
+      // Mock parallel queries (overall, weeklyTrend, byAuthor, byBranch, byContributor, byTeam, orphanCommits, orphanBreakdown)
       vi.mocked(mockDb.query)
         .mockResolvedValueOnce({ rows: [{ total_commits: 100, pr_linked_commits: 80, orphan_commits: 20, merge_commits: 5, repositories_analyzed: 2, coverage_percentage: 80 }], rowCount: 1, command: 'SELECT', oid: 0, fields: [] })
         .mockResolvedValueOnce({ rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] }) // weeklyTrend
@@ -900,7 +1039,8 @@ describe('PRCoverageService', () => {
           oid: 0,
           fields: [],
         })
-        .mockResolvedValueOnce({ rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] }); // orphanCommits
+        .mockResolvedValueOnce({ rows: [], rowCount: 0, command: 'SELECT', oid: 0, fields: [] }) // orphanCommits
+        .mockResolvedValueOnce({ rows: [{ pre_merge_on_pr_branch_count: 0, direct_to_protected_count: 5, unlinked_feature_branch_count: 0, total_orphans: 5, direct_push_percentage: 100 }], rowCount: 1, command: 'SELECT', oid: 0, fields: [] }); // orphanBreakdown
 
       const result = await service.getChartData({
         startDate: '2024-01-01',

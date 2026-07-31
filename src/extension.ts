@@ -34,6 +34,9 @@ import { JoinDiagnosticPanel } from './views/webview/join-diagnostic-panel.js';
 import { OrganizationProfilePanel } from './views/webview/org-profile-panel.js';
 import { PRCoveragePanel } from './views/webview/pr-coverage-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
+import { GitHubPRSyncService } from './services/github-pr-sync-service.js';
+import { PRCoverageService } from './services/pr-coverage-service.js';
+import type { GitHubPRSyncConfig } from './services/code-review-velocity-types.js';
 
 /**
  * Extension-level disposables for cleanup on deactivation.
@@ -872,6 +875,162 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     PRCoveragePanel.createOrShow(context.extensionUri, secretService);
   });
   disposables.push(openPRCoverageDisposable);
+
+  // gitr.syncGitHubPRs - Sync GitHub PRs for all configured repositories (GITX-226)
+  const syncGitHubPRsDisposable = vscode.commands.registerCommand('gitr.syncGitHubPRs', async () => {
+    logger?.info(CLASS_NAME, 'syncGitHubPRs', 'Command executed: gitr.syncGitHubPRs');
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Syncing GitHub PRs',
+        cancellable: true,
+      },
+      async (progress, token) => {
+        try {
+          // Check for cancellation
+          if (token.isCancellationRequested) {
+            logger?.info(CLASS_NAME, 'syncGitHubPRs', 'PR sync cancelled by user');
+            return;
+          }
+
+          // Get GitHub token from SecretStorage
+          const githubToken = await secretService.getGitHubToken();
+          if (!githubToken) {
+            void vscode.window.showErrorMessage(
+              'Gitr: GitHub token not set. Use "Gitr: Set GitHub Token" command to configure authentication.',
+            );
+            logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'GitHub token not configured');
+            return;
+          }
+
+          // Get repository configurations from settings
+          const settings = getSettings();
+          if (settings.repositories.length === 0) {
+            void vscode.window.showInformationMessage('Gitr: No repositories configured. Add repositories in settings first.');
+            logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'No repositories configured');
+            return;
+          }
+
+          // Build GitHubPRSyncConfig array from settings.repositories
+          const configs: GitHubPRSyncConfig[] = [];
+          for (const repo of settings.repositories) {
+            if (!repo.repoUrl) {
+              logger?.warn(CLASS_NAME, 'syncGitHubPRs', `Skipping repository "${repo.name}" - no repoUrl configured`);
+              continue;
+            }
+
+            // Parse owner and repo from repoUrl (e.g., https://github.com/owner/repo or https://github.com/owner/repo.git)
+            // Regex handles: trailing .git, trailing slash, paths after repo name
+            const match = repo.repoUrl.match(/github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?(?:\/|$)/);
+            if (!match) {
+              // Log without exposing full URL (security: CWE-209)
+              logger?.warn(CLASS_NAME, 'syncGitHubPRs', `Skipping repository "${repo.name}" - unable to parse GitHub URL format`);
+              continue;
+            }
+
+            const owner = match[1];
+            const repoName = match[2];
+
+            if (!owner || !repoName) {
+              logger?.warn(CLASS_NAME, 'syncGitHubPRs', `Skipping repository "${repo.name}" - could not extract owner/repo from URL`);
+              continue;
+            }
+
+            // Use gitrx.prCoverage.sinceDays setting for sync window (default: 90 days)
+            const prCoverageConfig = vscode.workspace.getConfiguration('gitrx.prCoverage');
+            const syncDaysBack = prCoverageConfig.get<number>('sinceDays', 90);
+
+            configs.push({
+              owner,
+              repo: repoName,
+              token: githubToken,
+              syncDaysBack,
+            });
+          }
+
+          if (configs.length === 0) {
+            void vscode.window.showWarningMessage('Gitr: No valid GitHub repositories found. Ensure repositories have repoUrl configured.');
+            logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'No valid GitHub repositories to sync');
+            return;
+          }
+
+          logger?.info(CLASS_NAME, 'syncGitHubPRs', `Syncing PRs for ${configs.length} repositories`);
+          progress.report({ message: `Syncing ${configs.length} repositories...` });
+
+          // Get database connection
+          const dbPassword = await secretService.getDatabasePassword();
+          if (!dbPassword) {
+            void vscode.window.showErrorMessage('Gitr: Database password not set. Use "Gitr: Set Database Password" command first.');
+            logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'Database password not configured');
+            return;
+          }
+
+          // Import database service
+          const { DatabaseService, buildConfigFromSettings } = await import('./database/database-service.js');
+          const dbService = new DatabaseService();
+          const dbConfig = buildConfigFromSettings(settings.database, dbPassword);
+
+          try {
+            // Connect to database
+            await dbService.initialize(dbConfig);
+
+            // Check if pull_request table exists
+            const prSyncService = new GitHubPRSyncService(githubToken, dbService);
+            const tableExists = await prSyncService.checkTableExists();
+            if (!tableExists) {
+              void vscode.window.showErrorMessage(
+                'Gitr: pull_request table not found. Run "Gitr: Run Database Migrations" to create the required schema.',
+              );
+              logger?.error(CLASS_NAME, 'syncGitHubPRs', 'pull_request table does not exist - migration 012 not applied');
+              return;
+            }
+
+            // Sync all repositories
+            const result = await prSyncService.syncAllRepositories(configs);
+
+            // Check for cancellation after sync
+            if (token.isCancellationRequested) {
+              logger?.info(CLASS_NAME, 'syncGitHubPRs', 'PR sync cancelled by user after sync');
+              return;
+            }
+
+            logger?.info(
+              CLASS_NAME,
+              'syncGitHubPRs',
+              `PR sync complete: ${result.totalPRs} PRs, ${result.totalReviews} reviews synced in ${result.totalDurationMs}ms`,
+            );
+
+            // Sync commit-PR links from merge_sha
+            progress.report({ message: 'Correlating PRs with commits...' });
+            const prCoverageService = new PRCoverageService(dbService);
+            const linksCreated = await prCoverageService.syncCoverageFromMergeSha();
+
+            logger?.info(CLASS_NAME, 'syncGitHubPRs', `Created ${linksCreated} commit-PR links from merge_sha correlation`);
+
+            // Show success message
+            void vscode.window.showInformationMessage(
+              `Gitr: Successfully synced ${result.totalPRs} PRs and ${result.totalReviews} reviews. Created ${linksCreated} commit-PR links.`,
+            );
+          } finally {
+            await dbService.shutdown();
+          }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          logger?.error(CLASS_NAME, 'syncGitHubPRs', `Failed to sync GitHub PRs: ${message}`);
+          void vscode.window.showErrorMessage(`Gitr: Failed to sync GitHub PRs: ${message}`);
+        }
+      },
+    );
+  });
+  disposables.push(syncGitHubPRsDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }

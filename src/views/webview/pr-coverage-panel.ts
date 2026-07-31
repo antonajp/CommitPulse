@@ -302,9 +302,19 @@ export class PRCoveragePanel implements vscode.Disposable {
               weeklyTrend: [],
               byAuthor: [],
               byBranch: [],
+              byContributor: [],
+              byTeam: [],
               orphanCommits: [],
+              orphanBreakdown: {
+                preMergeOnPrBranch: 0,
+                directToProtected: 0,
+                unlinkedFeatureBranch: 0,
+                totalOrphans: 0,
+                directPushPercentage: 0,
+              },
               hasData: false,
               viewExists: false,
+              hasPRData: false,
             });
             break;
           }
@@ -315,6 +325,7 @@ export class PRCoveragePanel implements vscode.Disposable {
             repository: message.repository,
             author: message.author,
             branches: message.branches,
+            teams: message.teams,
           });
           this.postMessage({
             type: 'prCoverageData',
@@ -322,9 +333,13 @@ export class PRCoveragePanel implements vscode.Disposable {
             weeklyTrend: data.weeklyTrend,
             byAuthor: data.byAuthor,
             byBranch: data.byBranch,
+            byContributor: data.byContributor,
+            byTeam: data.byTeam,
             orphanCommits: data.orphanCommits,
+            orphanBreakdown: data.orphanBreakdown,
             hasData: data.hasData,
             viewExists: true,
+            hasPRData: data.hasPRData,
           });
           break;
         }
@@ -337,6 +352,7 @@ export class PRCoveragePanel implements vscode.Disposable {
             repository: message.repository,
             author: message.author,
             branches: message.branches,
+            teams: message.teams,
           });
           this.postMessage({
             type: 'orphanCommitsData',
@@ -354,21 +370,45 @@ export class PRCoveragePanel implements vscode.Disposable {
             repositories: options.repositories,
             authors: options.authors,
             branches: options.branches,
+            teams: options.teams,
           });
           break;
         }
 
         case 'requestSyncCoverage': {
-          this.logger.debug(CLASS_NAME, 'handleMessage', 'Processing requestSyncCoverage');
+          this.logger.debug(CLASS_NAME, 'handleMessage', 'Processing requestSyncCoverage - triggering GitHub PR sync command');
           try {
-            const linksCreated = await this.dataService.syncCoverageFromMergeSha();
+            // Execute the gitr.syncGitHubPRs command which fetches PRs from GitHub and correlates coverage
+            await vscode.commands.executeCommand('gitr.syncGitHubPRs');
+            // Note: Success/failure notification is handled by the command itself
+
+            // Refresh the dashboard data after sync
+            // Re-fetch the chart data with current filters (no filters for refresh)
+            const refreshData = await this.dataService.getChartData({});
+            this.postMessage({
+              type: 'prCoverageData',
+              overall: refreshData.overall,
+              weeklyTrend: refreshData.weeklyTrend,
+              byAuthor: refreshData.byAuthor,
+              byBranch: refreshData.byBranch,
+              byContributor: refreshData.byContributor,
+              byTeam: refreshData.byTeam,
+              orphanCommits: refreshData.orphanCommits,
+              orphanBreakdown: refreshData.orphanBreakdown,
+              hasData: refreshData.hasData,
+              viewExists: true,
+              hasPRData: refreshData.hasPRData,
+            });
+
+            // Send sync success message (no linksCreated count from the command)
             this.postMessage({
               type: 'syncResult',
               success: true,
-              linksCreated,
+              linksCreated: 0, // Count not available from command execution
             });
           } catch (syncError: unknown) {
             const errorMsg = syncError instanceof Error ? syncError.message : String(syncError);
+            this.logger.error(CLASS_NAME, 'handleMessage', `GitHub PR sync failed: ${errorMsg}`);
             this.postMessage({
               type: 'syncResult',
               success: false,

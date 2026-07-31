@@ -3,21 +3,22 @@
  *
  * Generates a complete HTML document with:
  * - Hero metric: Overall PR coverage percentage with trend indicator
- * - KPI cards: Total commits, PR-linked, orphans, repos analyzed
+ * - KPI cards: Total commits, PR-linked, Direct Push %, repos analyzed
  * - D3.js donut chart for coverage visualization
+ * - Orphan category breakdown chart (horizontal stacked bar) - GITX-227
  * - Line chart for weekly coverage trend
  * - Horizontal stacked bar chart for contributor compliance
  * - Horizontal stacked bar chart for team compliance
  * - Branch compliance breakdown
- * - Methodology explainer (collapsible)
- * - Sortable, paginated orphan commits table
+ * - Methodology explainer (collapsible) with orphan categories
+ * - Sortable, paginated orphan commits table with category badges
  * - Filter controls (repository, author, branch, date range)
  * - Empty states and error handling
  * - Accessibility features (ARIA labels, keyboard navigation)
  * - VS Code theme integration
  * - CSP compliance via nonce
  *
- * Tickets: GITX-221, GITX-223
+ * Tickets: GITX-221, GITX-223, GITX-227
  */
 
 import type { Uri } from 'vscode';
@@ -62,6 +63,10 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
       --coverage-good: #4caf50;
       --coverage-warning: #ff9800;
       --coverage-bad: #f44336;
+      /* Okabe-Ito colorblind-safe palette for orphan categories (GITX-227) */
+      --category-direct-push: #D55E00;    /* Vermillion - compliance risk */
+      --category-unlinked: #E69F00;       /* Orange - process gap */
+      --category-pre-merge: #56B4E9;      /* Sky Blue - expected workflow */
     }
 
     body {
@@ -127,6 +132,17 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
     .filter-select:focus, .filter-input:focus {
       outline: 2px solid var(--vscode-focusBorder);
       outline-offset: -1px;
+    }
+
+    .filter-select[multiple] {
+      min-height: 60px;
+      max-height: 100px;
+    }
+
+    .team-filter-hint {
+      font-size: 10px;
+      color: var(--vscode-descriptionForeground);
+      margin-top: 2px;
     }
 
     /* Hero Metric */
@@ -512,6 +528,35 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
       border: 0;
     }
 
+    /* Orphan Category Badges (GITX-227) */
+    .category-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .category-direct-push {
+      background-color: rgba(213, 94, 0, 0.15);
+      color: var(--category-direct-push);
+      border: 1px solid rgba(213, 94, 0, 0.3);
+    }
+
+    .category-unlinked {
+      background-color: rgba(230, 159, 0, 0.15);
+      color: var(--category-unlinked);
+      border: 1px solid rgba(230, 159, 0, 0.3);
+    }
+
+    .category-pre-merge {
+      background-color: rgba(86, 180, 233, 0.15);
+      color: var(--category-pre-merge);
+      border: 1px solid rgba(86, 180, 233, 0.3);
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .charts-grid {
@@ -549,6 +594,12 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
           <label class="filter-label" for="authorFilter">Contributor</label>
           <select id="authorFilter" class="filter-select" aria-label="Filter by contributor">
             <option value="">All Contributors</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label" for="teamFilter">Team</label>
+          <select id="teamFilter" class="filter-select" multiple aria-label="Filter by team" title="Hold Ctrl to select multiple. Leave blank for all teams.">
+            <option value="">All Teams</option>
           </select>
         </div>
         <div class="filter-group">
@@ -614,8 +665,8 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
           <p class="kpi-label">PR-Linked</p>
         </div>
         <div class="kpi-card">
-          <p id="kpiOrphanCommits" class="kpi-value" aria-live="polite">--</p>
-          <p class="kpi-label">Orphan Commits</p>
+          <p id="kpiDirectPush" class="kpi-value" aria-live="polite" title="Direct pushes to protected branches (main/master/develop) - key compliance metric">--</p>
+          <p class="kpi-label">Direct Push %</p>
         </div>
         <div class="kpi-card">
           <p id="kpiReposAnalyzed" class="kpi-value" aria-live="polite">--</p>
@@ -632,6 +683,19 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
         <div class="chart-container">
           <h2 class="chart-title">Coverage Distribution</h2>
           <div id="donutChart" class="chart-svg" role="img" aria-label="Donut chart showing PR-linked vs orphan commits"></div>
+        </div>
+        <div class="chart-container">
+          <h2 class="chart-title">Orphan Commit Categories</h2>
+          <div id="orphanCategoryChart" class="chart-svg" role="img" aria-label="Horizontal stacked bar chart showing orphan commit categories"></div>
+          <div id="noDirectPushesSuccess" class="empty-state" style="display: none; padding: 24px;">
+            <div class="success-badge" role="status">
+              <span aria-hidden="true">✓</span>
+              <span>No Direct Pushes!</span>
+            </div>
+            <p style="margin-top: 12px; font-size: 13px; color: var(--vscode-descriptionForeground);">
+              All orphan commits are expected workflow artifacts (pre-merge commits or unlinked branches).
+            </p>
+          </div>
         </div>
         <div class="chart-container">
           <h2 class="chart-title">Contributor Compliance</h2>
@@ -669,12 +733,24 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
               <p>Only non-merge commits are included in coverage calculations. Merge commits are auto-generated by Git and don't represent actual code changes.</p>
             </div>
             <div class="methodology-item">
-              <h3>Orphan Commits</h3>
-              <p>Commits that bypassed the PR workflow and were pushed directly to the branch. These represent code changes that skipped code review.</p>
-            </div>
-            <div class="methodology-item">
               <h3>Coverage Formula</h3>
               <p><code>Coverage % = (PR-linked commits ÷ Total non-merge commits) × 100</code></p>
+            </div>
+            <div class="methodology-item">
+              <h3>GitHub PR Sync Required</h3>
+              <p>Coverage data requires syncing pull requests from GitHub. Click "Sync GitHub PRs" if you see 0% coverage to populate the PR data.</p>
+            </div>
+            <div class="methodology-item" style="border-left: 3px solid var(--category-pre-merge); padding-left: 12px;">
+              <h3>Pre-merge on PR Branch</h3>
+              <p>Incremental commits made before a squash-merge. These are <strong>expected workflow artifacts</strong> — the work was reviewed when the PR merged, just with a different SHA.</p>
+            </div>
+            <div class="methodology-item" style="border-left: 3px solid var(--category-direct-push); padding-left: 12px;">
+              <h3>Direct Push to Protected</h3>
+              <p>Commits pushed directly to main/master/develop. These <strong>bypassed code review</strong> and are the primary compliance concern. Target: &lt;5% direct push rate.</p>
+            </div>
+            <div class="methodology-item" style="border-left: 3px solid var(--category-unlinked); padding-left: 12px;">
+              <h3>Unlinked Feature Branch</h3>
+              <p>Commits on feature branches with no matching PR found. Could be <strong>old PRs outside sync window</strong> or abandoned branches. Worth investigating but not urgent.</p>
             </div>
           </div>
         </div>
@@ -694,6 +770,7 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
             <thead>
               <tr>
                 <th scope="col" data-sort="sha" tabindex="0" role="columnheader" aria-sort="none">SHA</th>
+                <th scope="col" data-sort="orphanCategory" tabindex="0" role="columnheader" aria-sort="none">Category</th>
                 <th scope="col" data-sort="author" tabindex="0" role="columnheader" aria-sort="none">Author</th>
                 <th scope="col" data-sort="commitDate" tabindex="0" role="columnheader" aria-sort="none">Date</th>
                 <th scope="col" data-sort="branch" tabindex="0" role="columnheader" aria-sort="none">Branch</th>
@@ -737,6 +814,7 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
     // State
     let coverageData = null;
     let orphanCommits = [];
+    let orphanBreakdown = null;
     let currentPage = 1;
     const pageSize = 20;
     let sortColumn = 'commitDate';
@@ -831,8 +909,10 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
       const author = document.getElementById('authorFilter').value || undefined;
       const branch = document.getElementById('branchFilter').value;
       const branches = branch ? [branch] : undefined;
+      const teamSelect = document.getElementById('teamFilter');
+      const teams = Array.from(teamSelect.selectedOptions).map(opt => opt.value).filter(v => v !== '');
 
-      return { startDate, endDate, repository, author, branches };
+      return { startDate, endDate, repository, author, branches, teams: teams.length > 0 ? teams : undefined };
     }
 
     function applyFilters() {
@@ -844,6 +924,15 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
     function handleCoverageData(data) {
       loadingState.style.display = 'none';
       coverageData = data;
+      orphanBreakdown = data.orphanBreakdown || null;
+
+      // Check for no PR data (0.0% bug fix)
+      if (data.viewExists && !data.hasPRData) {
+        emptyStateNoPRs.style.display = 'block';
+        dashboardContent.style.display = 'none';
+        loadingState.style.display = 'none';
+        return;
+      }
 
       if (!data.viewExists) {
         emptyStateNoPRs.style.display = 'block';
@@ -878,6 +967,7 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
 
       // Update charts
       renderDonutChart(data.overall);
+      renderOrphanCategoryChart(data.orphanBreakdown);
       renderTrendChart(data.weeklyTrend);
       renderAuthorChart(data.byContributor || data.byAuthor);
       renderTeamChart(data.byTeam);
@@ -929,6 +1019,20 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
         if (option.value === currentAuthor) option.selected = true;
         authorSelect.appendChild(option);
       });
+
+      // Populate team dropdown
+      const teamSelect = document.getElementById('teamFilter');
+      const currentTeams = Array.from(teamSelect.selectedOptions).map(opt => opt.value);
+      teamSelect.innerHTML = '<option value="">All Teams</option>';
+      if (options.teams) {
+        options.teams.forEach(team => {
+          const option = document.createElement('option');
+          option.value = team;
+          option.textContent = team || 'Unassigned';
+          if (currentTeams.includes(team)) option.selected = true;
+          teamSelect.appendChild(option);
+        });
+      }
 
       // Populate branch dropdown
       const branchSelect = document.getElementById('branchFilter');
@@ -997,7 +1101,14 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
     function updateKPIs(overall) {
       document.getElementById('kpiTotalCommits').textContent = overall.totalCommits.toLocaleString();
       document.getElementById('kpiLinkedCommits').textContent = overall.prLinkedCommits.toLocaleString();
-      document.getElementById('kpiOrphanCommits').textContent = overall.orphanCommits.toLocaleString();
+      // Show Direct Push % from orphanBreakdown (GITX-227)
+      const directPushPct = orphanBreakdown ? orphanBreakdown.directPushPercentage : 0;
+      const directPushEl = document.getElementById('kpiDirectPush');
+      directPushEl.textContent = directPushPct.toFixed(1) + '%';
+      // Color code: good if <5%, warning if 5-10%, bad if >10%
+      directPushEl.style.color = directPushPct <= 5 ? 'var(--coverage-good)' :
+                                 directPushPct <= 10 ? 'var(--coverage-warning)' :
+                                 'var(--coverage-bad)';
       document.getElementById('kpiReposAnalyzed').textContent = overall.repositoriesAnalyzed.toLocaleString();
     }
 
@@ -1069,6 +1180,120 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
         .style('font-size', '12px')
         .style('fill', 'var(--vscode-foreground)')
         .text(d => d.label + ' (' + d.value + ')');
+    }
+
+    // GITX-227: Render orphan category breakdown chart
+    function renderOrphanCategoryChart(breakdown) {
+      const container = document.getElementById('orphanCategoryChart');
+      const successState = document.getElementById('noDirectPushesSuccess');
+      container.innerHTML = '';
+
+      if (!breakdown || breakdown.totalOrphans === 0) {
+        container.innerHTML = '<p style="text-align: center; color: var(--vscode-descriptionForeground);">No orphan commits to categorize</p>';
+        successState.style.display = 'none';
+        return;
+      }
+
+      // Show success state if no direct pushes
+      if (breakdown.directToProtected === 0) {
+        container.style.display = 'none';
+        successState.style.display = 'block';
+        return;
+      } else {
+        container.style.display = 'block';
+        successState.style.display = 'none';
+      }
+
+      const width = container.clientWidth;
+      const height = 200;
+      const margin = { top: 40, right: 30, bottom: 60, left: 30 };
+
+      const svg = d3.select(container)
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height)
+        .append('g')
+        .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
+
+      const barWidth = width - margin.left - margin.right;
+      const barHeight = 40;
+
+      // Category data with Okabe-Ito colors
+      const categories = [
+        { key: 'directToProtected', label: 'Direct Push', value: breakdown.directToProtected, color: '#D55E00' },
+        { key: 'unlinkedFeatureBranch', label: 'Unlinked Branch', value: breakdown.unlinkedFeatureBranch, color: '#E69F00' },
+        { key: 'preMergeOnPrBranch', label: 'Pre-merge', value: breakdown.preMergeOnPrBranch, color: '#56B4E9' }
+      ].filter(c => c.value > 0);
+
+      const total = breakdown.totalOrphans;
+
+      // Create stacked bar
+      let xOffset = 0;
+      categories.forEach(cat => {
+        const segmentWidth = (cat.value / total) * barWidth;
+
+        svg.append('rect')
+          .attr('x', xOffset)
+          .attr('y', 0)
+          .attr('width', segmentWidth)
+          .attr('height', barHeight)
+          .attr('fill', cat.color)
+          .attr('rx', xOffset === 0 ? 4 : 0)
+          .attr('ry', xOffset === 0 ? 4 : 0);
+
+        // Add percentage label if segment is wide enough
+        if (segmentWidth > 40) {
+          svg.append('text')
+            .attr('x', xOffset + segmentWidth / 2)
+            .attr('y', barHeight / 2)
+            .attr('dy', '0.35em')
+            .attr('text-anchor', 'middle')
+            .style('font-size', '12px')
+            .style('font-weight', '500')
+            .style('fill', 'white')
+            .text(Math.round((cat.value / total) * 100) + '%');
+        }
+
+        xOffset += segmentWidth;
+      });
+
+      // Round the right edge
+      if (categories.length > 0) {
+        svg.select('rect:last-of-type')
+          .attr('rx', 4)
+          .attr('ry', 4);
+      }
+
+      // Legend below the bar
+      const legendY = barHeight + 20;
+      const legendSpacing = barWidth / categories.length;
+
+      categories.forEach((cat, i) => {
+        const legendX = i * legendSpacing;
+
+        svg.append('rect')
+          .attr('x', legendX)
+          .attr('y', legendY)
+          .attr('width', 12)
+          .attr('height', 12)
+          .attr('fill', cat.color)
+          .attr('rx', 2);
+
+        svg.append('text')
+          .attr('x', legendX + 18)
+          .attr('y', legendY + 10)
+          .style('font-size', '11px')
+          .style('fill', 'var(--vscode-foreground)')
+          .text(cat.label + ' (' + cat.value + ')');
+      });
+
+      // Title annotation
+      svg.append('text')
+        .attr('x', 0)
+        .attr('y', -15)
+        .style('font-size', '12px')
+        .style('fill', 'var(--vscode-descriptionForeground)')
+        .text('Direct Push Rate: ' + breakdown.directPushPercentage.toFixed(1) + '% (Target: <5%)');
     }
 
     function renderTrendChart(weeklyTrend) {
@@ -1274,7 +1499,7 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
         .append('rect')
         .attr('class', 'bar-linked')
         .attr('x', 0)
-        .attr('y', d => y(d.team))
+        .attr('y', d => y(d.teamName))
         .attr('width', d => x(d.coveragePercentage))
         .attr('height', y.bandwidth())
         .attr('fill', 'var(--coverage-good)');
@@ -1285,7 +1510,7 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
         .append('rect')
         .attr('class', 'bar-orphan')
         .attr('x', d => x(d.coveragePercentage))
-        .attr('y', d => y(d.team))
+        .attr('y', d => y(d.teamName))
         .attr('width', d => x(100 - d.coveragePercentage))
         .attr('height', y.bandwidth())
         .attr('fill', 'var(--coverage-bad)');
@@ -1296,7 +1521,7 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
         .enter()
         .append('text')
         .attr('x', width + 5)
-        .attr('y', d => y(d.team) + y.bandwidth() / 2)
+        .attr('y', d => y(d.teamName) + y.bandwidth() / 2)
         .attr('dy', '0.35em')
         .style('font-size', '11px')
         .style('fill', 'var(--vscode-foreground)')
@@ -1439,6 +1664,15 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
         tdSha.appendChild(shaLink);
         tr.appendChild(tdSha);
 
+        // Category badge (GITX-227)
+        const tdCategory = document.createElement('td');
+        const categoryBadge = document.createElement('span');
+        categoryBadge.className = 'category-badge ' + getCategoryBadgeClass(commit.orphanCategory);
+        categoryBadge.textContent = getCategoryLabel(commit.orphanCategory);
+        categoryBadge.title = getCategoryDescription(commit.orphanCategory);
+        tdCategory.appendChild(categoryBadge);
+        tr.appendChild(tdCategory);
+
         // Author
         const tdAuthor = document.createElement('td');
         tdAuthor.textContent = commit.author;
@@ -1486,6 +1720,34 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
       });
     }
 
+    // GITX-227: Helper functions for category badges
+    function getCategoryBadgeClass(category) {
+      switch (category) {
+        case 'direct_to_protected': return 'category-direct-push';
+        case 'unlinked_feature_branch': return 'category-unlinked';
+        case 'pre_merge_on_pr_branch': return 'category-pre-merge';
+        default: return '';
+      }
+    }
+
+    function getCategoryLabel(category) {
+      switch (category) {
+        case 'direct_to_protected': return 'Direct Push';
+        case 'unlinked_feature_branch': return 'Unlinked';
+        case 'pre_merge_on_pr_branch': return 'Pre-merge';
+        default: return 'Unknown';
+      }
+    }
+
+    function getCategoryDescription(category) {
+      switch (category) {
+        case 'direct_to_protected': return 'Pushed directly to protected branch (main/master/develop) - bypassed code review';
+        case 'unlinked_feature_branch': return 'Feature branch with no matching PR found - may be old PR or abandoned branch';
+        case 'pre_merge_on_pr_branch': return 'Commit on a branch that has a merged PR - expected workflow artifact';
+        default: return '';
+      }
+    }
+
     function handleSort(column) {
       if (sortColumn === column) {
         sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
@@ -1509,9 +1771,10 @@ export function generatePRCoverageHtml(params: PRCoverageHtmlParams): string {
         return;
       }
 
-      const headers = ['SHA', 'Author', 'Date', 'Branch', 'Repository', 'Message', 'Lines Added', 'Lines Removed'];
+      const headers = ['SHA', 'Category', 'Author', 'Date', 'Branch', 'Repository', 'Message', 'Lines Added', 'Lines Removed'];
       const rows = orphanCommits.map(c => [
         c.sha,
+        getCategoryLabel(c.orphanCategory),
         c.author,
         c.commitDate,
         c.branch || '',

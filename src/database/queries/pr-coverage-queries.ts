@@ -37,6 +37,14 @@ export const QUERY_PR_COVERAGE_VIEW_EXISTS = `
   ) AS view_exists
 `;
 
+/**
+ * Query to check if the pull_request table has any rows.
+ * Used to detect the 0.0% coverage bug when the table is empty.
+ */
+export const QUERY_PR_TABLE_COUNT = `
+  SELECT COUNT(*) AS pr_count FROM pull_request
+`;
+
 // ============================================================================
 // PR Coverage Metrics Queries
 // ============================================================================
@@ -98,6 +106,8 @@ export const QUERY_PR_COVERAGE_OVERALL_DATE_RANGE = `
  *   $3 - repository (TEXT, nullable)
  *   $4 - author (TEXT, nullable)
  *   $5 - branches array (TEXT[], nullable)
+ *   $6 - teams array (TEXT[], nullable)
+ *   $7 - orphan_category (TEXT, nullable) - filter by specific category (GITX-227)
  */
 export const QUERY_ORPHAN_COMMITS = `
   SELECT
@@ -110,7 +120,8 @@ export const QUERY_ORPHAN_COMMITS = `
     lines_added,
     lines_removed,
     file_count,
-    organization
+    organization,
+    orphan_category
   FROM vw_pr_coverage
   WHERE coverage_status = 'orphan'
     AND commit_date >= $1
@@ -118,8 +129,43 @@ export const QUERY_ORPHAN_COMMITS = `
     AND (repository = $3 OR $3 IS NULL)
     AND (author = $4 OR $4 IS NULL)
     AND (branch = ANY($5) OR $5 IS NULL)
+    AND (team_name = ANY($6) OR $6 IS NULL)
+    AND (orphan_category = $7 OR $7 IS NULL)
   ORDER BY commit_date DESC
   LIMIT ${PR_COVERAGE_MAX_RESULT_ROWS}
+`;
+
+/**
+ * Query to fetch orphan category breakdown.
+ * Parameters:
+ *   $1 - start_date (TIMESTAMP WITH TIME ZONE)
+ *   $2 - end_date (TIMESTAMP WITH TIME ZONE)
+ *   $3 - repository (TEXT, nullable)
+ *   $4 - teams array (TEXT[], nullable)
+ *
+ * Ticket: GITX-227
+ */
+export const QUERY_ORPHAN_CATEGORY_BREAKDOWN = `
+  SELECT
+    COUNT(*) FILTER (WHERE orphan_category = 'pre_merge_on_pr_branch') AS pre_merge_on_pr_branch_count,
+    COUNT(*) FILTER (WHERE orphan_category = 'direct_to_protected') AS direct_to_protected_count,
+    COUNT(*) FILTER (WHERE orphan_category = 'unlinked_feature_branch') AS unlinked_feature_branch_count,
+    COUNT(*) FILTER (WHERE orphan_category IS NOT NULL) AS total_orphans,
+    CASE
+      WHEN COUNT(*) FILTER (WHERE orphan_category IS NOT NULL) > 0
+      THEN ROUND(
+        (COUNT(*) FILTER (WHERE orphan_category = 'direct_to_protected')::NUMERIC /
+         COUNT(*) FILTER (WHERE orphan_category IS NOT NULL)::NUMERIC) * 100,
+        1
+      )
+      ELSE 0
+    END AS direct_push_percentage
+  FROM vw_pr_coverage
+  WHERE coverage_status = 'orphan'
+    AND commit_date >= $1
+    AND commit_date <= $2
+    AND (repository = $3 OR $3 IS NULL)
+    AND (team_name = ANY($4) OR $4 IS NULL)
 `;
 
 /**
@@ -128,6 +174,7 @@ export const QUERY_ORPHAN_COMMITS = `
  *   $1 - start_date (TIMESTAMP WITH TIME ZONE)
  *   $2 - end_date (TIMESTAMP WITH TIME ZONE)
  *   $3 - repository (TEXT, nullable)
+ *   $4 - teams array (TEXT[], nullable)
  */
 export const QUERY_PR_COVERAGE_BY_BRANCH = `
   SELECT
@@ -149,6 +196,7 @@ export const QUERY_PR_COVERAGE_BY_BRANCH = `
   WHERE commit_date >= $1
     AND commit_date <= $2
     AND (repository = $3 OR $3 IS NULL)
+    AND (team_name = ANY($4) OR $4 IS NULL)
   GROUP BY repository, branch
   HAVING COUNT(*) FILTER (WHERE is_merge = false) > 0
   ORDER BY total_commits DESC
@@ -161,6 +209,7 @@ export const QUERY_PR_COVERAGE_BY_BRANCH = `
  *   $1 - start_date (TIMESTAMP WITH TIME ZONE)
  *   $2 - end_date (TIMESTAMP WITH TIME ZONE)
  *   $3 - repository (TEXT, nullable)
+ *   $4 - teams array (TEXT[], nullable)
  */
 export const QUERY_PR_COVERAGE_BY_AUTHOR = `
   SELECT
@@ -182,6 +231,7 @@ export const QUERY_PR_COVERAGE_BY_AUTHOR = `
   WHERE commit_date >= $1
     AND commit_date <= $2
     AND (repository = $3 OR $3 IS NULL)
+    AND (team_name = ANY($4) OR $4 IS NULL)
   GROUP BY repository, author
   HAVING COUNT(*) FILTER (WHERE is_merge = false) > 0
   ORDER BY total_commits DESC
@@ -194,6 +244,7 @@ export const QUERY_PR_COVERAGE_BY_AUTHOR = `
  *   $1 - start_date (TIMESTAMP WITH TIME ZONE)
  *   $2 - end_date (TIMESTAMP WITH TIME ZONE)
  *   $3 - repository (TEXT, nullable)
+ *   $4 - teams array (TEXT[], nullable)
  */
 export const QUERY_PR_COVERAGE_WEEKLY_TREND = `
   SELECT
@@ -214,6 +265,7 @@ export const QUERY_PR_COVERAGE_WEEKLY_TREND = `
   WHERE commit_date >= $1
     AND commit_date <= $2
     AND (repository = $3 OR $3 IS NULL)
+    AND (team_name = ANY($4) OR $4 IS NULL)
     AND commit_date IS NOT NULL
   GROUP BY DATE_TRUNC('week', commit_date)
   ORDER BY week_start ASC
@@ -262,6 +314,7 @@ export const QUERY_PR_COVERAGE_BRANCHES = `
  *   $1 - start_date (TIMESTAMP WITH TIME ZONE)
  *   $2 - end_date (TIMESTAMP WITH TIME ZONE)
  *   $3 - repository (TEXT, nullable)
+ *   $4 - teams array (TEXT[], nullable)
  */
 export const QUERY_PR_COVERAGE_BY_CONTRIBUTOR = `
   SELECT
@@ -284,6 +337,7 @@ export const QUERY_PR_COVERAGE_BY_CONTRIBUTOR = `
   WHERE commit_date >= $1
     AND commit_date <= $2
     AND (repository = $3 OR $3 IS NULL)
+    AND (team_name = ANY($4) OR $4 IS NULL)
   GROUP BY repository, contributor_name, author
   HAVING COUNT(*) FILTER (WHERE is_merge = false) > 0
   ORDER BY total_commits DESC
@@ -297,6 +351,7 @@ export const QUERY_PR_COVERAGE_BY_CONTRIBUTOR = `
  *   $1 - start_date (TIMESTAMP WITH TIME ZONE)
  *   $2 - end_date (TIMESTAMP WITH TIME ZONE)
  *   $3 - repository (TEXT, nullable)
+ *   $4 - teams array (TEXT[], nullable)
  */
 export const QUERY_PR_COVERAGE_BY_TEAM = `
   SELECT
@@ -319,6 +374,7 @@ export const QUERY_PR_COVERAGE_BY_TEAM = `
   WHERE commit_date >= $1
     AND commit_date <= $2
     AND (repository = $3 OR $3 IS NULL)
+    AND (team_name = ANY($4) OR $4 IS NULL)
   GROUP BY repository, team_name
   HAVING COUNT(*) FILTER (WHERE is_merge = false) > 0
   ORDER BY total_commits DESC
@@ -338,6 +394,19 @@ export const QUERY_PR_COVERAGE_CONTRIBUTORS = `
   WHERE contributor_name IS NOT NULL
     AND (repository = $1 OR $1 IS NULL)
   ORDER BY contributor_display
+`;
+
+/**
+ * Query to get distinct team names for filter dropdown.
+ * Parameters:
+ *   $1 - repository (TEXT, nullable)
+ */
+export const QUERY_PR_COVERAGE_TEAMS = `
+  SELECT DISTINCT team_name
+  FROM vw_pr_coverage
+  WHERE team_name IS NOT NULL
+    AND (repository = $1 OR $1 IS NULL)
+  ORDER BY team_name
 `;
 
 // ============================================================================
@@ -364,6 +433,14 @@ export const QUERY_LINK_COMMIT_TO_PR = `
 /**
  * Bulk link commits to PRs using merge_sha correlation.
  * This finds all merged PRs where merge_sha matches a commit SHA.
+ *
+ * Repository matching handles format and case differences:
+ * - commit_history.repository: "VocalRSVP" (repo name only, mixed case)
+ * - pull_request.repository: "antonajp/vocalrsvp" (owner/repo format, lowercase)
+ *
+ * The join uses case-insensitive comparison (LOWER) and matches if:
+ * 1. Repo names are equal (ignoring case), OR
+ * 2. Commit repo matches the repo portion of PR's owner/repo format
  */
 export const QUERY_SYNC_PR_COVERAGE_FROM_MERGE_SHA = `
   INSERT INTO commit_pull_request (sha, pull_request_id, repository, link_source)
@@ -373,7 +450,9 @@ export const QUERY_SYNC_PR_COVERAGE_FROM_MERGE_SHA = `
     ch.repository,
     'merge_sha'
   FROM commit_history ch
-  INNER JOIN pull_request pr ON ch.sha = pr.merge_sha AND ch.repository = pr.repository
+  INNER JOIN pull_request pr ON ch.sha = pr.merge_sha
+    AND (LOWER(ch.repository) = LOWER(pr.repository)
+      OR LOWER(ch.repository) = LOWER(SPLIT_PART(pr.repository, '/', 2)))
   WHERE NOT EXISTS (
     SELECT 1 FROM commit_pull_request cpr
     WHERE cpr.sha = ch.sha AND cpr.pull_request_id = pr.id
@@ -390,6 +469,13 @@ export const QUERY_SYNC_PR_COVERAGE_FROM_MERGE_SHA = `
  */
 export interface ViewExistsRow {
   readonly view_exists: boolean;
+}
+
+/**
+ * TypeScript interface for pull_request table count check.
+ */
+export interface PRTableCountRow {
+  readonly pr_count: number;
 }
 
 /**
@@ -418,6 +504,19 @@ export interface OrphanCommitRow {
   readonly lines_removed: number | null;
   readonly file_count: number | null;
   readonly organization: string | null;
+  /** Orphan category classification (GITX-227) */
+  readonly orphan_category: string | null;
+}
+
+/**
+ * TypeScript interface for orphan category breakdown row (GITX-227).
+ */
+export interface OrphanCategoryBreakdownRow {
+  readonly pre_merge_on_pr_branch_count: number;
+  readonly direct_to_protected_count: number;
+  readonly unlinked_feature_branch_count: number;
+  readonly total_orphans: number;
+  readonly direct_push_percentage: number;
 }
 
 /**
@@ -507,6 +606,13 @@ export interface CoverageByTeamRow {
  */
 export interface ContributorRow {
   readonly contributor_display: string;
+}
+
+/**
+ * TypeScript interface for team list.
+ */
+export interface TeamRow {
+  readonly team_name: string;
 }
 
 /**

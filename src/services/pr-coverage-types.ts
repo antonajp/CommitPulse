@@ -17,6 +17,11 @@
 export const PR_COVERAGE_MAX_FILTER_LENGTH = 255;
 
 /**
+ * Maximum length for array filter inputs (CWE-770 DoS prevention).
+ */
+export const PR_COVERAGE_MAX_ARRAY_LENGTH = 100;
+
+/**
  * Default number of days to analyze for coverage reports.
  */
 export const PR_COVERAGE_DEFAULT_DAYS = 90;
@@ -29,6 +34,57 @@ export const PR_COVERAGE_DEFAULT_DAYS = 90;
  * Coverage status classification for a commit.
  */
 export type CoverageStatus = 'pr_linked' | 'orphan' | 'merge_commit';
+
+// ============================================================================
+// Orphan Category Types (GITX-227)
+// ============================================================================
+
+/**
+ * Category classification for orphan commits.
+ * Provides actionable insight into which orphans represent real process gaps.
+ *
+ * - pre_merge_on_pr_branch: Incremental commits before squash-merge (expected workflow)
+ * - direct_to_protected: Commits pushed directly to protected branches (compliance issue)
+ * - unlinked_feature_branch: Commits on feature branches with no matching PR (process gap)
+ */
+export type OrphanCategory =
+  | 'pre_merge_on_pr_branch'
+  | 'direct_to_protected'
+  | 'unlinked_feature_branch';
+
+/**
+ * Valid orphan category values for input validation.
+ */
+export const VALID_ORPHAN_CATEGORIES: readonly OrphanCategory[] = [
+  'pre_merge_on_pr_branch',
+  'direct_to_protected',
+  'unlinked_feature_branch',
+];
+
+/**
+ * Type guard to validate orphan category values (CWE-20 prevention).
+ */
+export function isValidOrphanCategory(value: unknown): value is OrphanCategory {
+  return typeof value === 'string' &&
+    VALID_ORPHAN_CATEGORIES.includes(value as OrphanCategory);
+}
+
+/**
+ * Breakdown of orphan commits by category.
+ * Used for the orphan category chart and KPIs.
+ */
+export interface OrphanCategoryBreakdown {
+  /** Commits on branches that have merged PRs (expected workflow) */
+  readonly preMergeOnPrBranch: number;
+  /** Commits pushed directly to protected branches (compliance issue) */
+  readonly directToProtected: number;
+  /** Commits on feature branches with no matching PR */
+  readonly unlinkedFeatureBranch: number;
+  /** Total orphan commits (sum of all categories) */
+  readonly totalOrphans: number;
+  /** Percentage of orphans that are direct pushes (key compliance metric) */
+  readonly directPushPercentage: number;
+}
 
 // ============================================================================
 // Overall Coverage Metrics
@@ -81,6 +137,8 @@ export interface OrphanCommit {
   readonly fileCount: number;
   /** Organization name */
   readonly organization: string | null;
+  /** Orphan category classification (GITX-227) */
+  readonly orphanCategory: OrphanCategory | null;
 }
 
 // ============================================================================
@@ -201,6 +259,8 @@ export interface PRCoverageFilters {
   readonly author?: string;
   /** Target branches to analyze (supports glob patterns) */
   readonly branches?: readonly string[];
+  /** Team names to filter by (optional) */
+  readonly teams?: readonly string[];
 }
 
 // ============================================================================
@@ -225,10 +285,14 @@ export interface PRCoverageChartData {
   readonly byTeam: readonly CoverageByTeam[];
   /** Orphan commits list */
   readonly orphanCommits: readonly OrphanCommit[];
+  /** Orphan category breakdown for chart and KPIs (GITX-227) */
+  readonly orphanBreakdown: OrphanCategoryBreakdown;
   /** Whether data exists */
   readonly hasData: boolean;
   /** Whether the view exists */
   readonly viewExists: boolean;
+  /** Whether the pull_request table has any rows */
+  readonly hasPRData: boolean;
 }
 
 // ============================================================================
@@ -247,4 +311,6 @@ export interface PRCoverageFilterOptions {
   readonly contributors: readonly string[];
   /** List of available branches */
   readonly branches: readonly string[];
+  /** List of available teams */
+  readonly teams: readonly string[];
 }
