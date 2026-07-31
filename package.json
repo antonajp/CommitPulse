@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.56",
+  "version": "0.1.57",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -55,6 +55,11 @@
       {
         "command": "gitr.resetDatabase",
         "title": "Gitr: Reset Database (Clear All Data)"
+      },
+      {
+        "command": "gitr.runMigrations",
+        "title": "Gitr: Run Database Migrations",
+        "icon": "$(database)"
       },
       {
         "command": "gitrx.setDatabasePassword",
@@ -255,6 +260,11 @@
         "command": "gitrx.fixRepositoryNames",
         "title": "Gitr: Fix Repository Names",
         "icon": "$(wrench)"
+      },
+      {
+        "command": "gitrx.openPRCoverageDashboard",
+        "title": "Gitr: Open PR Coverage Report",
+        "icon": "$(git-pull-request)"
       }
     ],
     "configuration": {
@@ -627,6 +637,44 @@
           "maximum": 10000,
           "description": "Maximum number of cached dashboard query results",
           "markdownDescription": "Maximum number of cached dashboard query results.\n\nWhen the cache exceeds this limit, least recently used (LRU) entries are evicted. Higher values use more memory but improve cache hit rates.\n\nDefault: `100`"
+        },
+        "gitrx.prCoverage.targetBranches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "main",
+            "master",
+            "develop"
+          ],
+          "description": "Branches where commits should have associated PRs. Supports glob patterns (e.g., release/*).",
+          "markdownDescription": "Branches where commits should have associated pull requests. Commits to these branches without a PR are flagged as \"orphan commits\".\n\nSupports glob patterns for matching branch families.\n\n**Examples:**\n```json\n// Default: standard branch names\n[\"main\", \"master\", \"develop\"]\n\n// Include release branches\n[\"main\", \"master\", \"develop\", \"release/*\"]\n\n// Custom branch naming\n[\"trunk\", \"prod\", \"DEV\"]\n```\n\n**Notes:**\n- Branch names are case-sensitive\n- Empty array = analyze ALL branches (shows warning)\n- Use `*` for glob matching (e.g., `release/*`)"
+        },
+        "gitrx.prCoverage.sinceDays": {
+          "type": "number",
+          "default": 90,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Default number of days to analyze for PR coverage",
+          "markdownDescription": "Default number of days to look back when analyzing PR coverage.\n\nDefault: `90`"
+        },
+        "gitrx.prCoverage.excludePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Commit message patterns to exclude from orphan detection (regex)",
+          "markdownDescription": "Regular expression patterns for commit messages to exclude from orphan detection.\n\nUseful for excluding automated commits like dependency updates or CI/CD commits.\n\n**Examples:**\n```json\n[\n  \"^Merge branch\",\n  \"^\\\\[skip ci\\\\]\",\n  \"^chore\\\\(deps\\\\):\"\n]\n```"
+        },
+        "gitrx.prCoverage.minCoverageThreshold": {
+          "type": "number",
+          "default": 80,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Minimum PR coverage percentage target (0-100)",
+          "markdownDescription": "Minimum PR coverage percentage considered acceptable.\n\nThe dashboard hero metric will show as:\n- Green: >= threshold\n- Yellow: >= threshold - 30%\n- Red: < threshold - 30%\n\nDefault: `80`"
         }
       }
     },

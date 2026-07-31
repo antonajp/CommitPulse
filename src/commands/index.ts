@@ -3,7 +3,8 @@ import { LoggerService } from '../logging/logger.js';
 import { SecretStorageService, SecretKeys } from '../config/secret-storage.js';
 import { getSettings } from '../config/settings.js';
 import { DatabaseService, buildConfigFromSettings } from '../database/database-service.js';
-import { setExtensionUri, runAutoMigrations } from '../database/auto-migration.js';
+import { setExtensionUri, runAutoMigrations, getExtensionUri } from '../database/auto-migration.js';
+import { MigrationRunner } from '../database/migration-runner.js';
 import { CommitRepository } from '../database/commit-repository.js';
 import { ContributorRepository } from '../database/contributor-repository.js';
 import { CommitJiraRepository } from '../database/commit-jira-repository.js';
@@ -939,6 +940,141 @@ export function registerCommands(context: vscode.ExtensionContext): vscode.Dispo
     }
   });
   disposables.push(resetDatabaseDisposable);
+
+  // gitr.runMigrations - Run pending database migrations (GITX-224)
+  // Exposes the MigrationRunner functionality via a VS Code command
+  const runMigrationsDisposable = vscode.commands.registerCommand('gitr.runMigrations', async () => {
+    logger.info(CLASS_NAME, 'runMigrations', 'Command executed: gitr.runMigrations');
+    logger.debug(CLASS_NAME, 'runMigrations', 'Database migration starting...');
+
+    if (pipelineRunning) {
+      logger.warn(CLASS_NAME, 'runMigrations', 'Pipeline is running, cannot run migrations');
+      void vscode.window.showWarningMessage('Gitr: Cannot run migrations while pipeline is running.');
+      return;
+    }
+
+    // Resolve migrations directory from extension URI
+    const extensionUri = getExtensionUri();
+    if (!extensionUri) {
+      logger.error(CLASS_NAME, 'runMigrations', 'Extension URI not available');
+      void vscode.window.showErrorMessage('Gitr: Extension not fully initialized. Please reload VS Code.');
+      return;
+    }
+
+    const migrationsDir = vscode.Uri.joinPath(extensionUri, 'docker', 'migrations').fsPath;
+    logger.debug(CLASS_NAME, 'runMigrations', `Migrations directory: ${migrationsDir}`);
+
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Gitr: Running Database Migrations',
+          cancellable: false,
+        },
+        async (progress) => {
+          // Step 1: Check database connectivity
+          progress.report({ message: 'Connecting to database...' });
+
+          const dbPassword = await secretService.getDatabasePassword();
+          if (!dbPassword) {
+            const action = await vscode.window.showErrorMessage(
+              'Gitr: Database password is required.',
+              'Set Database Password'
+            );
+            if (action === 'Set Database Password') {
+              void vscode.commands.executeCommand('gitrx.setDatabasePassword');
+            }
+            return;
+          }
+
+          const settings = getSettings();
+          const dbService = new DatabaseService();
+          const dbConfig = buildConfigFromSettings(settings.database, dbPassword);
+
+          try {
+            await dbService.initialize(dbConfig);
+            logger.info(CLASS_NAME, 'runMigrations', 'Database connection established');
+          } catch (dbError: unknown) {
+            const dbMessage = dbError instanceof Error ? dbError.message : String(dbError);
+            logger.error(CLASS_NAME, 'runMigrations', `Database connection failed: ${dbMessage}`);
+            const action = await vscode.window.showErrorMessage(
+              `Gitr: Cannot connect to database. Is the database container running? Error: ${dbMessage}`,
+              'Start Database'
+            );
+            if (action === 'Start Database') {
+              void vscode.commands.executeCommand('gitr.startDatabase');
+            }
+            return;
+          }
+
+          try {
+            // Step 2: Run migrations
+            progress.report({ message: 'Checking for pending migrations...' });
+
+            // Use the main pool for migrations
+            // Privilege separation (IQS-880) is handled by auto-migration during pipeline runs
+            const poolToUse = dbService.getPool();
+
+            const migrationRunner = new MigrationRunner(poolToUse, migrationsDir);
+
+            // Get pending migrations first for logging
+            const pendingMigrations = await migrationRunner.getPendingMigrations();
+            if (pendingMigrations.length === 0) {
+              logger.info(CLASS_NAME, 'runMigrations', 'Database is already up to date - no pending migrations');
+              void vscode.window.showInformationMessage('Gitr: Database is up to date. No migrations to apply.');
+              return;
+            }
+
+            logger.info(CLASS_NAME, 'runMigrations', `Found ${pendingMigrations.length} pending migration(s)`);
+            for (const migration of pendingMigrations) {
+              logger.info(CLASS_NAME, 'runMigrations', `  Pending: ${migration.filename}`);
+            }
+
+            progress.report({ message: `Applying ${pendingMigrations.length} migration(s)...` });
+
+            // Run migrations
+            const result = await migrationRunner.migrate();
+
+            if (result.success) {
+              // Log each applied/skipped migration
+              for (const filename of result.appliedMigrations) {
+                logger.info(CLASS_NAME, 'runMigrations', `APPLIED: ${filename}`);
+              }
+              for (const filename of result.skippedMigrations) {
+                logger.debug(CLASS_NAME, 'runMigrations', `SKIPPED (already applied): ${filename}`);
+              }
+
+              if (result.applied > 0) {
+                const appliedList = result.appliedMigrations.join(', ');
+                logger.info(CLASS_NAME, 'runMigrations', `Migration complete: ${result.applied} applied, ${result.skipped} skipped`);
+                void vscode.window.showInformationMessage(
+                  `Gitr: Successfully applied ${result.applied} migration(s): ${appliedList}`
+                );
+              } else {
+                logger.info(CLASS_NAME, 'runMigrations', 'No new migrations applied');
+                void vscode.window.showInformationMessage('Gitr: Database is up to date. No migrations to apply.');
+              }
+            } else {
+              // Migration failed
+              logger.error(CLASS_NAME, 'runMigrations', `Migration failed: ${result.error ?? 'Unknown error'}`);
+              void vscode.window.showErrorMessage(
+                `Gitr: Migration failed - ${result.error ?? 'Unknown error'}. ` +
+                `${result.applied} migration(s) were applied before the failure. Check the output logs for details.`
+              );
+            }
+          } finally {
+            await dbService.shutdown();
+            logger.debug(CLASS_NAME, 'runMigrations', 'Database connection closed');
+          }
+        }
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(CLASS_NAME, 'runMigrations', `Migration execution failed: ${message}`);
+      void vscode.window.showErrorMessage(`Gitr: Migration failed - ${message}`);
+    }
+  });
+  disposables.push(runMigrationsDisposable);
 
   // gitrx.setDatabasePassword - Prompt user to set the database password securely
   const setDbPasswordDisposable = vscode.commands.registerCommand(

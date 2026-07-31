@@ -60,6 +60,11 @@ export function generateCodeReviewVelocityHtml(config: CodeReviewVelocityHtmlCon
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- GITX-222 CSP Review: img-src data: is REQUIRED for D3.js SVG rendering.
+       D3.js generates inline SVG elements with embedded images and data URIs
+       for chart export features. Removing data: would break chart rendering.
+       This is a minimal-risk allowance as it only permits data URIs for images,
+       not scripts (script-src remains nonce-only). -->
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src ${cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src ${cspSource} data:; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none';">
   <link rel="stylesheet" href="${styleUri.toString()}">

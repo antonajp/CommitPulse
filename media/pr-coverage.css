@@ -1,0 +1,54 @@
+/**
+ * Styles for the PR Coverage Report dashboard webview.
+ * Integrates with VS Code theme using CSS custom properties.
+ *
+ * Ticket: GITX-221
+ */
+
+/* Base styles are inline in the HTML for CSP compliance.
+ * This file provides additional theme overrides if needed.
+ * The main styles are embedded in pr-coverage-html.ts.
+ */
+
+/* Print styles */
+@media print {
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .filters-container {
+    display: none;
+  }
+
+  .btn {
+    display: none;
+  }
+
+  .chart-container {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .data-table {
+    font-size: 10px;
+  }
+}
+
+/* High contrast mode adjustments */
+@media (forced-colors: active) {
+  .kpi-card,
+  .chart-container,
+  .table-section,
+  .hero-section {
+    border: 1px solid CanvasText;
+  }
+
+  .btn {
+    border: 1px solid ButtonText;
+  }
+
+  .sha-link {
+    color: LinkText;
+  }
+}

@@ -235,6 +235,14 @@ export const CHART_CATALOG: readonly ChartDefinition[] = [
     description: 'Debug chart data join issues',
     icon: 'search',
   },
+  {
+    type: 'prCoverageReport',
+    label: 'PR Coverage Report',
+    category: 'Process',
+    command: 'gitrx.openPRCoverageDashboard',
+    description: 'Identify commits without pull requests',
+    icon: 'git-pull-request',
+  },
 ] as const;
 
 /**

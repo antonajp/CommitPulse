@@ -117,6 +117,53 @@ export function generateCsvExportScript(): string {
       }
 
       /**
+       * Compute a simple checksum of a string for integrity verification.
+       * Uses a fast non-cryptographic hash (djb2 variant) that's sufficient
+       * for detecting accidental corruption or truncation.
+       *
+       * Security note (GITX-222, CWE-353): This is NOT for tamper detection
+       * against malicious actors. It's for integrity verification to detect
+       * accidental file corruption or incomplete exports.
+       *
+       * @param {string} str - The string to compute checksum for
+       * @returns {string} Hexadecimal checksum string
+       */
+      function computeChecksum(str) {
+        var hash = 5381;
+        for (var i = 0; i < str.length; i++) {
+          hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+          hash = hash >>> 0; // Convert to unsigned 32-bit integer
+        }
+        return hash.toString(16).padStart(8, '0');
+      }
+
+      /**
+       * Add integrity footer to CSV content.
+       * Appends metadata rows for export verification (GITX-222, CWE-353).
+       *
+       * Footer format:
+       * - # Export Date: ISO timestamp
+       * - # Data Hash: checksum of data rows (excludes footer)
+       * - # Source: Gitr Extension vX.X.X
+       *
+       * @param {string} csvContent - The CSV content (headers + data rows)
+       * @returns {string} CSV content with integrity footer
+       */
+      function addIntegrityFooter(csvContent) {
+        var dataHash = computeChecksum(csvContent);
+        var exportDate = new Date().toISOString();
+        var newline = String.fromCharCode(10);
+
+        // Footer rows use # prefix to indicate metadata (common CSV convention)
+        var footer = newline +
+          '# Export Date:,' + exportDate + newline +
+          '# Data Hash:,' + dataHash + newline +
+          '# Source:,Gitr Extension';
+
+        return csvContent + footer;
+      }
+
+      /**
        * Trigger a CSV file download by sending content to extension host.
        * Uses postMessage to work around VS Code webview CSP restrictions
        * that prevent Blob URLs from working in production.
@@ -125,6 +172,9 @@ export function generateCsvExportScript(): string {
        * - Data size validated (max 100K rows)
        * - Extension host sanitizes filename (path traversal prevention)
        * - Extension host shows native save dialog
+       *
+       * Integrity (GITX-222, CWE-353):
+       * - Appends footer with export timestamp, data checksum, and source
        *
        * @param {string} csvContent - The CSV string
        * @param {string} filename - The suggested filename for download
@@ -139,10 +189,13 @@ export function generateCsvExportScript(): string {
           return;
         }
 
+        // GITX-222: Add integrity footer before sending
+        var csvWithFooter = addIntegrityFooter(csvContent);
+
         // Send to extension host via postMessage
         vscode.postMessage({
           type: 'exportCsv',
-          csvContent: csvContent,
+          csvContent: csvWithFooter,
           filename: filename,
           source: source || 'unknown'
         });

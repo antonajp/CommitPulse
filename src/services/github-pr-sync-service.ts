@@ -139,7 +139,13 @@ export class GitHubPRSyncService {
   async syncRepository(config: GitHubPRSyncConfig): Promise<PRSyncResult> {
     const startTime = Date.now();
     const repository = `${config.owner}/${config.repo}`;
-    this.logger.info(CLASS_NAME, 'syncRepository', `Syncing PRs for: ${repository}`);
+
+    // GITX-222: Audit logging for GitHub API access
+    this.logger.info(
+      CLASS_NAME,
+      'syncRepository',
+      `GitHub API access: PR sync initiated for ${repository} (${config.syncDaysBack} days back)`,
+    );
 
     let prsUpserted = 0;
     let reviewsUpserted = 0;
@@ -239,11 +245,21 @@ export class GitHubPRSyncService {
     }
 
     const durationMs = Date.now() - startTime;
-    this.logger.info(
-      CLASS_NAME,
-      'syncRepository',
-      `Sync complete for ${repository}: ${prsUpserted} PRs, ${reviewsUpserted} reviews, ${errorCount} errors in ${durationMs}ms`,
-    );
+
+    // GITX-222: Audit logging for GitHub API access completion
+    if (errorCount === 0) {
+      this.logger.info(
+        CLASS_NAME,
+        'syncRepository',
+        `GitHub API access complete: ${prsUpserted} PRs, ${reviewsUpserted} reviews synced from ${repository} in ${durationMs}ms`,
+      );
+    } else {
+      this.logger.warn(
+        CLASS_NAME,
+        'syncRepository',
+        `GitHub API access complete with errors: ${prsUpserted} PRs, ${reviewsUpserted} reviews synced from ${repository} in ${durationMs}ms (${errorCount} errors)`,
+      );
+    }
 
     return {
       repository,

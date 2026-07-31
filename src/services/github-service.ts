@@ -86,7 +86,13 @@ export class GitHubService {
     defaultTeam = 'New',
   ): Promise<GitHubSyncResult> {
     const startTime = Date.now();
-    this.logger.info(CLASS_NAME, 'syncAll', `Starting full GitHub sync for ${repoNames.length} repos`);
+
+    // GITX-222: Audit logging for GitHub API access
+    this.logger.info(
+      CLASS_NAME,
+      'syncAll',
+      `GitHub API access: Full sync initiated for ${repoNames.length} repos in org ${this.config.organization}`,
+    );
 
     const contributorResults: SyncContributorsResult[] = [];
     const unknownAuthorResults: SyncUnknownAuthorsResult[] = [];
@@ -109,7 +115,27 @@ export class GitHubService {
     }
 
     const totalDurationMs = Date.now() - startTime;
-    this.logger.info(CLASS_NAME, 'syncAll', `Full sync complete in ${totalDurationMs}ms`);
+
+    // GITX-222: Audit logging for GitHub API access completion
+    const totalContributors = contributorResults.reduce((sum, r) => sum + r.contributorsInserted + r.contributorsUpdated, 0);
+    const totalUrls = commitUrlResults.reduce((sum, r) => sum + r.urlsUpdated, 0);
+    const totalErrors = contributorResults.reduce((sum, r) => sum + r.errorCount, 0)
+      + unknownAuthorResults.reduce((sum, r) => sum + r.errorCount, 0)
+      + commitUrlResults.reduce((sum, r) => sum + r.errorCount, 0);
+
+    if (totalErrors === 0) {
+      this.logger.info(
+        CLASS_NAME,
+        'syncAll',
+        `GitHub API access complete: ${totalContributors} contributors, ${totalUrls} URLs synced from ${repoNames.length} repos in ${totalDurationMs}ms`,
+      );
+    } else {
+      this.logger.warn(
+        CLASS_NAME,
+        'syncAll',
+        `GitHub API access complete with errors: ${totalContributors} contributors, ${totalUrls} URLs synced from ${repoNames.length} repos in ${totalDurationMs}ms (${totalErrors} errors)`,
+      );
+    }
 
     return {
       contributorResults,
@@ -129,7 +155,13 @@ export class GitHubService {
     defaultTeam = 'New',
   ): Promise<SyncContributorsResult> {
     const startTime = Date.now();
-    this.logger.info(CLASS_NAME, 'syncContributors', `Syncing contributors for: ${repoName}`);
+
+    // GITX-222: Audit logging for GitHub API access
+    this.logger.info(
+      CLASS_NAME,
+      'syncContributors',
+      `GitHub API access: Contributor sync initiated for ${this.config.organization}/${repoName}`,
+    );
 
     // Start pipeline tracking
     const pipelineRunId = await this.pipelineRepo.insertPipelineStart({
@@ -180,7 +212,22 @@ export class GitHubService {
       }
 
       await this.pipelineRepo.updatePipelineRun(pipelineRunId, 'FINISHED');
-      this.logger.info(CLASS_NAME, 'syncContributors', `Sync complete: ${contributorsInserted} inserted, ${contributorsUpdated} updated, ${contributorsSkipped} skipped, ${errorCount} errors`);
+
+      // GITX-222: Audit logging for GitHub API access completion
+      const durationMs = Date.now() - startTime;
+      if (errorCount === 0) {
+        this.logger.info(
+          CLASS_NAME,
+          'syncContributors',
+          `GitHub API access complete: ${contributorsInserted} inserted, ${contributorsUpdated} updated, ${contributorsSkipped} skipped from ${this.config.organization}/${repoName} in ${durationMs}ms`,
+        );
+      } else {
+        this.logger.warn(
+          CLASS_NAME,
+          'syncContributors',
+          `GitHub API access complete with errors: ${contributorsInserted} inserted, ${contributorsUpdated} updated from ${this.config.organization}/${repoName} in ${durationMs}ms (${errorCount} errors)`,
+        );
+      }
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -211,7 +258,13 @@ export class GitHubService {
     defaultTeam = 'New',
   ): Promise<SyncUnknownAuthorsResult> {
     const startTime = Date.now();
-    this.logger.info(CLASS_NAME, 'syncUnknownAuthors', `Identifying unknown authors for: ${repoName}`);
+
+    // GITX-222: Audit logging (database operation, not GitHub API)
+    this.logger.info(
+      CLASS_NAME,
+      'syncUnknownAuthors',
+      `Database operation: Identifying unknown authors for ${repoName}`,
+    );
 
     // Start pipeline tracking
     const pipelineRunId = await this.pipelineRepo.insertPipelineStart({
@@ -261,7 +314,14 @@ export class GitHubService {
       }
 
       await this.pipelineRepo.updatePipelineRun(pipelineRunId, 'FINISHED');
-      this.logger.info(CLASS_NAME, 'syncUnknownAuthors', `Unknown authors sync complete: ${authorsInserted} inserted, ${errorCount} errors`);
+
+      // GITX-222: Audit logging for operation completion
+      const durationMs = Date.now() - startTime;
+      this.logger.info(
+        CLASS_NAME,
+        'syncUnknownAuthors',
+        `Database operation complete: ${authorsInserted} unknown authors inserted for ${repoName} in ${durationMs}ms`,
+      );
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -288,7 +348,13 @@ export class GitHubService {
     repoName: string,
   ): Promise<SyncCommitUrlsResult> {
     const startTime = Date.now();
-    this.logger.info(CLASS_NAME, 'syncCommitUrls', `Syncing commit URLs for: ${repoName}`);
+
+    // GITX-222: Audit logging for GitHub API access
+    this.logger.info(
+      CLASS_NAME,
+      'syncCommitUrls',
+      `GitHub API access: Commit URL sync initiated for ${this.config.organization}/${repoName}`,
+    );
 
     // Start pipeline tracking
     const pipelineRunId = await this.pipelineRepo.insertPipelineStart({
@@ -330,7 +396,22 @@ export class GitHubService {
       }
 
       await this.pipelineRepo.updatePipelineRun(pipelineRunId, 'FINISHED');
-      this.logger.info(CLASS_NAME, 'syncCommitUrls', `URL sync complete: ${urlsUpdated} updated, ${errorCount} errors`);
+
+      // GITX-222: Audit logging for GitHub API access completion
+      const durationMs = Date.now() - startTime;
+      if (errorCount === 0) {
+        this.logger.info(
+          CLASS_NAME,
+          'syncCommitUrls',
+          `GitHub API access complete: ${urlsUpdated} commit URLs updated from ${this.config.organization}/${repoName} in ${durationMs}ms`,
+        );
+      } else {
+        this.logger.warn(
+          CLASS_NAME,
+          'syncCommitUrls',
+          `GitHub API access complete with errors: ${urlsUpdated} commit URLs updated from ${this.config.organization}/${repoName} in ${durationMs}ms (${errorCount} errors)`,
+        );
+      }
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
