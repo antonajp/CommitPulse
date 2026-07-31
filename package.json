@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.59",
+  "version": "0.1.60",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -686,6 +686,12 @@
           "maximum": 100,
           "description": "Minimum PR coverage percentage target (0-100)",
           "markdownDescription": "Minimum PR coverage percentage considered acceptable.\n\nThe dashboard hero metric will show as:\n- Green: >= threshold\n- Yellow: >= threshold - 30%\n- Red: < threshold - 30%\n\nDefault: `80`"
+        },
+        "gitrx.bitbucket.username": {
+          "type": "string",
+          "default": "",
+          "description": "Atlassian account email for BitBucket Cloud API authentication",
+          "markdownDescription": "Your Atlassian account email address for BitBucket Cloud HTTP Basic authentication.\n\n**Required for BitBucket Cloud PR sync.** Not needed for BitBucket Server (uses Bearer token).\n\nExample: `user@company.com`\n\n**Important:** This is your Atlassian email, NOT the workspace name."
         }
       }
     },
