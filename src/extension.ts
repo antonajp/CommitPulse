@@ -876,13 +876,13 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
   });
   disposables.push(openPRCoverageDisposable);
 
-  // gitr.syncGitHubPRs - Sync GitHub PRs for all configured repositories (GITX-226)
-  const syncGitHubPRsDisposable = vscode.commands.registerCommand('gitr.syncGitHubPRs', async () => {
-    logger?.info(CLASS_NAME, 'syncGitHubPRs', 'Command executed: gitr.syncGitHubPRs');
+  // gitr.syncPRs - Sync Pull Requests for all configured repositories (GITX-228: provider-agnostic)
+  const syncPRsHandler = async (): Promise<void> => {
+    logger?.info(CLASS_NAME, 'syncPRs', 'Command executed: gitr.syncPRs');
 
     const secretService = getSecretService();
     if (!secretService) {
-      logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'SecretStorageService not available');
+      logger?.warn(CLASS_NAME, 'syncPRs', 'SecretStorageService not available');
       void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
       return;
     }
@@ -890,24 +890,14 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'Syncing GitHub PRs',
+        title: 'Syncing Pull Requests',
         cancellable: true,
       },
       async (progress, token) => {
         try {
           // Check for cancellation
           if (token.isCancellationRequested) {
-            logger?.info(CLASS_NAME, 'syncGitHubPRs', 'PR sync cancelled by user');
-            return;
-          }
-
-          // Get GitHub token from SecretStorage
-          const githubToken = await secretService.getGitHubToken();
-          if (!githubToken) {
-            void vscode.window.showErrorMessage(
-              'Gitr: GitHub token not set. Use "Gitr: Set GitHub Token" command to configure authentication.',
-            );
-            logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'GitHub token not configured');
+            logger?.info(CLASS_NAME, 'syncPRs', 'PR sync cancelled by user');
             return;
           }
 
@@ -915,61 +905,87 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
           const settings = getSettings();
           if (settings.repositories.length === 0) {
             void vscode.window.showInformationMessage('Gitr: No repositories configured. Add repositories in settings first.');
-            logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'No repositories configured');
+            logger?.warn(CLASS_NAME, 'syncPRs', 'No repositories configured');
             return;
           }
 
-          // Build GitHubPRSyncConfig array from settings.repositories
-          const configs: GitHubPRSyncConfig[] = [];
+          // Helper: Detect provider from repoUrl
+          type Provider = 'github' | 'bitbucket' | 'unknown';
+          const detectProviderFromUrl = (url: string): Provider => {
+            if (/github\.com/i.test(url)) return 'github';
+            if (/bitbucket\.org/i.test(url)) return 'bitbucket';
+            if (/bitbucket\./i.test(url)) return 'bitbucket'; // BitBucket Server
+            return 'unknown';
+          };
+
+          // Helper: Parse GitHub URL
+          const parseGitHubUrl = (url: string): { owner: string; repo: string } | null => {
+            const match = url.match(/github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?(?:\/|$)/);
+            if (!match || !match[1] || !match[2]) return null;
+            return { owner: match[1], repo: match[2] };
+          };
+
+          // Helper: Parse BitBucket Cloud URL (https://bitbucket.org/{workspace}/{repo})
+          const parseBitBucketCloudUrl = (url: string): { workspace: string; repo: string } | null => {
+            const match = url.match(/bitbucket\.org\/([^/]+)\/([^/.]+)/i);
+            if (!match || !match[1] || !match[2]) return null;
+            return { workspace: match[1], repo: match[2] };
+          };
+
+          // Helper: Parse BitBucket Server URL
+          // Patterns: https://{domain}/projects/{project}/repos/{repo}
+          //           https://{domain}/scm/{project}/{repo}
+          const parseBitBucketServerUrl = (url: string): { project: string; repo: string; domain: string } | null => {
+            const projectMatch = url.match(/([^/]+)\/projects\/([^/]+)\/repos\/([^/.]+)/i);
+            if (projectMatch && projectMatch[1] && projectMatch[2] && projectMatch[3]) {
+              return { domain: projectMatch[1], project: projectMatch[2], repo: projectMatch[3] };
+            }
+            const scmMatch = url.match(/([^/]+)\/scm\/([^/]+)\/([^/.]+)/i);
+            if (scmMatch && scmMatch[1] && scmMatch[2] && scmMatch[3]) {
+              return { domain: scmMatch[1], project: scmMatch[2], repo: scmMatch[3] };
+            }
+            return null;
+          };
+
+          // Group repositories by provider
+          const githubRepos: Array<(typeof settings.repositories)[number]> = [];
+          const bitbucketRepos: Array<(typeof settings.repositories)[number]> = [];
+          const unknownRepos: Array<(typeof settings.repositories)[number]> = [];
+
           for (const repo of settings.repositories) {
             if (!repo.repoUrl) {
-              logger?.warn(CLASS_NAME, 'syncGitHubPRs', `Skipping repository "${repo.name}" - no repoUrl configured`);
+              logger?.warn(CLASS_NAME, 'syncPRs', `Skipping repository "${repo.name}" - no repoUrl configured`);
               continue;
             }
-
-            // Parse owner and repo from repoUrl (e.g., https://github.com/owner/repo or https://github.com/owner/repo.git)
-            // Regex handles: trailing .git, trailing slash, paths after repo name
-            const match = repo.repoUrl.match(/github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?(?:\/|$)/);
-            if (!match) {
-              // Log without exposing full URL (security: CWE-209)
-              logger?.warn(CLASS_NAME, 'syncGitHubPRs', `Skipping repository "${repo.name}" - unable to parse GitHub URL format`);
-              continue;
-            }
-
-            const owner = match[1];
-            const repoName = match[2];
-
-            if (!owner || !repoName) {
-              logger?.warn(CLASS_NAME, 'syncGitHubPRs', `Skipping repository "${repo.name}" - could not extract owner/repo from URL`);
-              continue;
-            }
-
-            // Use gitrx.prCoverage.sinceDays setting for sync window (default: 90 days)
-            const prCoverageConfig = vscode.workspace.getConfiguration('gitrx.prCoverage');
-            const syncDaysBack = prCoverageConfig.get<number>('sinceDays', 90);
-
-            configs.push({
-              owner,
-              repo: repoName,
-              token: githubToken,
-              syncDaysBack,
-            });
+            const provider = detectProviderFromUrl(repo.repoUrl);
+            if (provider === 'github') githubRepos.push(repo);
+            else if (provider === 'bitbucket') bitbucketRepos.push(repo);
+            else unknownRepos.push(repo);
           }
 
-          if (configs.length === 0) {
-            void vscode.window.showWarningMessage('Gitr: No valid GitHub repositories found. Ensure repositories have repoUrl configured.');
-            logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'No valid GitHub repositories to sync');
+          // Log unknown providers
+          if (unknownRepos.length > 0) {
+            const names = unknownRepos.map((r) => r.name).join(', ');
+            logger?.warn(CLASS_NAME, 'syncPRs', `Unknown provider for repositories: ${names}`);
+            void vscode.window.showWarningMessage(
+              `Gitr: Cannot determine provider for ${unknownRepos.length} repositories. Supported: GitHub, BitBucket.`,
+            );
+          }
+
+          if (githubRepos.length === 0 && bitbucketRepos.length === 0) {
+            void vscode.window.showWarningMessage('Gitr: No valid GitHub or BitBucket repositories found.');
+            logger?.warn(CLASS_NAME, 'syncPRs', 'No valid repositories to sync');
             return;
           }
 
-          logger?.info(CLASS_NAME, 'syncGitHubPRs', `Syncing PRs for ${configs.length} repositories`);
-          progress.report({ message: `Syncing ${configs.length} repositories...` });
+          logger?.info(CLASS_NAME, 'syncPRs', `Found ${githubRepos.length} GitHub + ${bitbucketRepos.length} BitBucket repositories`);
+          progress.report({ message: `Syncing ${githubRepos.length} GitHub + ${bitbucketRepos.length} BitBucket repositories...` });
 
           // Get database connection
           const dbPassword = await secretService.getDatabasePassword();
           if (!dbPassword) {
             void vscode.window.showErrorMessage('Gitr: Database password not set. Use "Gitr: Set Database Password" command first.');
-            logger?.warn(CLASS_NAME, 'syncGitHubPRs', 'Database password not configured');
+            logger?.warn(CLASS_NAME, 'syncPRs', 'Database password not configured');
             return;
           }
 
@@ -982,55 +998,191 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
             // Connect to database
             await dbService.initialize(dbConfig);
 
-            // Check if pull_request table exists
-            const prSyncService = new GitHubPRSyncService(githubToken, dbService);
-            const tableExists = await prSyncService.checkTableExists();
-            if (!tableExists) {
-              void vscode.window.showErrorMessage(
-                'Gitr: pull_request table not found. Run "Gitr: Run Database Migrations" to create the required schema.',
-              );
-              logger?.error(CLASS_NAME, 'syncGitHubPRs', 'pull_request table does not exist - migration 012 not applied');
-              return;
+            let totalPRs = 0;
+            let totalReviews = 0;
+
+            // --- Sync GitHub repositories ---
+            if (githubRepos.length > 0) {
+              const githubToken = await secretService.getGitHubToken();
+              if (!githubToken) {
+                void vscode.window.showWarningMessage(
+                  'Gitr: GitHub token not set. GitHub repositories will be skipped. Use "Gitr: Set GitHub Token" to configure.',
+                );
+                logger?.warn(CLASS_NAME, 'syncPRs', 'GitHub token not configured');
+              } else {
+                progress.report({ message: `Syncing ${githubRepos.length} GitHub repositories...` });
+
+                // Build GitHubPRSyncConfig array
+                const githubConfigs: GitHubPRSyncConfig[] = [];
+                for (const repo of githubRepos) {
+                  const parsed = parseGitHubUrl(repo.repoUrl!);
+                  if (!parsed) {
+                    logger?.warn(CLASS_NAME, 'syncPRs', `Skipping GitHub repo "${repo.name}" - unable to parse URL`);
+                    continue;
+                  }
+
+                  const prCoverageConfig = vscode.workspace.getConfiguration('gitrx.prCoverage');
+                  const syncDaysBack = prCoverageConfig.get<number>('sinceDays', 90);
+
+                  githubConfigs.push({
+                    owner: parsed.owner,
+                    repo: parsed.repo,
+                    token: githubToken,
+                    syncDaysBack,
+                  });
+                }
+
+                if (githubConfigs.length > 0) {
+                  // Check if pull_request table exists
+                  const prSyncService = new GitHubPRSyncService(githubToken, dbService);
+                  const tableExists = await prSyncService.checkTableExists();
+                  if (!tableExists) {
+                    void vscode.window.showErrorMessage(
+                      'Gitr: pull_request table not found. Run "Gitr: Run Database Migrations" to create the required schema.',
+                    );
+                    logger?.error(CLASS_NAME, 'syncPRs', 'pull_request table does not exist - migration 012 not applied');
+                    return;
+                  }
+
+                  // Sync all GitHub repositories
+                  const githubResult = await prSyncService.syncAllRepositories(githubConfigs);
+                  totalPRs += githubResult.totalPRs;
+                  totalReviews += githubResult.totalReviews;
+
+                  logger?.info(
+                    CLASS_NAME,
+                    'syncPRs',
+                    `GitHub sync complete: ${githubResult.totalPRs} PRs, ${githubResult.totalReviews} reviews in ${githubResult.totalDurationMs}ms`,
+                  );
+                }
+              }
             }
 
-            // Sync all repositories
-            const result = await prSyncService.syncAllRepositories(configs);
+            // --- Sync BitBucket repositories ---
+            if (bitbucketRepos.length > 0) {
+              const bitbucketToken = await secretService.getBitbucketToken();
+              if (!bitbucketToken) {
+                void vscode.window.showWarningMessage(
+                  'Gitr: BitBucket token not set. BitBucket repositories will be skipped. Use "Gitr: Set Bitbucket Access Token" to configure.',
+                );
+                logger?.warn(CLASS_NAME, 'syncPRs', 'BitBucket token not configured');
+              } else {
+                progress.report({ message: `Syncing ${bitbucketRepos.length} BitBucket repositories...` });
 
-            // Check for cancellation after sync
+                // Build BitBucket configs
+                const bitbucketConfigs: Array<{ workspace?: string; project?: string; repo: string; domain?: string }> = [];
+                for (const repo of bitbucketRepos) {
+                  const cloudParsed = parseBitBucketCloudUrl(repo.repoUrl!);
+                  const serverParsed = parseBitBucketServerUrl(repo.repoUrl!);
+
+                  if (cloudParsed) {
+                    bitbucketConfigs.push({ workspace: cloudParsed.workspace, repo: cloudParsed.repo });
+                  } else if (serverParsed) {
+                    bitbucketConfigs.push({
+                      project: serverParsed.project,
+                      repo: serverParsed.repo,
+                      domain: serverParsed.domain,
+                    });
+                  } else {
+                    logger?.warn(CLASS_NAME, 'syncPRs', `Skipping BitBucket repo "${repo.name}" - unable to parse URL`);
+                  }
+                }
+
+                if (bitbucketConfigs.length > 0) {
+                  // Import and instantiate BitBucket PR sync service
+                  const { BitBucketPRSyncService } = await import('./services/bitbucket-pr-sync-service.js');
+                  const bitbucketService = new BitBucketPRSyncService(dbService);
+
+                  // Check if pull_request table exists
+                  const tableExists = await bitbucketService.checkTableExists();
+                  if (!tableExists) {
+                    void vscode.window.showErrorMessage(
+                      'Gitr: pull_request table not found. Run "Gitr: Run Database Migrations" to create the required schema.',
+                    );
+                    logger?.error(CLASS_NAME, 'syncPRs', 'pull_request table does not exist for BitBucket sync');
+                  } else {
+                    // Build BitBucketPRSyncConfig array
+                    const prCoverageConfig = vscode.workspace.getConfiguration('gitrx.prCoverage');
+                    const syncDaysBack = prCoverageConfig.get<number>('sinceDays', 90);
+
+                    // Use inline type import for BitBucketPRSyncConfig
+                    type BitBucketPRSyncConfigType = import('./services/code-review-velocity-types.js').BitBucketPRSyncConfig;
+                    const bbSyncConfigs: BitBucketPRSyncConfigType[] = [];
+
+                    for (const config of bitbucketConfigs) {
+                      if (config.workspace) {
+                        // BitBucket Cloud
+                        bbSyncConfigs.push({
+                          workspace: config.workspace,
+                          repoSlug: config.repo,
+                          token: bitbucketToken,
+                          syncDaysBack,
+                          variant: 'cloud',
+                          // Note: username required for Cloud auth - use workspace as default
+                          username: config.workspace,
+                        });
+                      } else if (config.project && config.domain) {
+                        // BitBucket Server
+                        bbSyncConfigs.push({
+                          workspace: config.project,
+                          repoSlug: config.repo,
+                          token: bitbucketToken,
+                          syncDaysBack,
+                          variant: 'server',
+                          serverUrl: `https://${config.domain}`,
+                        });
+                      }
+                    }
+
+                    // Sync all BitBucket repositories
+                    const bitbucketResult = await bitbucketService.syncAllRepositories(bbSyncConfigs);
+                    totalPRs += bitbucketResult.totalPRs;
+                    totalReviews += bitbucketResult.totalReviews;
+
+                    logger?.info(
+                      CLASS_NAME,
+                      'syncPRs',
+                      `BitBucket sync complete: ${bitbucketResult.totalPRs} PRs, ${bitbucketResult.totalReviews} reviews`,
+                    );
+                  }
+                }
+              }
+            }
+
+            // Check for cancellation
             if (token.isCancellationRequested) {
-              logger?.info(CLASS_NAME, 'syncGitHubPRs', 'PR sync cancelled by user after sync');
+              logger?.info(CLASS_NAME, 'syncPRs', 'PR sync cancelled by user after sync');
               return;
             }
-
-            logger?.info(
-              CLASS_NAME,
-              'syncGitHubPRs',
-              `PR sync complete: ${result.totalPRs} PRs, ${result.totalReviews} reviews synced in ${result.totalDurationMs}ms`,
-            );
 
             // Sync commit-PR links from merge_sha
             progress.report({ message: 'Correlating PRs with commits...' });
             const prCoverageService = new PRCoverageService(dbService);
             const linksCreated = await prCoverageService.syncCoverageFromMergeSha();
 
-            logger?.info(CLASS_NAME, 'syncGitHubPRs', `Created ${linksCreated} commit-PR links from merge_sha correlation`);
+            logger?.info(CLASS_NAME, 'syncPRs', `Created ${linksCreated} commit-PR links from merge_sha correlation`);
 
             // Show success message
             void vscode.window.showInformationMessage(
-              `Gitr: Successfully synced ${result.totalPRs} PRs and ${result.totalReviews} reviews. Created ${linksCreated} commit-PR links.`,
+              `Gitr: Successfully synced ${totalPRs} PRs and ${totalReviews} reviews. Created ${linksCreated} commit-PR links.`,
             );
           } finally {
             await dbService.shutdown();
           }
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
-          logger?.error(CLASS_NAME, 'syncGitHubPRs', `Failed to sync GitHub PRs: ${message}`);
-          void vscode.window.showErrorMessage(`Gitr: Failed to sync GitHub PRs: ${message}`);
+          logger?.error(CLASS_NAME, 'syncPRs', `Failed to sync PRs: ${message}`);
+          void vscode.window.showErrorMessage(`Gitr: Failed to sync PRs: ${message}`);
         }
       },
     );
-  });
-  disposables.push(syncGitHubPRsDisposable);
+  };
+
+  // Register both command IDs to the same handler for backward compatibility
+  disposables.push(
+    vscode.commands.registerCommand('gitr.syncPRs', syncPRsHandler),
+    vscode.commands.registerCommand('gitr.syncGitHubPRs', syncPRsHandler), // Deprecated alias
+  );
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }

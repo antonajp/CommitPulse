@@ -134,6 +134,13 @@ describe('Organizations and Teams Tables Integration Tests (GITX-202)', () => {
       await client.query('DROP TABLE IF EXISTS commit_files CASCADE');
       await client.query('DROP TABLE IF EXISTS commit_contributors CASCADE');
       await client.query('DROP TABLE IF EXISTS commit_history CASCADE');
+      // Tables from migrations 030-034
+      await client.query('DROP VIEW IF EXISTS vw_code_review_velocity CASCADE');
+      await client.query('DROP VIEW IF EXISTS vw_pr_coverage CASCADE');
+      await client.query('DROP VIEW IF EXISTS vw_pr_coverage_by_contributor CASCADE');
+      await client.query('DROP TABLE IF EXISTS commit_pull_request CASCADE');
+      await client.query('DROP TABLE IF EXISTS pull_request_review CASCADE');
+      await client.query('DROP TABLE IF EXISTS pull_request CASCADE');
     } finally {
       client.release();
     }

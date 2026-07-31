@@ -31,7 +31,7 @@ export const CODE_REVIEW_MAX_RESULT_ROWS = 1000;
  * Parameters:
  *   $1  - repository (TEXT)
  *   $2  - pr_number (INTEGER)
- *   $3  - github_id (BIGINT)
+ *   $3  - provider_id (BIGINT) - renamed from github_id for multi-provider support
  *   $4  - title (TEXT)
  *   $5  - author (TEXT)
  *   $6  - state (TEXT) - open, closed, merged
@@ -49,23 +49,26 @@ export const CODE_REVIEW_MAX_RESULT_ROWS = 1000;
  *   $18 - review_cycles (INTEGER)
  *   $19 - linked_ticket_id (TEXT)
  *   $20 - linked_ticket_type (TEXT) - jira, linear
+ *   $21 - provider (TEXT) - github, bitbucket
  */
 export const QUERY_UPSERT_PULL_REQUEST = `
   INSERT INTO pull_request (
-    repository, pr_number, github_id, title, author, state,
+    repository, pr_number, provider_id, title, author, state,
     created_at, updated_at, first_review_at, merged_at, closed_at,
     merge_sha, head_branch, base_branch,
     additions, deletions, changed_files, review_cycles,
-    linked_ticket_id, linked_ticket_type
+    linked_ticket_id, linked_ticket_type,
+    provider
   ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11,
     $12, $13, $14,
     $15, $16, $17, $18,
-    $19, $20
+    $19, $20,
+    $21
   )
-  ON CONFLICT (repository, pr_number) DO UPDATE SET
-    github_id = EXCLUDED.github_id,
+  ON CONFLICT (repository, pr_number, provider) DO UPDATE SET
+    provider_id = EXCLUDED.provider_id,
     title = EXCLUDED.title,
     author = EXCLUDED.author,
     state = EXCLUDED.state,
@@ -81,7 +84,8 @@ export const QUERY_UPSERT_PULL_REQUEST = `
     changed_files = EXCLUDED.changed_files,
     review_cycles = EXCLUDED.review_cycles,
     linked_ticket_id = EXCLUDED.linked_ticket_id,
-    linked_ticket_type = EXCLUDED.linked_ticket_type
+    linked_ticket_type = EXCLUDED.linked_ticket_type,
+    provider = EXCLUDED.provider
   RETURNING id
 `;
 
@@ -161,6 +165,7 @@ export const QUERY_CODE_REVIEW_VELOCITY = `
     id,
     repository,
     pr_number,
+    provider,
     title,
     author,
     state,
@@ -199,6 +204,7 @@ export const QUERY_CODE_REVIEW_VELOCITY_DATE_RANGE = `
     id,
     repository,
     pr_number,
+    provider,
     title,
     author,
     state,
@@ -237,6 +243,7 @@ export const QUERY_CODE_REVIEW_VELOCITY_REPOSITORY = `
     id,
     repository,
     pr_number,
+    provider,
     title,
     author,
     state,
@@ -275,6 +282,7 @@ export const QUERY_CODE_REVIEW_VELOCITY_AUTHOR = `
     id,
     repository,
     pr_number,
+    provider,
     title,
     author,
     state,
@@ -313,6 +321,7 @@ export const QUERY_CODE_REVIEW_VELOCITY_SIZE = `
     id,
     repository,
     pr_number,
+    provider,
     title,
     author,
     state,
@@ -352,6 +361,7 @@ export const QUERY_CODE_REVIEW_VELOCITY_MERGED = `
     id,
     repository,
     pr_number,
+    provider,
     title,
     author,
     state,
@@ -396,6 +406,7 @@ export const QUERY_CODE_REVIEW_VELOCITY_COMBINED = `
     id,
     repository,
     pr_number,
+    provider,
     title,
     author,
     state,
@@ -547,6 +558,7 @@ export interface CodeReviewVelocityRow {
   readonly id: number;
   readonly repository: string;
   readonly pr_number: number;
+  readonly provider: 'github' | 'bitbucket';
   readonly title: string;
   readonly author: string;
   readonly state: 'open' | 'closed' | 'merged';

@@ -210,6 +210,15 @@ export interface CodeReviewFilters {
 export const CODE_REVIEW_MAX_FILTER_LENGTH = 200;
 
 // ============================================================================
+// Git Provider Types
+// ============================================================================
+
+/**
+ * SCM provider type for PR data source.
+ */
+export type GitProvider = 'github' | 'bitbucket';
+
+// ============================================================================
 // GitHub PR Sync Types
 // ============================================================================
 
@@ -231,7 +240,7 @@ export interface GitHubPRSyncConfig {
  * Result of syncing PRs for a single repository.
  */
 export interface PRSyncResult {
-  /** Repository in format owner/repo */
+  /** Repository in format owner/repo or project/repo */
   readonly repository: string;
   /** Number of PRs synced (upserted) */
   readonly prsUpserted: number;
@@ -241,6 +250,8 @@ export interface PRSyncResult {
   readonly errorCount: number;
   /** Duration in milliseconds */
   readonly durationMs: number;
+  /** Git provider (optional for backward compatibility) */
+  readonly provider?: GitProvider;
 }
 
 /**
@@ -291,3 +302,193 @@ export interface GitHubReview {
   readonly submitted_at: string | null;
   readonly body: string | null;
 }
+
+// ============================================================================
+// BitBucket PR Sync Types
+// ============================================================================
+
+/**
+ * BitBucket variant type.
+ * Cloud uses API v2.0, Server uses API v1.0 with different response schemas.
+ */
+export type BitBucketVariant = 'cloud' | 'server';
+
+/**
+ * Configuration for BitBucket PR sync service.
+ */
+export interface BitBucketPRSyncConfig {
+  /** BitBucket workspace (Cloud) or project key (Server) */
+  readonly workspace: string;
+  /** Repository slug */
+  readonly repoSlug: string;
+  /** BitBucket access token from SecretStorage */
+  readonly token: string;
+  /** Number of days to sync back */
+  readonly syncDaysBack: number;
+  /** BitBucket variant: cloud or server */
+  readonly variant: BitBucketVariant;
+  /** Base URL for Server variant (required if variant='server') */
+  readonly serverUrl?: string;
+  /** Username for Cloud Basic Auth (required if variant='cloud') */
+  readonly username?: string;
+}
+
+/**
+ * BitBucket PR state values.
+ * Note: BitBucket uses uppercase, unlike GitHub's lowercase.
+ */
+export type BitBucketPRState = 'OPEN' | 'MERGED' | 'DECLINED' | 'SUPERSEDED';
+
+/**
+ * A pull request as returned from BitBucket Cloud API v2.0.
+ */
+export interface BitBucketCloudPR {
+  readonly id: number;
+  readonly title: string;
+  readonly author: {
+    readonly display_name: string;
+    readonly account_id?: string;
+    readonly nickname?: string;
+  };
+  readonly state: BitBucketPRState;
+  readonly created_on: string;
+  readonly updated_on: string;
+  readonly close_source_branch?: boolean;
+  readonly merge_commit?: { readonly hash: string } | null;
+  readonly source: {
+    readonly branch: { readonly name: string };
+    readonly repository?: { readonly full_name: string };
+  };
+  readonly destination: {
+    readonly branch: { readonly name: string };
+    readonly repository?: { readonly full_name: string };
+  };
+  /** BitBucket Cloud provides these in the main PR response */
+  readonly comment_count?: number;
+  readonly task_count?: number;
+}
+
+/**
+ * A pull request as returned from BitBucket Server API v1.0.
+ */
+export interface BitBucketServerPR {
+  readonly id: number;
+  readonly title: string;
+  readonly author: {
+    readonly user: {
+      readonly displayName: string;
+      readonly name: string;
+      readonly emailAddress?: string;
+    };
+  };
+  readonly state: BitBucketPRState;
+  /** Server uses millisecond timestamps, not ISO strings */
+  readonly createdDate: number;
+  readonly updatedDate: number;
+  readonly closedDate?: number;
+  readonly fromRef: {
+    readonly displayId: string;
+    readonly id: string;
+  };
+  readonly toRef: {
+    readonly displayId: string;
+    readonly id: string;
+  };
+  readonly properties?: {
+    readonly mergeCommit?: { readonly id: string };
+  };
+}
+
+/**
+ * Union type for BitBucket PR from either API variant.
+ */
+export type BitBucketPR = BitBucketCloudPR | BitBucketServerPR;
+
+/**
+ * BitBucket Cloud activity item (for review extraction).
+ */
+export interface BitBucketCloudActivity {
+  readonly approval?: {
+    readonly date: string;
+    readonly user: {
+      readonly display_name: string;
+      readonly account_id?: string;
+    };
+  };
+  readonly changes_requested?: {
+    readonly date: string;
+    readonly user: {
+      readonly display_name: string;
+      readonly account_id?: string;
+    };
+  };
+  readonly comment?: {
+    readonly created_on: string;
+    readonly user: {
+      readonly display_name: string;
+    };
+    readonly content?: { readonly raw: string };
+  };
+}
+
+/**
+ * BitBucket Server activity item (for review extraction).
+ */
+export interface BitBucketServerActivity {
+  readonly action: 'APPROVED' | 'UNAPPROVED' | 'DECLINED' | 'COMMENTED' | 'OPENED' | 'MERGED';
+  readonly createdDate: number;
+  readonly user: {
+    readonly displayName: string;
+    readonly name: string;
+  };
+  readonly comment?: {
+    readonly text: string;
+  };
+}
+
+/**
+ * Result of syncing PRs for a single BitBucket repository.
+ * Same structure as PRSyncResult but explicitly typed.
+ */
+export interface BitBucketPRSyncResult extends PRSyncResult {
+  readonly provider: 'bitbucket';
+  readonly variant: BitBucketVariant;
+}
+
+// ============================================================================
+// Provider Detection Types
+// ============================================================================
+
+/**
+ * Result of parsing a repository URL to detect provider and extract info.
+ */
+export interface ParsedRepoUrl {
+  readonly provider: GitProvider;
+  readonly owner: string;
+  readonly repo: string;
+  /** For BitBucket Server, the base URL */
+  readonly serverUrl?: string;
+  /** BitBucket variant if applicable */
+  readonly variant?: BitBucketVariant;
+}
+
+/**
+ * URL parsing error when provider cannot be determined.
+ */
+export interface RepoUrlParseError {
+  readonly success: false;
+  readonly error: string;
+  readonly originalUrl: string;
+}
+
+/**
+ * Successful URL parse result.
+ */
+export interface RepoUrlParseSuccess extends ParsedRepoUrl {
+  readonly success: true;
+}
+
+/**
+ * Result type for URL parsing.
+ */
+export type RepoUrlParseResult = RepoUrlParseSuccess | RepoUrlParseError;
