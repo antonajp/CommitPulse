@@ -7,6 +7,15 @@
 -- Safe to run multiple times (uses IF EXISTS guards).
 
 -- ============================================================================
+-- Drop Dependent Views from Migration 032 (GITX-223)
+-- ============================================================================
+-- These views depend on team_id column and must be dropped before removing it
+
+DROP VIEW IF EXISTS vw_pr_coverage_by_team CASCADE;
+DROP VIEW IF EXISTS vw_pr_coverage_by_contributor CASCADE;
+DROP VIEW IF EXISTS vw_pr_coverage CASCADE;
+
+-- ============================================================================
 -- Remove team_id Column from commit_contributors
 -- ============================================================================
 

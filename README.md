@@ -341,11 +341,35 @@ The database uses a named volume (`gitrx-pgdata`) for data persistence. Running 
 
 Migrations are applied automatically on first container startup via the init script at `docker/init/01_run_migrations.sh`.
 
-### Upgrading from Version 0.1.53 or Earlier
+### Running Database Migrations
 
-If you installed CommitPulse before version 0.1.54, you need to manually apply new database migrations. The PostgreSQL init script only runs on first container creation, so existing databases won't receive new migrations automatically.
+When you update the extension or clone the repository after new migrations have been added, you need to apply pending migrations to your database. There are three ways to do this:
 
-**Apply all pending migrations:**
+#### Option 1: VS Code Command (Recommended)
+
+The easiest way to apply pending migrations is using the built-in VS Code command:
+
+1. Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+2. Run **Gitr: Run Database Migrations**
+3. The command will:
+   - Check database connectivity
+   - Detect pending migrations
+   - Apply migrations in version order
+   - Report results in a notification and the Gitr output channel
+
+This is the recommended approach because:
+- It handles database connectivity checks automatically
+- It shows "Start Database" action if the container isn't running
+- It logs each migration applied/skipped to the output channel
+- It works on any platform (Windows, macOS, Linux)
+
+#### Option 2: Automatic Migrations on Pipeline Run
+
+Migrations also run automatically when you execute **Gitr: Run Pipeline**. The pipeline checks for pending migrations before processing and applies them if needed. This is useful if you want migrations to happen transparently as part of your normal workflow.
+
+#### Option 3: Manual Shell Commands (Advanced)
+
+For users who prefer command-line tools or need to troubleshoot:
 
 *Bash (macOS/Linux):*
 ```bash
@@ -493,11 +517,12 @@ Displays a searchable, sortable table showing which commits are linked to which 
 
 ## Commands Reference
 
-All 18 commands available in the Command Palette:
+All 19 commands available in the Command Palette:
 
 | Command | Description |
 |---------|-------------|
 | **Gitr: Run Pipeline** | Execute the analytics pipeline (all or selected steps) |
+| **Gitr: Run Database Migrations** | Apply pending SQL migrations to the database |
 | **Gitr: Start Database** | *(Placeholder — not yet implemented)* |
 | **Gitr: Stop Database** | *(Placeholder — not yet implemented)* |
 | **Gitr: Set Database Password** | Store PostgreSQL password in SecretStorage |

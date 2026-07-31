@@ -16,6 +16,7 @@
  * 'architectureDrift' added in IQS-918 for architecture drift heat map.
  * 'joinDiagnostic' added in GITX-183 for debugging chart data joins.
  * 'organizationProfile' added in GITX-205 for organization-level analytics dashboard.
+ * 'prCoverageReport' added in GITX-221 for PR coverage analysis.
  */
 export type ChartType =
   | 'allMetricsDashboard'
@@ -43,7 +44,8 @@ export type ChartType =
   | 'storyPointsTrend'
   | 'fileContributionReport'
   | 'complexityTrend'
-  | 'joinDiagnostic';
+  | 'joinDiagnostic'
+  | 'prCoverageReport';
 
 /**
  * Chart category for grouping in the TreeView.

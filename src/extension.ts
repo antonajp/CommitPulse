@@ -32,6 +32,7 @@ import { DevProfilePanel } from './views/webview/dev-profile-panel.js';
 import { TeamProfilePanel } from './views/webview/team-profile-panel.js';
 import { JoinDiagnosticPanel } from './views/webview/join-diagnostic-panel.js';
 import { OrganizationProfilePanel } from './views/webview/org-profile-panel.js';
+import { PRCoveragePanel } from './views/webview/pr-coverage-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 
 /**
@@ -856,6 +857,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     OrganizationProfilePanel.createOrShow(context.extensionUri, secretService, organization);
   });
   disposables.push(openOrgProfileDisposable);
+
+  // gitrx.openPRCoverageDashboard - Open the PR Coverage Report dashboard (GITX-221)
+  const openPRCoverageDisposable = vscode.commands.registerCommand('gitrx.openPRCoverageDashboard', () => {
+    logger?.info(CLASS_NAME, 'openPRCoverageDashboard', 'Command executed: gitrx.openPRCoverageDashboard');
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'openPRCoverageDashboard', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    PRCoveragePanel.createOrShow(context.extensionUri, secretService);
+  });
+  disposables.push(openPRCoverageDisposable);
 
   logger?.info(CLASS_NAME, 'initializeChartTreeView', 'Charts TreeView and commands registered successfully');
 }
