@@ -1105,21 +1105,58 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
                     const prCoverageConfig = vscode.workspace.getConfiguration('gitrx.prCoverage');
                     const syncDaysBack = prCoverageConfig.get<number>('sinceDays', 90);
 
+                    // Get BitBucket Cloud username from settings (GITX-229)
+                    const bitbucketConfig = vscode.workspace.getConfiguration('gitrx.bitbucket');
+                    const bitbucketUsername = bitbucketConfig.get<string>('username', '');
+
+                    // Check if any Cloud repos exist and username is not configured
+                    const hasCloudRepos = bitbucketConfigs.some((c) => c.workspace !== undefined);
+                    if (hasCloudRepos && !bitbucketUsername) {
+                      void vscode.window.showErrorMessage(
+                        'Gitr: BitBucket Cloud username not configured. Set "gitrx.bitbucket.username" to your Atlassian account email.',
+                      );
+                      logger?.error(
+                        CLASS_NAME,
+                        'syncPRs',
+                        'BitBucket Cloud repos found but username not configured. Set gitrx.bitbucket.username setting.',
+                      );
+                    }
+
+                    // GITX-229: Validate username is email format for Cloud repos (not workspace name)
+                    if (hasCloudRepos && bitbucketUsername && !bitbucketUsername.includes('@')) {
+                      void vscode.window.showErrorMessage(
+                        'Gitr: BitBucket username must be an email address (your Atlassian account email), not a workspace name.',
+                      );
+                      logger?.error(
+                        CLASS_NAME,
+                        'syncPRs',
+                        'Invalid BitBucket username format (must be email, not workspace name)',
+                      );
+                    }
+
                     // Use inline type import for BitBucketPRSyncConfig
                     type BitBucketPRSyncConfigType = import('./services/code-review-velocity-types.js').BitBucketPRSyncConfig;
                     const bbSyncConfigs: BitBucketPRSyncConfigType[] = [];
 
                     for (const config of bitbucketConfigs) {
                       if (config.workspace) {
-                        // BitBucket Cloud
+                        // BitBucket Cloud - skip if no username configured (GITX-229)
+                        if (!bitbucketUsername) {
+                          logger?.warn(
+                            CLASS_NAME,
+                            'syncPRs',
+                            `Skipping BitBucket Cloud repo "${config.repo}" - username not configured`,
+                          );
+                          continue;
+                        }
                         bbSyncConfigs.push({
                           workspace: config.workspace,
                           repoSlug: config.repo,
                           token: bitbucketToken,
                           syncDaysBack,
                           variant: 'cloud',
-                          // Note: username required for Cloud auth - use workspace as default
-                          username: config.workspace,
+                          // GITX-229: Use username from settings (Atlassian email), not workspace name
+                          username: bitbucketUsername,
                         });
                       } else if (config.project && config.domain) {
                         // BitBucket Server

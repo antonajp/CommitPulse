@@ -246,6 +246,43 @@ describe('SecretStorageService', () => {
       const result = await service.getBitbucketToken();
       expect(result).toBeUndefined();
     });
+
+    it('should use correct prompt text for BitBucket token (GITX-229)', async () => {
+      let capturedPrompt = '';
+      vi.spyOn(vscodeWindow, 'showWarningMessage').mockResolvedValueOnce('Set Now' as never);
+      vi.spyOn(vscodeWindow, 'showInputBox').mockImplementationOnce(async (options: { prompt?: string }) => {
+        capturedPrompt = options?.prompt || '';
+        return 'bb-token';
+      });
+
+      await service.getBitbucketToken();
+
+      // Verify the prompt text distinguishes Cloud App Password from Server PAT
+      expect(capturedPrompt).toContain('App Password');
+      expect(capturedPrompt).toContain('Personal Access Token');
+    });
+
+    it('should reject Atlassian API tokens starting with ATATT (GITX-229)', async () => {
+      let capturedValidateInput: ((input: string) => string | undefined) | undefined;
+
+      vi.spyOn(vscodeWindow, 'showWarningMessage').mockResolvedValueOnce('Set Now' as never);
+      vi.spyOn(vscodeWindow, 'showInputBox').mockImplementationOnce(async (options: { validateInput?: (input: string) => string | undefined }) => {
+        capturedValidateInput = options?.validateInput;
+        return undefined;
+      });
+
+      await service.getBitbucketToken();
+
+      expect(capturedValidateInput).toBeDefined();
+      // Atlassian API token (ATATT prefix) should return error for BitBucket token
+      const atlassianTokenError = capturedValidateInput!('ATATTxxxxxxxxxxxxxx');
+      expect(atlassianTokenError).toBeTruthy();
+      expect(atlassianTokenError).toContain('Atlassian API token');
+      expect(atlassianTokenError).toContain('App Password');
+
+      // Valid App Password should return undefined (no error)
+      expect(capturedValidateInput!('valid-app-password-123')).toBeUndefined();
+    });
   });
 
   describe('promptAndStore', () => {

@@ -1,6 +1,6 @@
 # Gitr Settings Reference
 
-Complete reference for all VS Code settings used by the Gitr extension (v0.1.0).
+Complete reference for all VS Code settings used by the Gitr extension (v0.1.59+).
 
 All settings use the `gitrx.*` namespace and can be configured in VS Code's `settings.json` (File > Preferences > Settings > Extensions > Gitr).
 
@@ -42,6 +42,15 @@ All settings use the `gitrx.*` namespace and can be configured in VS Code's `set
 | `gitrx.releaseManagement.productionBranches` | array | (see below) | Customize production branch names |
 | `gitrx.releaseManagement.stagingBranches` | array | (see below) | Customize staging branch names |
 | `gitrx.releaseManagement.defaultTimeRangeDays` | number | `30` | Default time range for release chart |
+| `gitrx.prCoverage.targetBranches` | array | `["main", "master", "develop"]` | Branches to analyze for PR coverage |
+| `gitrx.prCoverage.sinceDays` | number | `90` | Days to look back for PR coverage analysis |
+| `gitrx.prCoverage.excludePatterns` | array | `[]` | Commit patterns to exclude from orphan detection |
+| `gitrx.prCoverage.minCoverageThreshold` | number | `80` | Target PR coverage percentage |
+| `gitrx.bitbucket.username` | string | `""` | Atlassian email for BitBucket Cloud auth |
+| `gitrx.fileContribution.defaultTimeRangeDays` | number | `90` | Default time range for File Contribution Report |
+| `gitrx.fileContribution.maxFiles` | number | `100` | Max files to analyze in File Contribution query |
+| `gitr.dashboardCacheTtlMinutes` | number | `5` | Dashboard query cache TTL |
+| `gitr.dashboardCacheMaxEntries` | number | `100` | Max cached dashboard query entries |
 
 ## SecretStorage Credentials
 
@@ -54,8 +63,11 @@ Secrets are stored encrypted by VS Code's platform-specific credential store (ma
 | `Gitr: Set Jira API Token` | Jira API token | Any string | Generate at [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens) |
 | `Gitr: Set GitHub Token` | GitHub PAT | `ghp_*` or `github_pat_*` | Requires `read:org` and `read:user` scopes |
 | `Gitr: Set Linear API Token` | Linear API key | `lin_api_*` | Generate at Linear > Settings > API > Personal API keys |
+| `Gitr: Set Bitbucket Access Token` | BitBucket App Password (Cloud) or PAT (Server) | Any string | **Cloud:** Generate at [bitbucket.org/account/settings/app-passwords](https://bitbucket.org/account/settings/app-passwords/) — requires `Repositories: Read` and `Pull requests: Read` scopes. **Server:** Use a Personal Access Token. |
 
 To set a credential, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for the command name above.
+
+> **Important:** BitBucket App Passwords are NOT the same as Atlassian API tokens. Atlassian API tokens (starting with `ATATT`) are for **Jira** only. For **BitBucket Cloud**, you must create an App Password at [bitbucket.org/account/settings/app-passwords](https://bitbucket.org/account/settings/app-passwords/).
 
 ---
 
@@ -614,6 +626,121 @@ These settings control how the Release Management chart identifies production an
 **Default:** `30`
 **Range:** 1–365
 **Impact:** Default time range in days for the Release Management chart. Controls how far back the chart displays release data by default.
+
+---
+
+## PR Coverage
+
+These settings control the PR Coverage Report dashboard and PR sync behavior.
+
+### `gitrx.prCoverage.targetBranches`
+
+**Type:** `array` of strings
+**Default:** `["main", "master", "develop"]`
+**Impact:** Branches where commits should have associated pull requests. Commits to these branches without a PR are flagged as "orphan commits". Supports glob patterns (e.g., `release/*`).
+
+**Example:**
+```json
+"gitrx.prCoverage.targetBranches": ["main", "master", "develop", "release/*"]
+```
+
+### `gitrx.prCoverage.sinceDays`
+
+**Type:** `number`
+**Default:** `90`
+**Range:** 1–365
+**Impact:** Default number of days to look back when analyzing PR coverage. Also controls the PR sync lookback window for GitHub, BitBucket, and GitLab.
+
+### `gitrx.prCoverage.excludePatterns`
+
+**Type:** `array` of strings (regex patterns)
+**Default:** `[]`
+**Impact:** Regular expression patterns for commit messages to exclude from orphan detection. Useful for excluding automated commits.
+
+**Example:**
+```json
+"gitrx.prCoverage.excludePatterns": ["^Merge branch", "^\\[skip ci\\]", "^chore\\(deps\\):"]
+```
+
+### `gitrx.prCoverage.minCoverageThreshold`
+
+**Type:** `number`
+**Default:** `80`
+**Range:** 0–100
+**Impact:** Minimum PR coverage percentage considered acceptable. The dashboard hero metric shows green (≥ threshold), yellow (≥ threshold - 30%), or red (< threshold - 30%).
+
+---
+
+## BitBucket
+
+These settings configure BitBucket Cloud integration for PR sync.
+
+### `gitrx.bitbucket.username`
+
+**Type:** `string`
+**Default:** `""` (empty)
+**Impact:** Your Atlassian account email address for BitBucket Cloud HTTP Basic authentication. **Required for BitBucket Cloud PR sync.** Not needed for BitBucket Server (uses Bearer token).
+
+**Example:**
+```json
+"gitrx.bitbucket.username": "developer@yourorg.com"
+```
+
+> **Important:** This must be your Atlassian email address, NOT the workspace name. The workspace name is automatically extracted from the repository URL.
+
+> **Credential Setup:** After setting the username, run **Gitr: Set Bitbucket Access Token** to store your App Password. Generate one at [bitbucket.org/account/settings/app-passwords](https://bitbucket.org/account/settings/app-passwords/) with `Repositories: Read` and `Pull requests: Read` scopes.
+
+---
+
+## File Contribution
+
+These settings control the File Contribution Report dashboard.
+
+### `gitrx.fileContribution.defaultTimeRangeDays`
+
+**Type:** `number`
+**Default:** `90`
+**Range:** 1–365
+**Impact:** Default time range in days for the File Contribution Report.
+
+### `gitrx.fileContribution.maxFiles`
+
+**Type:** `number`
+**Default:** `100`
+**Range:** 1–500
+**Impact:** Maximum number of files to analyze in a single File Contribution Report query. Higher values may impact performance.
+
+---
+
+## Dashboard Cache
+
+These settings control caching behavior for dashboard queries.
+
+### `gitr.dashboardCacheTtlMinutes`
+
+**Type:** `number`
+**Default:** `5`
+**Range:** 1–60
+**Impact:** Time-to-live (TTL) for cached dashboard queries in minutes. Lower values ensure fresher data but increase database load.
+
+### `gitr.dashboardCacheMaxEntries`
+
+**Type:** `number`
+**Default:** `100`
+**Range:** 1–10000
+**Impact:** Maximum number of cached dashboard query results. When exceeded, least recently used (LRU) entries are evicted.
+
+---
+
+## Debug Logging
+
+### `gitrx.debugLogging`
+
+**Type:** `boolean`
+**Default:** `false`
+**Impact:** Enables verbose debug logging in the Gitr output channel. Useful for troubleshooting.
+
+> **Note:** For even more detailed logging, use `gitrx.logLevel: "DEBUG"` or `gitrx.logLevel: "TRACE"`.
 
 ---
 

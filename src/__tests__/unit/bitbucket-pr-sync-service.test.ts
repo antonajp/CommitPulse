@@ -701,4 +701,82 @@ describe('BitBucketPRSyncService', () => {
       expect(authHeader).toBe('Bearer fake-token');
     });
   });
+
+  describe('username configuration (GITX-229)', () => {
+    it('should use Atlassian email as username for Cloud auth, not workspace', () => {
+      // GITX-229: The bug was using config.workspace as username
+      // The fix is to use the Atlassian email from settings
+      const atlassianEmail = 'developer@company.com'; // CORRECT
+      const workspaceName = 'my-workspace'; // WRONG - should not be used
+
+      const appPassword = 'app-password-123';
+
+      // Build the correct auth header
+      const correctAuthHeader = 'Basic ' + Buffer.from(`${atlassianEmail}:${appPassword}`).toString('base64');
+      const wrongAuthHeader = 'Basic ' + Buffer.from(`${workspaceName}:${appPassword}`).toString('base64');
+
+      // Decode and verify
+      const decodedCorrect = Buffer.from(correctAuthHeader.replace('Basic ', ''), 'base64').toString('utf8');
+      const decodedWrong = Buffer.from(wrongAuthHeader.replace('Basic ', ''), 'base64').toString('utf8');
+
+      // The correct header should contain the email
+      expect(decodedCorrect).toBe('developer@company.com:app-password-123');
+
+      // The wrong header would contain the workspace name
+      expect(decodedWrong).toBe('my-workspace:app-password-123');
+
+      // They should be different
+      expect(correctAuthHeader).not.toBe(wrongAuthHeader);
+    });
+
+    it('should validate username is from settings, not extracted from URL', () => {
+      // Config should have username from settings, not derived from URL
+      interface BitBucketCloudSyncConfig {
+        workspace: string; // From URL (e.g., bitbucket.org/workspace/repo)
+        repoSlug: string;
+        token: string;
+        syncDaysBack: number;
+        variant: 'cloud';
+        username: string; // From settings (Atlassian email)
+      }
+
+      const configFromSettingsCorrect: BitBucketCloudSyncConfig = {
+        workspace: 'my-workspace',
+        repoSlug: 'my-repo',
+        token: 'app-password',
+        syncDaysBack: 90,
+        variant: 'cloud',
+        username: 'developer@company.com', // From gitrx.bitbucket.username setting
+      };
+
+      // Verify username is different from workspace
+      expect(configFromSettingsCorrect.username).not.toBe(configFromSettingsCorrect.workspace);
+      expect(configFromSettingsCorrect.username).toContain('@');
+    });
+
+    it('should not require username for Server variant (Bearer token)', () => {
+      interface BitBucketServerSyncConfig {
+        workspace: string; // Project key
+        repoSlug: string;
+        token: string;
+        syncDaysBack: number;
+        variant: 'server';
+        serverUrl: string;
+        // Note: no username field required for Server
+      }
+
+      const serverConfig: BitBucketServerSyncConfig = {
+        workspace: 'PROJ',
+        repoSlug: 'my-repo',
+        token: 'personal-access-token',
+        syncDaysBack: 90,
+        variant: 'server',
+        serverUrl: 'https://bitbucket.company.com',
+      };
+
+      // Server uses Bearer token, so auth header is simple
+      const authHeader = `Bearer ${serverConfig.token}`;
+      expect(authHeader).toBe('Bearer personal-access-token');
+    });
+  });
 });

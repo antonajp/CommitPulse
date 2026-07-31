@@ -54,7 +54,7 @@ const SecretPrompts: Record<SecretKey, string> = {
   [SecretKeys.JIRA_TOKEN]: 'Enter your Jira API token',
   [SecretKeys.GITHUB_TOKEN]: 'Enter your GitHub personal access token',
   [SecretKeys.LINEAR_TOKEN]: 'Enter your Linear API key (starts with lin_api_)',
-  [SecretKeys.BITBUCKET_TOKEN]: 'Enter your Bitbucket Repository or Workspace Access Token',
+  [SecretKeys.BITBUCKET_TOKEN]: 'Enter your BitBucket App Password (Cloud) or Personal Access Token (Server)',
   [SecretKeys.TECH_STACK_REFRESH_COUNT]: 'Tech Stack Refresh Counter (internal)',
   [SecretKeys.PRO_LICENSE_KEY]: 'Enter your Pro license key',
 };
@@ -287,6 +287,11 @@ export class SecretStorageService implements vscode.Disposable {
         // Validate Linear API key format: must start with 'lin_api_'
         if (key === SecretKeys.LINEAR_TOKEN && !input.startsWith('lin_api_')) {
           return 'Linear API key must start with "lin_api_"';
+        }
+        // GITX-229: Warn if Atlassian API token (ATATT prefix) is used for BitBucket
+        // Atlassian API tokens are for Jira, not BitBucket. BitBucket Cloud requires App Passwords.
+        if (key === SecretKeys.BITBUCKET_TOKEN && input.startsWith('ATATT')) {
+          return 'This looks like an Atlassian API token (for Jira). BitBucket Cloud requires an App Password from bitbucket.org/account/settings/app-passwords/';
         }
         return undefined;
       },

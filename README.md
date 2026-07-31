@@ -564,7 +564,7 @@ Displays PR coverage metrics showing how many commits are linked to pull request
 }
 ```
 
-**Sync Workflow:**
+**Sync Workflow (GitHub):**
 
 The "Sync GitHub PRs" button in the dashboard (or the **Gitr: Sync GitHub PRs** command) performs:
 1. Fetches PRs from GitHub API for all repositories with `repoUrl` configured
@@ -573,6 +573,63 @@ The "Sync GitHub PRs" button in the dashboard (or the **Gitr: Sync GitHub PRs** 
 4. Refreshes the dashboard with updated coverage metrics
 
 **Note:** The sync uses the `gitrx.prCoverage.sinceDays` setting to determine how far back to fetch PRs. Increase this value if you need historical PR data beyond 90 days.
+
+### BitBucket PR Sync
+
+For BitBucket repositories, additional configuration is required:
+
+**BitBucket Cloud Setup:**
+
+1. **Configure repository URL** — Use the BitBucket Cloud format:
+   ```json
+   "gitrx.repositories": [
+     {
+       "path": "/home/user/repos/my-app",
+       "name": "My App",
+       "repoUrl": "https://bitbucket.org/workspace/my-app"
+     }
+   ]
+   ```
+
+2. **Set BitBucket username** — Configure your Atlassian email in VS Code settings:
+   ```json
+   "gitrx.bitbucket.username": "developer@yourorg.com"
+   ```
+   > **Important:** This is your Atlassian account email, NOT the workspace name.
+
+3. **Create an App Password** — Go to [bitbucket.org/account/settings/app-passwords](https://bitbucket.org/account/settings/app-passwords/) and create an App Password with these scopes:
+   - `Repositories: Read`
+   - `Pull requests: Read`
+
+4. **Store the App Password** — Run **Gitr: Set Bitbucket Access Token** and enter the App Password you created.
+
+5. **Sync PRs from BitBucket** — Run **Gitr: Sync BitBucket PRs** to fetch PR data.
+
+**BitBucket Server Setup:**
+
+1. **Configure repository URL** — Use the BitBucket Server format:
+   ```json
+   "gitrx.repositories": [
+     {
+       "path": "/home/user/repos/my-app",
+       "name": "My App",
+       "repoUrl": "https://bitbucket.company.com/projects/PROJ/repos/my-app"
+     }
+   ]
+   ```
+
+2. **Create a Personal Access Token** — In BitBucket Server, go to your profile > Manage Account > Personal Access Tokens.
+
+3. **Store the token** — Run **Gitr: Set Bitbucket Access Token** and enter your Personal Access Token.
+   > **Note:** BitBucket Server uses Bearer token authentication. The `gitrx.bitbucket.username` setting is not required.
+
+**Important: Git Credentials vs API Tokens**
+
+Your local Git credentials (SSH keys or HTTPS credentials) are used by Git for clone, fetch, and push operations. They are **not** used by Gitr for API access. The Gitr extension uses API tokens for:
+- **Jira:** Atlassian API token from [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens)
+- **GitHub:** Personal Access Token (PAT) from GitHub settings
+- **BitBucket Cloud:** App Password from [bitbucket.org](https://bitbucket.org/account/settings/app-passwords/) (NOT an Atlassian API token)
+- **BitBucket Server:** Personal Access Token from your BitBucket Server profile
 
 ---
 
