@@ -49,6 +49,7 @@ async function createSchema(dbService: DatabaseService): Promise<void> {
   const migrations = [
     '001_create_tables.sql',
     '012_code_review_velocity.sql',
+    '034_add_provider_column.sql',
   ];
 
   for (const migration of migrations) {
@@ -61,49 +62,49 @@ async function createSchema(dbService: DatabaseService): Promise<void> {
  * Helper: Insert test PR data.
  */
 async function insertTestData(dbService: DatabaseService): Promise<void> {
-  // Insert pull requests
+  // Insert pull requests (using provider_id instead of github_id after migration 034)
   await dbService.query(`
     INSERT INTO pull_request (
-      repository, pr_number, github_id, title, author, state,
+      repository, pr_number, provider_id, title, author, state,
       created_at, updated_at, first_review_at, merged_at, closed_at,
       merge_sha, head_branch, base_branch,
       additions, deletions, changed_files, review_cycles,
-      linked_ticket_id, linked_ticket_type
+      linked_ticket_id, linked_ticket_type, provider
     ) VALUES
       ('owner/repo1', 1, 1001, 'feat: Add feature 1', 'user1', 'merged',
        '2024-06-01 10:00:00+00', '2024-06-05 14:00:00+00', '2024-06-02 09:00:00+00', '2024-06-05 14:00:00+00', NULL,
        'abc123', 'feature/IQS-100-feature', 'main',
        100, 20, 5, 1,
-       'IQS-100', 'linear'),
+       'IQS-100', 'linear', 'github'),
       ('owner/repo1', 2, 1002, 'feat: Add feature 2', 'user1', 'merged',
        '2024-06-05 10:00:00+00', '2024-06-10 14:00:00+00', '2024-06-06 10:00:00+00', '2024-06-10 14:00:00+00', NULL,
        'def456', 'feature/IQS-101-feature', 'main',
        250, 50, 8, 2,
-       'IQS-101', 'linear'),
+       'IQS-101', 'linear', 'github'),
       ('owner/repo1', 3, 1003, 'fix: Bug fix', 'user2', 'merged',
        '2024-06-08 10:00:00+00', '2024-06-09 14:00:00+00', '2024-06-08 12:00:00+00', '2024-06-09 14:00:00+00', NULL,
        'ghi789', 'bugfix/fix-issue', 'main',
        30, 10, 2, 0,
-       NULL, NULL),
+       NULL, NULL, 'github'),
       ('owner/repo2', 1, 2001, 'feat: Large PR', 'user3', 'merged',
        '2024-06-10 10:00:00+00', '2024-06-20 14:00:00+00', '2024-06-15 10:00:00+00', '2024-06-20 14:00:00+00', NULL,
        'jkl012', 'feature/large-change', 'main',
        800, 200, 25, 3,
-       'PROJ-500', 'jira'),
+       'PROJ-500', 'jira', 'github'),
       ('owner/repo1', 4, 1004, 'WIP: Draft PR', 'user1', 'open',
        '2024-06-15 10:00:00+00', '2024-06-15 10:00:00+00', NULL, NULL, NULL,
        NULL, 'draft-branch', 'main',
        10, 0, 1, 0,
-       NULL, NULL)
-    ON CONFLICT (repository, pr_number) DO NOTHING
+       NULL, NULL, 'github')
+    ON CONFLICT (repository, pr_number, provider) DO NOTHING
   `);
 
-  // Insert reviews
+  // Insert reviews (using provider_id after migration 034)
   await dbService.query(`
     INSERT INTO pull_request_review (pull_request_id, github_id, reviewer, state, submitted_at, body)
     SELECT
       pr.id,
-      rev.github_id,
+      rev.review_id,
       rev.reviewer,
       rev.state,
       rev.submitted_at,
@@ -117,8 +118,8 @@ async function insertTestData(dbService: DatabaseService): Promise<void> {
         (2001, 5005, 'reviewer1', 'changes_requested', '2024-06-15 10:00:00+00'::TIMESTAMPTZ, 'Too many changes'),
         (2001, 5006, 'reviewer2', 'changes_requested', '2024-06-16 10:00:00+00'::TIMESTAMPTZ, 'Needs tests'),
         (2001, 5007, 'reviewer1', 'approved', '2024-06-18 10:00:00+00'::TIMESTAMPTZ, 'LGTM')
-    ) AS rev(pr_github_id, github_id, reviewer, state, submitted_at, body)
-    INNER JOIN pull_request pr ON pr.github_id = rev.pr_github_id
+    ) AS rev(pr_provider_id, review_id, reviewer, state, submitted_at, body)
+    INNER JOIN pull_request pr ON pr.provider_id = rev.pr_provider_id
     ON CONFLICT (github_id) DO NOTHING
   `);
 }
@@ -456,11 +457,11 @@ describe('CodeReviewVelocityDataService Integration Tests', () => {
 
         await service.query(`
           INSERT INTO pull_request (
-            repository, pr_number, github_id, title, author, state,
+            repository, pr_number, provider_id, title, author, state,
             created_at, updated_at, merged_at,
             head_branch, base_branch,
-            additions, deletions, changed_files, review_cycles
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            additions, deletions, changed_files, review_cycles, provider
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         `, [
           'perf-repo',
           i + 1,
@@ -477,6 +478,7 @@ describe('CodeReviewVelocityDataService Integration Tests', () => {
           Math.floor(Math.random() * 100),
           Math.floor(Math.random() * 20),
           Math.floor(Math.random() * 3),
+          'github',
         ]);
       }
 

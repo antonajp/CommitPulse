@@ -202,6 +202,7 @@ export class GitHubPRSyncService {
             0, // review_cycles calculated after reviews
             linkedTicketId,
             linkedTicketType,
+            'github', // provider
           );
 
           prsUpserted++;
@@ -439,7 +440,7 @@ export class GitHubPRSyncService {
   private async upsertPullRequest(
     repository: string,
     prNumber: number,
-    githubId: number,
+    providerId: number,
     title: string,
     author: string,
     state: string,
@@ -457,13 +458,14 @@ export class GitHubPRSyncService {
     reviewCycles: number,
     linkedTicketId: string | null,
     linkedTicketType: string | null,
+    provider: 'github' | 'bitbucket',
   ): Promise<number> {
-    this.logger.trace(CLASS_NAME, 'upsertPullRequest', `Upserting PR #${prNumber}`);
+    this.logger.trace(CLASS_NAME, 'upsertPullRequest', `Upserting PR #${prNumber} (provider: ${provider})`);
 
     const result = await this.db.query<PullRequestUpsertRow>(QUERY_UPSERT_PULL_REQUEST, [
       repository,
       prNumber,
-      githubId,
+      providerId,
       title,
       author,
       state,
@@ -481,6 +483,7 @@ export class GitHubPRSyncService {
       reviewCycles,
       linkedTicketId,
       linkedTicketType,
+      provider,
     ]);
 
     const id = result.rows[0]?.id;
