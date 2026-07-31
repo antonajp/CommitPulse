@@ -15,8 +15,11 @@
 import type {
   PRCoverageOverall,
   OrphanCommit,
+  OrphanCategoryBreakdown,
   CoverageByBranch,
   CoverageByAuthor,
+  CoverageByContributor,
+  CoverageByTeam,
   WeeklyTrendPoint,
 } from '../../services/pr-coverage-types.js';
 import type { SharedWebviewToHost } from './shared-protocol.js';
@@ -36,6 +39,7 @@ export interface RequestPRCoverageData {
   readonly repository?: string;
   readonly author?: string;
   readonly branches?: readonly string[];
+  readonly teams?: readonly string[];
 }
 
 /**
@@ -48,6 +52,7 @@ export interface RequestOrphanCommits {
   readonly repository?: string;
   readonly author?: string;
   readonly branches?: readonly string[];
+  readonly teams?: readonly string[];
 }
 
 /**
@@ -98,9 +103,14 @@ export interface ResponsePRCoverageData {
   readonly weeklyTrend: readonly WeeklyTrendPoint[];
   readonly byAuthor: readonly CoverageByAuthor[];
   readonly byBranch: readonly CoverageByBranch[];
+  readonly byContributor: readonly CoverageByContributor[];
+  readonly byTeam: readonly CoverageByTeam[];
   readonly orphanCommits: readonly OrphanCommit[];
+  /** Orphan category breakdown for chart and KPIs (GITX-227) */
+  readonly orphanBreakdown: OrphanCategoryBreakdown;
   readonly hasData: boolean;
   readonly viewExists: boolean;
+  readonly hasPRData: boolean;
 }
 
 /**
@@ -120,6 +130,7 @@ export interface ResponseFilterOptions {
   readonly repositories: readonly string[];
   readonly authors: readonly string[];
   readonly branches: readonly string[];
+  readonly teams: readonly string[];
 }
 
 /**

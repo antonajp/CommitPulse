@@ -195,13 +195,13 @@ describe('MigrationRunner Integration Tests', () => {
     await pool.query('DROP INDEX IF EXISTS idx_commit_files_arc_component');
 
     // Run migrations again - should only apply 004, 005, 006, 007, and 021
-    // 001-003, 008-020, 022, 023, 024, 025, 026, 027, 028, 029, 030, 031, and 032 were not deleted so they're skipped (27 total)
+    // 001-003, 008-020, 022, 023, 024, 025, 026, 027, 028, 029, 030, 031, 032, and 033 were not deleted so they're skipped (28 total)
     const secondRunner = new MigrationRunner(pool, migrationsDir);
     const secondResult = await secondRunner.migrate();
 
     expect(secondResult.success).toBe(true);
     expect(secondResult.applied).toBe(5);
-    expect(secondResult.skipped).toBe(27);
+    expect(secondResult.skipped).toBe(28);
     expect(secondResult.appliedMigrations).toContain('004_add_linear_support.sql');
     expect(secondResult.appliedMigrations).toContain('005_add_calculated_story_points.sql');
     expect(secondResult.appliedMigrations).toContain('006_add_arc_component.sql');
@@ -230,6 +230,7 @@ describe('MigrationRunner Integration Tests', () => {
     expect(secondResult.skippedMigrations).toContain('026_fix_delta_calculation.sql');
     expect(secondResult.skippedMigrations).toContain('027_add_repository_indexes.sql');
     expect(secondResult.skippedMigrations).toContain('030_create_organizations_teams_tables.sql');
+    expect(secondResult.skippedMigrations).toContain('033_pr_coverage_orphan_categories.sql');
   }, 30_000);
 
   it('should be idempotent - fully migrated database triggers no execution', async () => {

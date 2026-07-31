@@ -513,11 +513,72 @@ Open via Command Palette: **Gitr: Open Issue Linkage**
 
 Displays a searchable, sortable table showing which commits are linked to which issues. The panel title dynamically reflects the active tracker types — showing "Commit-Jira Linkage", "Commit-Linear Linkage", or both depending on your repository configurations.
 
+### PR Coverage Report
+
+Open via Command Palette: **Gitr: Open PR Coverage Report**
+
+Displays PR coverage metrics showing how many commits are linked to pull requests versus "orphan" commits pushed directly to protected branches without code review.
+
+**Dashboard Components:**
+- **Hero Metric** — Overall PR coverage percentage with color-coded thresholds
+- **KPI Cards** — Total commits, PR-linked commits, orphan commits, repositories analyzed
+- **Weekly Trend Chart** — Coverage percentage over time (D3.js line chart)
+- **Coverage by Author/Contributor/Team** — Horizontal bar charts showing compliance by group
+- **Coverage by Branch** — Branch-level compliance metrics
+- **Orphan Commits Table** — Searchable, sortable, paginated list of commits without PRs
+
+**First-Time Setup:**
+
+1. **Configure repository URLs** — Each repository needs a `repoUrl` to enable PR sync:
+   ```json
+   "gitrx.repositories": [
+     {
+       "path": "/home/user/repos/my-app",
+       "name": "My App",
+       "repoUrl": "https://github.com/myorg/my-app"
+     }
+   ]
+   ```
+
+2. **Set GitHub token** — Run **Gitr: Set GitHub Token** with a PAT that has `repo` scope (for private repos) or `public_repo` scope (for public repos only)
+
+3. **Sync PRs from GitHub** — Run **Gitr: Sync GitHub PRs** to fetch PR data from the GitHub API. This populates the `pull_request` table and correlates PRs with commits via `merge_sha`.
+
+**PR Coverage Settings:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `gitrx.prCoverage.targetBranches` | `["main", "master", "develop"]` | Branches where commits should have PRs. Supports glob patterns (e.g., `release/*`). |
+| `gitrx.prCoverage.sinceDays` | `90` | Days to analyze for coverage reports. Also controls GitHub PR sync lookback window. |
+| `gitrx.prCoverage.excludePatterns` | `[]` | Regex patterns for commit messages to exclude from orphan detection (e.g., `["^Merge branch", "^\\[skip ci\\]"]`). |
+| `gitrx.prCoverage.minCoverageThreshold` | `80` | Target coverage percentage. Hero metric shows green (≥threshold), yellow (≥threshold-30%), or red (<threshold-30%). |
+
+**Example configuration:**
+
+```json
+{
+  "gitrx.prCoverage.targetBranches": ["main", "master", "develop", "release/*"],
+  "gitrx.prCoverage.sinceDays": 180,
+  "gitrx.prCoverage.excludePatterns": ["^Merge branch", "^chore\\(deps\\):"],
+  "gitrx.prCoverage.minCoverageThreshold": 90
+}
+```
+
+**Sync Workflow:**
+
+The "Sync GitHub PRs" button in the dashboard (or the **Gitr: Sync GitHub PRs** command) performs:
+1. Fetches PRs from GitHub API for all repositories with `repoUrl` configured
+2. Stores PR metadata in the `pull_request` table
+3. Correlates PRs with commits using `merge_sha`
+4. Refreshes the dashboard with updated coverage metrics
+
+**Note:** The sync uses the `gitrx.prCoverage.sinceDays` setting to determine how far back to fetch PRs. Increase this value if you need historical PR data beyond 90 days.
+
 ---
 
 ## Commands Reference
 
-All 19 commands available in the Command Palette:
+Key commands available in the Command Palette:
 
 | Command | Description |
 |---------|-------------|
@@ -540,6 +601,8 @@ All 19 commands available in the Command Palette:
 | **Show Pipeline Run Log** | Display pipeline run log in output channel (on click) |
 | **Gitr: Open Metrics Dashboard** | Open the Chart.js metrics dashboard webview |
 | **Gitr: Open Issue Linkage** | Open the commit-issue linkage webview |
+| **Gitr: Open PR Coverage Report** | Open the PR coverage analysis dashboard |
+| **Gitr: Sync GitHub PRs** | Fetch PRs from GitHub API and correlate with commits |
 
 ---
 

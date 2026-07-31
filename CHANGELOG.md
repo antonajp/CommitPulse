@@ -5,6 +5,22 @@ All notable changes to the CommitPulse extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.58] - 2026-07-31
+
+### Added
+
+- Add orphan commit categorization to PR Coverage Report
+- Add GitHub PR Sync command for PR Coverage Report
+- Fix 0.0% coverage bug and add team filter
+
+### Changed
+
+- Add PR Coverage Report section to README
+
+### Fixed
+
+- Handle repository name format and case mismatches in PR coverage sync
+
 ## [0.1.57] - 2026-07-31
 
 ### Added

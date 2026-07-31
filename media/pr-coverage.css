@@ -2,7 +2,7 @@
  * Styles for the PR Coverage Report dashboard webview.
  * Integrates with VS Code theme using CSS custom properties.
  *
- * Ticket: GITX-221
+ * Tickets: GITX-221, GITX-227
  */
 
 /* Base styles are inline in the HTML for CSP compliance.
@@ -10,7 +10,129 @@
  * The main styles are embedded in pr-coverage-html.ts.
  */
 
-/* Print styles */
+/* ============================================================================
+ * Orphan Category Badge Styles (GITX-227)
+ * Uses Okabe-Ito colorblind-safe palette
+ * ============================================================================ */
+
+/* Category badge base */
+.category-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Direct Push - Vermillion (Compliance Risk) */
+.category-direct-push {
+  background-color: rgba(213, 94, 0, 0.15);
+  color: #D55E00;
+  border: 1px solid rgba(213, 94, 0, 0.3);
+}
+
+/* Unlinked Feature Branch - Orange (Warning/Process Gap) */
+.category-unlinked {
+  background-color: rgba(230, 159, 0, 0.15);
+  color: #E69F00;
+  border: 1px solid rgba(230, 159, 0, 0.3);
+}
+
+/* Pre-merge on PR Branch - Sky Blue (Expected/Informational) */
+.category-pre-merge {
+  background-color: rgba(86, 180, 233, 0.15);
+  color: #56B4E9;
+  border: 1px solid rgba(86, 180, 233, 0.3);
+}
+
+/* Category chart colors (CSS custom properties for D3.js) */
+:root {
+  --category-direct-push: #D55E00;
+  --category-unlinked: #E69F00;
+  --category-pre-merge: #56B4E9;
+}
+
+/* Chart legend items */
+.category-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  justify-content: center;
+}
+
+.category-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.category-legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+/* ============================================================================
+ * Orphan Category Breakdown Chart Styles
+ * ============================================================================ */
+
+.orphan-breakdown-chart {
+  margin-top: 8px;
+}
+
+.breakdown-bar-container {
+  height: 32px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  background: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+.breakdown-bar-segment {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 24px;
+  transition: width 0.3s ease;
+}
+
+.breakdown-bar-segment.direct-push {
+  background-color: #D55E00;
+}
+
+.breakdown-bar-segment.unlinked {
+  background-color: #E69F00;
+}
+
+.breakdown-bar-segment.pre-merge {
+  background-color: #56B4E9;
+}
+
+/* Success state when no direct pushes */
+.no-direct-pushes-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--coverage-good);
+  color: white;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+/* ============================================================================
+ * Print Styles
+ * ============================================================================ */
+
 @media print {
   .dashboard-header {
     flex-direction: column;
@@ -33,9 +155,17 @@
   .data-table {
     font-size: 10px;
   }
+
+  /* Print category badges with borders for visibility */
+  .category-badge {
+    border-width: 2px;
+  }
 }
 
-/* High contrast mode adjustments */
+/* ============================================================================
+ * High Contrast Mode Adjustments
+ * ============================================================================ */
+
 @media (forced-colors: active) {
   .kpi-card,
   .chart-container,
@@ -50,5 +180,39 @@
 
   .sha-link {
     color: LinkText;
+  }
+
+  /* High contrast category badges */
+  .category-badge {
+    border: 2px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .category-direct-push {
+    border-color: Mark;
+  }
+
+  .category-unlinked {
+    border-color: Highlight;
+  }
+
+  .category-pre-merge {
+    border-color: LinkText;
+  }
+
+  /* High contrast chart segments */
+  .breakdown-bar-segment {
+    border: 1px solid CanvasText;
+  }
+}
+
+/* ============================================================================
+ * Reduced Motion Preference
+ * ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .breakdown-bar-segment {
+    transition: none;
   }
 }
