@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.60",
+  "version": "0.1.61",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -276,6 +276,21 @@
         "command": "gitr.syncGitHubPRs",
         "title": "Gitr: Sync GitHub PRs (Deprecated)",
         "category": "Gitr"
+      },
+      {
+        "command": "gitrx.analyzeBranches",
+        "title": "Gitr: Analyze Branches for Cleanup",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "gitrx.refreshBranches",
+        "title": "Gitr: Refresh Branch Analysis",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitrx.exportBranchReport",
+        "title": "Gitr: Export Branch Report",
+        "icon": "$(export)"
       }
     ],
     "configuration": {
@@ -692,6 +707,41 @@
           "default": "",
           "description": "Atlassian account email for BitBucket Cloud API authentication",
           "markdownDescription": "Your Atlassian account email address for BitBucket Cloud HTTP Basic authentication.\n\n**Required for BitBucket Cloud PR sync.** Not needed for BitBucket Server (uses Bearer token).\n\nExample: `user@company.com`\n\n**Important:** This is your Atlassian email, NOT the workspace name."
+        },
+        "gitrx.branchCleanup.staleDays": {
+          "type": "number",
+          "default": 90,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Number of days of inactivity before a branch is considered stale",
+          "markdownDescription": "Number of days of inactivity before a branch is considered stale for cleanup analysis.\n\nDefault: `90` days"
+        },
+        "gitrx.branchCleanup.excludePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "main",
+            "master",
+            "develop",
+            "release/*",
+            "hotfix/*"
+          ],
+          "description": "Branch name patterns to exclude from cleanup analysis",
+          "markdownDescription": "Branch name patterns to exclude from cleanup analysis. Supports glob patterns.\n\nDefault: `[\"main\", \"master\", \"develop\", \"release/*\", \"hotfix/*\"]`"
+        },
+        "gitrx.branchCleanup.mergedOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show only merged branches by default (safer)",
+          "markdownDescription": "When enabled, only show merged branches by default. Unmerged branches can be revealed via filter.\n\nDefault: `true` (recommended for safety)"
+        },
+        "gitrx.branchCleanup.confirmBatchDelete": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require type-to-confirm for batch deletions over 10 branches",
+          "markdownDescription": "When deleting more than 10 branches at once, require the user to type 'DELETE' to confirm.\n\nDefault: `true`"
         }
       }
     },
