@@ -1,0 +1,675 @@
+/**
+ * Styles for the Dead Branches Report dashboard webview.
+ * Integrates with VS Code theme using CSS custom properties.
+ *
+ * Risk level colors: safe=#28a745, low=#5cb85c, medium=#f0ad4e, high=#d9534f
+ * Supports both light and dark themes via VS Code CSS variables.
+ *
+ * Ticket: GITX-231
+ */
+
+/* ============================================================================
+ * CSS Variables
+ * ============================================================================ */
+:root {
+  --vscode-font-family: var(--vscode-editor-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  --risk-safe: #28a745;
+  --risk-low: #5cb85c;
+  --risk-medium: #f0ad4e;
+  --risk-high: #d9534f;
+}
+
+/* ============================================================================
+ * Base Styles
+ * ============================================================================ */
+body {
+  font-family: var(--vscode-font-family);
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-editor-background);
+  padding: 16px;
+  margin: 0;
+}
+
+.dashboard-container {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* ============================================================================
+ * Header
+ * ============================================================================ */
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.dashboard-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ============================================================================
+ * Risk Level Legend
+ * ============================================================================ */
+.legend-section {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-radius: 8px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.legend-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.legend-toggle:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.legend-toggle:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+.toggle-icon {
+  transition: transform 0.2s ease;
+}
+
+.legend-toggle[aria-expanded="true"] .toggle-icon {
+  transform: rotate(90deg);
+}
+
+.legend-content {
+  padding: 0 20px 20px 20px;
+}
+
+.legend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.legend-item {
+  background: var(--vscode-editor-background);
+  padding: 16px;
+  border-radius: 6px;
+  border-left: 4px solid;
+}
+
+.legend-item.risk-safe {
+  border-left-color: var(--risk-safe);
+}
+
+.legend-item.risk-low {
+  border-left-color: var(--risk-low);
+}
+
+.legend-item.risk-medium {
+  border-left-color: var(--risk-medium);
+}
+
+.legend-item.risk-high {
+  border-left-color: var(--risk-high);
+}
+
+.legend-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.legend-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.legend-description {
+  font-size: 12px;
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+}
+
+/* ============================================================================
+ * KPI Cards
+ * ============================================================================ */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.kpi-card {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+}
+
+.kpi-value {
+  font-size: 32px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.kpi-label {
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground);
+  margin: 4px 0 0 0;
+}
+
+.kpi-sublabel {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin: 2px 0 0 0;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * Charts Grid
+ * ============================================================================ */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.chart-container {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.chart-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+}
+
+.chart-svg {
+  width: 100%;
+  min-height: 300px;
+}
+
+/* ============================================================================
+ * Table Section
+ * ============================================================================ */
+.table-section {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.table-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ============================================================================
+ * Filters
+ * ============================================================================ */
+.filters-container {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--vscode-editor-background);
+  border-radius: 6px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-search {
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.filter-select,
+.filter-input {
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-input-border);
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border-radius: 4px;
+  font-size: 13px;
+  min-width: 140px;
+}
+
+.filter-select:focus,
+.filter-input:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* ============================================================================
+ * Buttons
+ * ============================================================================ */
+.btn {
+  padding: 6px 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.btn-primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn-primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.btn-secondary {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.btn-secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.btn-danger {
+  background: var(--vscode-inputValidation-errorBackground);
+  color: var(--vscode-inputValidation-errorForeground);
+  border-color: var(--vscode-inputValidation-errorBorder);
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.btn:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Spinner for loading states */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============================================================================
+ * Data Table
+ * ============================================================================ */
+#branchTableContainer {
+  overflow-x: auto;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 12px 8px;
+  border-bottom: 2px solid var(--vscode-panel-border);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  z-index: 10;
+}
+
+.data-table th:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.data-table th.sorted-asc::after {
+  content: ' ▲';
+}
+
+.data-table th.sorted-desc::after {
+  content: ' ▼';
+}
+
+.data-table th.col-checkbox {
+  width: 40px;
+  cursor: default;
+}
+
+.data-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  vertical-align: middle;
+}
+
+.data-table tr:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.branch-name {
+  font-family: var(--vscode-editor-font-family);
+  font-weight: 500;
+}
+
+.sha-link {
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.sha-link:hover {
+  text-decoration: underline;
+}
+
+.sha-link:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.info-icon {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  cursor: help;
+}
+
+/* ============================================================================
+ * Risk Level Badges
+ * ============================================================================ */
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.risk-badge.risk-safe {
+  background-color: rgba(40, 167, 69, 0.15);
+  color: var(--risk-safe);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.risk-badge.risk-low {
+  background-color: rgba(92, 184, 92, 0.15);
+  color: var(--risk-low);
+  border: 1px solid rgba(92, 184, 92, 0.3);
+}
+
+.risk-badge.risk-medium {
+  background-color: rgba(240, 173, 78, 0.15);
+  color: var(--risk-medium);
+  border: 1px solid rgba(240, 173, 78, 0.3);
+}
+
+.risk-badge.risk-high {
+  background-color: rgba(217, 83, 79, 0.15);
+  color: var(--risk-high);
+  border: 1px solid rgba(217, 83, 79, 0.3);
+}
+
+/* ============================================================================
+ * Status Badges
+ * ============================================================================ */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.status-badge.status-merged {
+  background-color: rgba(86, 180, 233, 0.15);
+  color: #56B4E9;
+  border: 1px solid rgba(86, 180, 233, 0.3);
+}
+
+.status-badge.status-stale {
+  background-color: rgba(230, 159, 0, 0.15);
+  color: #E69F00;
+  border: 1px solid rgba(230, 159, 0, 0.3);
+}
+
+.status-badge.status-orphaned {
+  background-color: rgba(204, 121, 167, 0.15);
+  color: #CC79A7;
+  border: 1px solid rgba(204, 121, 167, 0.3);
+}
+
+.status-badge.status-active {
+  background-color: rgba(0, 158, 115, 0.15);
+  color: #009E73;
+  border: 1px solid rgba(0, 158, 115, 0.3);
+}
+
+/* ============================================================================
+ * Pagination
+ * ============================================================================ */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.page-info {
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ============================================================================
+ * Empty States
+ * ============================================================================ */
+.empty-state {
+  text-align: center;
+  padding: 48px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.empty-state-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  color: var(--vscode-foreground);
+}
+
+.empty-state-message {
+  margin: 0 0 16px 0;
+}
+
+.empty-state-suggestions {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-radius: 6px;
+  padding: 16px;
+  max-width: 500px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.empty-state-suggestions ul {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+}
+
+/* ============================================================================
+ * Loading State
+ * ============================================================================ */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--vscode-editor-inactiveSelectionBackground);
+  border-top-color: var(--vscode-progressBar-background);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  margin-top: 16px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ============================================================================
+ * Error Banner
+ * ============================================================================ */
+.error-banner {
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  color: var(--vscode-inputValidation-errorForeground);
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+.error-banner.visible {
+  display: block;
+}
+
+/* ============================================================================
+ * Accessibility
+ * ============================================================================ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================================
+ * Responsive Design
+ * ============================================================================ */
+@media (max-width: 768px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .filters-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .table-actions {
+    width: 100%;
+  }
+
+  .table-actions .btn {
+    flex: 1;
+  }
+}

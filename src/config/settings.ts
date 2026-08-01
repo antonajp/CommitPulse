@@ -203,6 +203,21 @@ export interface GitSettings {
 export type LogLevelString = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL';
 
 /**
+ * Branch cleanup settings for dead branch analysis.
+ * Ticket: GITX-231
+ */
+export interface BranchCleanupSettings {
+  /** Number of days of inactivity before a branch is considered stale. Default: 90. */
+  readonly staleDays: number;
+  /** Branch name patterns to exclude from cleanup analysis. */
+  readonly excludePatterns: readonly string[];
+  /** Show only merged branches by default (safer). Default: true. */
+  readonly mergedOnly: boolean;
+  /** Require type-to-confirm for batch deletions over 10 branches. Default: true. */
+  readonly confirmBatchDelete: boolean;
+}
+
+/**
  * Complete extension configuration interface.
  * Maps to the gitrx.* settings defined in package.json contributes.configuration.
  *
@@ -234,6 +249,8 @@ export interface GitrxConfiguration {
   readonly docker: DockerSettings;
   /** Git extraction settings. Ticket: IQS-936. */
   readonly git: GitSettings;
+  /** Branch cleanup settings. Ticket: GITX-231. */
+  readonly branchCleanup: BranchCleanupSettings;
 }
 
 /**
@@ -344,6 +361,16 @@ export function getSettings(): GitrxConfiguration {
     debugLogging: config.get<boolean>('git.debugLogging', false),
   });
 
+  // Read Branch cleanup settings (GITX-231)
+  const branchCleanup: BranchCleanupSettings = Object.freeze({
+    staleDays: config.get<number>('branchCleanup.staleDays', 90),
+    excludePatterns: config.get<string[]>('branchCleanup.excludePatterns', [
+      'main', 'master', 'develop', 'release/*', 'hotfix/*',
+    ]),
+    mergedOnly: config.get<boolean>('branchCleanup.mergedOnly', true),
+    confirmBatchDelete: config.get<boolean>('branchCleanup.confirmBatchDelete', true),
+  });
+
   const settings: GitrxConfiguration = {
     repositories,
     database,
@@ -355,6 +382,7 @@ export function getSettings(): GitrxConfiguration {
     logLevel,
     docker,
     git,
+    branchCleanup,
   };
 
   logger.trace(CLASS_NAME, 'getSettings', `Settings loaded: ${repositories.length} repositories configured`);

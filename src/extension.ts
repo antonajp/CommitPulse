@@ -33,6 +33,7 @@ import { TeamProfilePanel } from './views/webview/team-profile-panel.js';
 import { JoinDiagnosticPanel } from './views/webview/join-diagnostic-panel.js';
 import { OrganizationProfilePanel } from './views/webview/org-profile-panel.js';
 import { PRCoveragePanel } from './views/webview/pr-coverage-panel.js';
+import { DeadBranchesPanel } from './views/webview/dead-branches-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
 import { GitHubPRSyncService } from './services/github-pr-sync-service.js';
 import { PRCoverageService } from './services/pr-coverage-service.js';
@@ -875,6 +876,21 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
     PRCoveragePanel.createOrShow(context.extensionUri, secretService);
   });
   disposables.push(openPRCoverageDisposable);
+
+  // gitrx.analyzeBranches - Open the Dead Branches Analysis panel (GITX-231)
+  const analyzeBranchesDisposable = vscode.commands.registerCommand('gitrx.analyzeBranches', () => {
+    logger?.info(CLASS_NAME, 'analyzeBranches', 'Command executed: gitrx.analyzeBranches');
+
+    const secretService = getSecretService();
+    if (!secretService) {
+      logger?.warn(CLASS_NAME, 'analyzeBranches', 'SecretStorageService not available');
+      void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
+      return;
+    }
+
+    DeadBranchesPanel.createOrShow(context.extensionUri, secretService);
+  });
+  disposables.push(analyzeBranchesDisposable);
 
   // gitr.syncPRs - Sync Pull Requests for all configured repositories (GITX-228: provider-agnostic)
   const syncPRsHandler = async (): Promise<void> => {
