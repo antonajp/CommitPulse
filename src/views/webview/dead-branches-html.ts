@@ -63,13 +63,22 @@ export function generateDeadBranchesHtml(params: DeadBranchesHtmlParams): string
 
     <!-- Header -->
     <header class="dashboard-header">
-      <h1 class="dashboard-title">Dead Branches Report</h1>
+      <div class="header-title-section">
+        <h1 class="dashboard-title">Dead Branches Report</h1>
+        <!-- Data Freshness Indicator -->
+        <div id="dataFreshness" class="data-freshness" hidden>
+          <span id="lastUpdated" class="freshness-text">Last updated: --</span>
+          <span id="freshnessIndicator" class="freshness-badge"></span>
+        </div>
+      </div>
       <div class="header-actions">
-        <button id="scanBtn" class="btn btn-secondary" aria-label="Scan repositories for branches">
-          <span id="scanBtnText">Scan Branches</span>
+        <button id="refreshBtn" class="btn btn-primary" aria-label="Refresh data from database (fast)">
+          <span id="refreshBtnText">Refresh</span>
+        </button>
+        <button id="scanBtn" class="btn btn-secondary" aria-label="Sync from Git repositories (slow)">
+          <span id="scanBtnText">Sync from Git</span>
           <span id="scanSpinner" class="spinner" hidden aria-hidden="true"></span>
         </button>
-        <button id="refreshBtn" class="btn btn-primary" aria-label="Refresh branch data">Refresh</button>
       </div>
       <!-- Screen reader announcements for scan status -->
       <div id="scanStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -285,11 +294,12 @@ export function generateDeadBranchesHtml(params: DeadBranchesHtmlParams): string
 
     // Event Listeners
     document.getElementById('refreshBtn').addEventListener('click', () => {
-      clearFilters();
-      requestData();
+      // Fast refresh from database only (no git operations)
+      vscode.postMessage({ type: 'refreshFromDb' });
     });
 
     document.getElementById('scanBtn').addEventListener('click', () => {
+      // Slow sync from Git (live git operations)
       startScan();
     });
 
@@ -404,7 +414,7 @@ export function generateDeadBranchesHtml(params: DeadBranchesHtmlParams): string
       // Re-enable button and hide spinner
       scanBtn.disabled = false;
       scanBtn.removeAttribute('aria-busy');
-      scanBtnText.textContent = 'Scan Branches';
+      scanBtnText.textContent = 'Sync from Git';
       scanSpinner.hidden = true;
 
       if (message.success) {
@@ -427,6 +437,11 @@ export function generateDeadBranchesHtml(params: DeadBranchesHtmlParams): string
       loadingState.style.display = 'none';
       branchData = data;
 
+      // Update data freshness indicator
+      if (data.lastUpdated) {
+        updateDataFreshness(data.lastUpdated);
+      }
+
       if (!data.hasData || data.branches.length === 0) {
         emptyState.style.display = 'block';
         dashboardContent.style.display = 'none';
@@ -445,6 +460,75 @@ export function generateDeadBranchesHtml(params: DeadBranchesHtmlParams): string
 
       // Apply filters and render table
       applyFilters();
+    }
+
+    function updateDataFreshness(lastUpdatedIso) {
+      const dataFreshness = document.getElementById('dataFreshness');
+      const lastUpdatedEl = document.getElementById('lastUpdated');
+      const freshnessIndicator = document.getElementById('freshnessIndicator');
+
+      if (!lastUpdatedIso) {
+        dataFreshness.hidden = true;
+        return;
+      }
+
+      dataFreshness.hidden = false;
+
+      const lastUpdated = new Date(lastUpdatedIso);
+      const now = new Date();
+      const hoursAgo = (now - lastUpdated) / (1000 * 60 * 60);
+
+      // Format the timestamp
+      const timeAgo = formatTimeAgo(lastUpdated);
+      lastUpdatedEl.textContent = 'Data from: ' + timeAgo;
+
+      // Color-code freshness (green: <1 hour, yellow: 1-24 hours, red: >24 hours)
+      freshnessIndicator.className = 'freshness-badge';
+      if (hoursAgo < 1) {
+        freshnessIndicator.classList.add('freshness-green');
+        freshnessIndicator.textContent = 'Fresh';
+        freshnessIndicator.title = 'Data is less than 1 hour old';
+      } else if (hoursAgo < 24) {
+        freshnessIndicator.classList.add('freshness-yellow');
+        freshnessIndicator.textContent = 'Recent';
+        freshnessIndicator.title = 'Data is ' + Math.round(hoursAgo) + ' hours old';
+      } else {
+        freshnessIndicator.classList.add('freshness-red');
+        freshnessIndicator.textContent = 'Stale';
+        freshnessIndicator.title = 'Data is ' + Math.round(hoursAgo / 24) + ' days old - consider syncing from Git';
+      }
+    }
+
+    function formatTimeAgo(date) {
+      const now = new Date();
+      const seconds = Math.floor((now - date) / 1000);
+
+      if (seconds < 60) {
+        return 'just now';
+      }
+
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) {
+        return minutes + ' minute' + (minutes === 1 ? '' : 's') + ' ago';
+      }
+
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) {
+        return hours + ' hour' + (hours === 1 ? '' : 's') + ' ago';
+      }
+
+      const days = Math.floor(hours / 24);
+      if (days < 7) {
+        return days + ' day' + (days === 1 ? '' : 's') + ' ago';
+      }
+
+      const weeks = Math.floor(days / 7);
+      if (weeks < 4) {
+        return weeks + ' week' + (weeks === 1 ? '' : 's') + ' ago';
+      }
+
+      const months = Math.floor(days / 30);
+      return months + ' month' + (months === 1 ? '' : 's') + ' ago';
     }
 
     function handleFilterOptions(options) {

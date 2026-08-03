@@ -188,3 +188,124 @@ export const SQL_GET_TOTAL_BRANCH_COUNT = `
   FROM git_branch
   WHERE deleted_at IS NULL
 `;
+
+// ============================================================================
+// Commit History Based Queries (GITX-237)
+// ============================================================================
+
+/**
+ * Get branch metadata from commit_history table.
+ * Used as an alternative to live git commands when the database is already populated.
+ *
+ * GITX-237: Extract branches from commit_history instead of requiring git fetches.
+ * Normalizes branch names to strip 'origin/' prefix.
+ * Calculates days_since_last_commit for staleness analysis.
+ *
+ * Params: $1 = repository filter (optional, use NULL for all repositories)
+ */
+export const SQL_GET_BRANCHES_FROM_COMMIT_HISTORY = `
+  SELECT
+    REGEXP_REPLACE(branch, '^origin/', '') AS branch_name,
+    repository,
+    MAX(commit_date) AS last_commit_date,
+    MAX(author) AS last_commit_author,
+    COUNT(DISTINCT sha)::int AS commit_count,
+    EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MAX(commit_date)))::int / 86400 AS days_since_last_commit
+  FROM commit_history
+  WHERE branch IS NOT NULL
+    AND branch != ''
+    AND ($1::TEXT IS NULL OR repository = $1)
+  GROUP BY REGEXP_REPLACE(branch, '^origin/', ''), repository
+  ORDER BY repository, last_commit_date DESC
+`;
+
+/**
+ * Get the most recent commit_date for a repository to show data freshness.
+ * Used by DeadBranchesPanel to display when commit_history was last updated.
+ *
+ * GITX-237: Provides a data freshness indicator for database-driven branch analysis.
+ *
+ * Params: $1 = repository name
+ */
+export const SQL_GET_COMMIT_HISTORY_LAST_UPDATED = `
+  SELECT MAX(commit_date) AS last_updated
+  FROM commit_history
+  WHERE repository = $1
+`;
+
+/**
+ * Get distinct repositories from commit_history table.
+ * Used by DeadBranchesPanel when operating in database-driven mode.
+ *
+ * GITX-237: Alternative to git_branch table when branches are sourced from commit_history.
+ */
+export const SQL_GET_DISTINCT_REPOSITORIES_FROM_COMMIT_HISTORY = `
+  SELECT DISTINCT repository
+  FROM commit_history
+  WHERE repository IS NOT NULL
+    AND repository != ''
+  ORDER BY repository
+`;
+
+/**
+ * Get branches with risk calculation from commit_history table.
+ * Used by DeadBranchesPanel for database-driven Dead Branches Report.
+ *
+ * GITX-237: Full branch risk analysis without requiring live git commands.
+ * Note: Without git merge-base, we cannot determine if a branch is merged.
+ * Therefore, is_merged defaults to false and risk calculation assumes unmerged.
+ *
+ * Risk levels (for unmerged branches):
+ *   - high: < 90 days since last commit (recent, likely active)
+ *   - medium: 90-180 days since last commit (stale)
+ *   - medium: > 180 days since last commit (very stale)
+ *
+ * Status determination:
+ *   - stale: > 90 days since last commit
+ *   - active: <= 90 days since last commit
+ *
+ * Params: $1 = repository filter (optional, use NULL for all repositories)
+ */
+export const SQL_GET_BRANCHES_WITH_RISK_FROM_COMMIT_HISTORY = `
+  SELECT
+    REGEXP_REPLACE(branch, '^origin/', '') AS branch_name,
+    repository,
+    MAX(commit_date) AS last_commit_date,
+    MAX(author) AS last_commit_author,
+    MAX(sha) AS last_commit_sha,
+    COUNT(DISTINCT sha)::int AS commit_count,
+    EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MAX(commit_date)))::int / 86400 AS days_since_last_commit,
+    false AS is_merged,
+    NULL::VARCHAR AS merged_into,
+    false AS is_orphaned,
+    false AS has_open_pr,
+    false AS is_protected,
+    CASE
+      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MAX(commit_date)))::int / 86400 > 90 THEN 'stale'
+      ELSE 'active'
+    END AS status,
+    CASE
+      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MAX(commit_date)))::int / 86400 < 90 THEN 'high'
+      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MAX(commit_date)))::int / 86400 BETWEEN 90 AND 180 THEN 'medium'
+      ELSE 'medium'
+    END AS risk_level
+  FROM commit_history
+  WHERE branch IS NOT NULL
+    AND branch != ''
+    AND ($1::TEXT IS NULL OR repository = $1)
+  GROUP BY REGEXP_REPLACE(branch, '^origin/', ''), repository
+  ORDER BY repository, last_commit_date DESC
+`;
+
+/**
+ * Get the most recent commit_date across all repositories.
+ * Used by DeadBranchesPanel when no repository filter is specified.
+ *
+ * GITX-237: Global data freshness indicator.
+ *
+ * @returns Single row with last_updated timestamp, or null if no commits exist.
+ */
+export const SQL_GET_COMMIT_HISTORY_LAST_UPDATED_ALL = `
+  SELECT MAX(commit_date) AS last_updated
+  FROM commit_history
+`;

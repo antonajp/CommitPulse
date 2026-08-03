@@ -141,3 +141,27 @@ export interface TotalBranchCountStats {
   /** Cleanup candidates (excludes protected branches) */
   cleanupCandidates: number;
 }
+
+/**
+ * Branch metadata extracted from commit_history table.
+ * GITX-237: Alternative to live git commands for branch analysis.
+ *
+ * Note: Without git merge-base, we cannot determine if a branch is merged.
+ * Status and risk levels are calculated conservatively assuming branches are NOT merged.
+ */
+export interface CommitHistoryBranch {
+  branchName: string;
+  repository: string;
+  lastCommitDate: Date | null;
+  lastCommitAuthor: string | null;
+  lastCommitSha: string | null;
+  commitCount: number;
+  daysSinceLastCommit: number;
+  status: 'stale' | 'active';
+  riskLevel: 'medium' | 'high';
+  isMerged: boolean;
+  mergedInto: string | null;
+  isOrphaned: boolean;
+  hasOpenPr: boolean;
+  isProtected: boolean;
+}

@@ -41,8 +41,16 @@ body {
 .dashboard-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.header-title-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .dashboard-title {
@@ -55,6 +63,48 @@ body {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+/* Data Freshness Indicator */
+.data-freshness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.freshness-text {
+  color: var(--vscode-descriptionForeground);
+}
+
+.freshness-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  cursor: help;
+}
+
+.freshness-badge.freshness-green {
+  background-color: rgba(40, 167, 69, 0.15);
+  color: var(--risk-safe);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.freshness-badge.freshness-yellow {
+  background-color: rgba(240, 173, 78, 0.15);
+  color: var(--risk-medium);
+  border: 1px solid rgba(240, 173, 78, 0.3);
+}
+
+.freshness-badge.freshness-red {
+  background-color: rgba(217, 83, 79, 0.15);
+  color: var(--risk-high);
+  border: 1px solid rgba(217, 83, 79, 0.3);
 }
 
 /* ============================================================================
