@@ -160,4 +160,17 @@ export interface DeadBranchesConfig {
    * for comprehensive analysis, but deletion requires force flag.
    */
   mergedOnly: boolean;
+
+  /**
+   * Target branches to check for merge status.
+   * Default: ["main", "master", "develop", "production", "release"]
+   * Configurable via gitr.branchCleanup.targetBranches setting.
+   *
+   * Branches are considered "merged" if all their commits are
+   * reachable from any of these target branches.
+   *
+   * GITX-233: Added to support BitBucket repos with non-standard
+   * default branch naming conventions.
+   */
+  targetBranches?: string[];
 }

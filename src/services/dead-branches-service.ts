@@ -41,6 +41,13 @@ const CLASS_NAME = 'DeadBranchesService';
 const PROTECTED_BRANCH_NAMES = ['main', 'master', 'develop', 'staging', 'production'];
 
 /**
+ * Default target branches for merge status detection.
+ * Used when config.targetBranches is not specified.
+ * GITX-233: Expanded to support BitBucket and other git providers.
+ */
+const DEFAULT_TARGET_BRANCHES = ['main', 'master', 'develop', 'production', 'release'];
+
+/**
  * Hard-coded protected branch patterns.
  * Branches matching these patterns cannot be deleted.
  */
@@ -118,15 +125,38 @@ export interface IBranchRepository {
 export class DeadBranchesService {
   private readonly logger: LoggerService;
   private readonly git: SimpleGit;
+  private readonly repositoryName: string;
 
+  /**
+   * Create a DeadBranchesService for a repository.
+   *
+   * @param repoPath - Absolute path to the Git repository
+   * @param branchRepo - Repository interface for database operations
+   * @param config - Configuration for branch detection
+   * @param repositoryName - Optional repository name from settings.
+   *                         GITX-233: If provided, used instead of extracting from path.
+   *                         This ensures repository names match gitr.repositories config.
+   */
   constructor(
     private readonly repoPath: string,
     private readonly branchRepo: IBranchRepository,
     private readonly config: DeadBranchesConfig,
+    repositoryName?: string,
   ) {
     this.logger = LoggerService.getInstance();
     this.git = simpleGit(repoPath);
-    this.logger.debug(CLASS_NAME, 'constructor', `DeadBranchesService created for ${repoPath}`);
+    // GITX-233: Use provided repository name from settings, or extract from path as fallback
+    this.repositoryName = repositoryName ?? this.extractRepositoryNameFromPath();
+    this.logger.debug(CLASS_NAME, 'constructor', `DeadBranchesService created for ${this.repositoryName} at ${repoPath}`);
+  }
+
+  /**
+   * Extract repository name from filesystem path.
+   * Used as fallback when repositoryName is not provided.
+   */
+  private extractRepositoryNameFromPath(): string {
+    const parts = this.repoPath.split('/');
+    return parts[parts.length - 1] ?? 'unknown';
   }
 
   // ==========================================================================
@@ -287,13 +317,17 @@ export class DeadBranchesService {
   }
 
   /**
-   * Check if a branch is merged into any protected branch.
+   * Check if a branch is merged into any target branch.
    *
    * Uses git merge-base to check if the branch is an ancestor of
-   * main/master/develop. A branch is considered merged if:
+   * any configured target branch. A branch is considered merged if:
    *   merge-base(branch, target) == branch_tip_sha
    *
    * This means all commits on the branch are reachable from target.
+   *
+   * GITX-233: Target branches are now configurable via config.targetBranches.
+   * Default includes: main, master, develop, production, release.
+   * This supports BitBucket repos with non-standard default branch names.
    *
    * @param branchName - Name of branch to check
    * @returns Merge status with target branch name if merged
@@ -301,7 +335,9 @@ export class DeadBranchesService {
   async checkMergeStatus(branchName: string): Promise<{ isMerged: boolean; mergedInto: string | null }> {
     this.logger.debug(CLASS_NAME, 'checkMergeStatus', `Checking merge status for: ${branchName}`);
 
-    const targetBranches = ['main', 'master', 'develop'];
+    // GITX-233: Use configurable target branches with expanded defaults
+    const targetBranches = this.config.targetBranches ?? DEFAULT_TARGET_BRANCHES;
+    this.logger.trace(CLASS_NAME, 'checkMergeStatus', `Target branches: ${targetBranches.join(', ')}`);
 
     for (const target of targetBranches) {
       try {
@@ -349,13 +385,18 @@ export class DeadBranchesService {
   }
 
   /**
-   * Detect orphaned branches (local-only or tracking deleted remotes).
+   * Detect orphaned branches (branches whose remote tracking branch was deleted).
    *
    * Uses `git branch -vv` to check tracking status.
-   * Branches with "[gone]" indicator have deleted remotes.
-   * Branches with no remote tracking are local-only.
+   * Only branches with "[gone]" indicator are considered orphaned.
    *
-   * @returns Array of orphaned branch names
+   * GITX-233: Fixed incorrect orphan detection. Previously, branches without
+   * remote tracking (local-only branches) were incorrectly marked as orphaned.
+   * Local-only branches are normal development branches, NOT orphans.
+   * Only branches with [gone] indicator (meaning their remote tracking branch
+   * was explicitly deleted) should be marked as orphaned.
+   *
+   * @returns Array of orphaned branch names (only branches with [gone] indicator)
    */
   async detectOrphanedBranches(): Promise<string[]> {
     this.logger.debug(CLASS_NAME, 'detectOrphanedBranches', 'Detecting orphaned branches');
@@ -379,16 +420,21 @@ export class DeadBranchesService {
           continue;
         }
 
-        // Check for [gone] indicator (deleted remote)
-        if (line.includes('[gone]')) {
+        // GITX-233: ONLY check for [gone] indicator (deleted remote tracking branch)
+        // A branch is orphaned when its remote tracking branch was deleted,
+        // indicated by ": gone]" in git branch -vv output.
+        // Format example: "branch abc123 [origin/branch: gone] commit message"
+        // Local-only branches (no remote tracking) are NOT orphaned - they are
+        // normal development branches that haven't been pushed yet.
+        if (line.includes(': gone]')) {
           orphaned.push(branchName);
           this.logger.debug(CLASS_NAME, 'detectOrphanedBranches', `Orphaned (gone): ${branchName}`);
         }
-        // Check for no remote tracking (no [...] section)
-        else if (!line.includes('[')) {
-          orphaned.push(branchName);
-          this.logger.debug(CLASS_NAME, 'detectOrphanedBranches', `Orphaned (local-only): ${branchName}`);
-        }
+        // GITX-233: REMOVED incorrect local-only orphan detection
+        // The following code was WRONG and caused all local branches to be marked orphaned:
+        //   else if (!line.includes('[')) {
+        //     orphaned.push(branchName);
+        //   }
       }
 
       this.logger.debug(CLASS_NAME, 'detectOrphanedBranches', `Found ${orphaned.length} orphaned branches`);
@@ -712,12 +758,17 @@ export class DeadBranchesService {
   // ==========================================================================
 
   /**
-   * Get repository name from repo path.
-   * Extracts last directory name from path.
+   * Get repository name.
+   *
+   * GITX-233: Returns the repository name passed to the constructor,
+   * which should come from gitr.repositories settings. This ensures
+   * repository names in the git_branch table match the configured name,
+   * not the filesystem directory name.
+   *
+   * @returns Repository name from settings, or extracted from path if not provided
    */
   private getRepositoryName(): string {
-    const parts = this.repoPath.split('/');
-    return parts[parts.length - 1] ?? 'unknown';
+    return this.repositoryName;
   }
 
   /**

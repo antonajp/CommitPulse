@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.61",
+  "version": "0.1.62",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -742,6 +742,21 @@
           "default": true,
           "description": "Require type-to-confirm for batch deletions over 10 branches",
           "markdownDescription": "When deleting more than 10 branches at once, require the user to type 'DELETE' to confirm.\n\nDefault: `true`"
+        },
+        "gitrx.branchCleanup.targetBranches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "main",
+            "master",
+            "develop",
+            "production",
+            "release"
+          ],
+          "description": "Target branches to check for merge status",
+          "markdownDescription": "Target branches to check for merge status when detecting dead branches. A branch is considered \"merged\" if all its commits are reachable from any of these target branches.\n\n**GITX-233**: Configurable to support BitBucket and other git providers with non-standard default branch naming.\n\nDefault: `[\"main\", \"master\", \"develop\", \"production\", \"release\"]`\n\nExample for BitBucket:\n```json\n[\"main\", \"master\", \"develop\", \"production\", \"release\", \"trunk\", \"default\"]\n```"
         }
       }
     },
