@@ -11,6 +11,7 @@ import type {
   RiskDistributionStats,
   RepositoryRiskBreakdown,
   TotalBranchCountStats,
+  CommitHistoryBranch,
 } from './branch-types.js';
 import {
   SQL_UPSERT_BRANCH,
@@ -27,6 +28,10 @@ import {
   SQL_GET_REPOSITORY_RISK_BREAKDOWN,
   SQL_GET_DISTINCT_REPOSITORIES,
   SQL_GET_TOTAL_BRANCH_COUNT,
+  SQL_GET_BRANCHES_WITH_RISK_FROM_COMMIT_HISTORY,
+  SQL_GET_COMMIT_HISTORY_LAST_UPDATED,
+  SQL_GET_COMMIT_HISTORY_LAST_UPDATED_ALL,
+  SQL_GET_DISTINCT_REPOSITORIES_FROM_COMMIT_HISTORY,
 } from './branch-queries.js';
 
 // Re-export types so consumers can import from branch-repository directly
@@ -40,6 +45,7 @@ export type {
   RiskDistributionStats,
   RepositoryRiskBreakdown,
   TotalBranchCountStats,
+  CommitHistoryBranch,
 } from './branch-types.js';
 
 /**
@@ -683,6 +689,129 @@ export class BranchRepository {
     );
 
     return stats;
+  }
+
+  // ============================================================================
+  // Commit History Based Methods (GITX-237)
+  // ============================================================================
+
+  /**
+   * Get branches from commit_history table instead of live git fetches.
+   * GITX-237: Provides branch metadata for Dead Branches Report without requiring git commands.
+   *
+   * Note: Since we cannot determine merge status from commit_history alone (requires git merge-base),
+   * all branches are treated as NOT merged. Risk levels are conservative (medium/high only).
+   *
+   * @param repository - Optional repository filter (null for all repositories)
+   * @returns Array of branch metadata with status and risk level
+   */
+  async getBranchesFromCommitHistory(repository?: string): Promise<CommitHistoryBranch[]> {
+    this.logger.debug(
+      CLASS_NAME,
+      'getBranchesFromCommitHistory',
+      repository ? `[${repository}] Querying commit_history` : 'Querying commit_history for all repositories',
+    );
+
+    const result: DatabaseQueryResult<{
+      branch_name: string;
+      repository: string;
+      last_commit_date: Date | null;
+      last_commit_author: string | null;
+      last_commit_sha: string | null;
+      commit_count: number;
+      days_since_last_commit: number;
+      is_merged: boolean;
+      merged_into: string | null;
+      is_orphaned: boolean;
+      has_open_pr: boolean;
+      is_protected: boolean;
+      status: 'stale' | 'active';
+      risk_level: 'medium' | 'high';
+    }> = await this.db.query(SQL_GET_BRANCHES_WITH_RISK_FROM_COMMIT_HISTORY, [repository ?? null]);
+
+    const branches: CommitHistoryBranch[] = result.rows.map((row) => ({
+      branchName: row.branch_name,
+      repository: row.repository,
+      lastCommitDate: row.last_commit_date,
+      lastCommitAuthor: row.last_commit_author,
+      lastCommitSha: row.last_commit_sha,
+      commitCount: row.commit_count,
+      daysSinceLastCommit: row.days_since_last_commit,
+      isMerged: row.is_merged,
+      mergedInto: row.merged_into,
+      isOrphaned: row.is_orphaned,
+      hasOpenPr: row.has_open_pr,
+      isProtected: row.is_protected,
+      status: row.status,
+      riskLevel: row.risk_level,
+    }));
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getBranchesFromCommitHistory',
+      repository
+        ? `[${repository}] Found ${branches.length} branches`
+        : `Found ${branches.length} branches across all repositories`,
+    );
+
+    return branches;
+  }
+
+  /**
+   * Get the most recent commit_date from commit_history to show data freshness.
+   * GITX-237: Used by Dead Branches Report to indicate when commit history was last updated.
+   *
+   * @param repository - Repository name
+   * @returns The most recent commit date, or null if no commits found
+   */
+  async getCommitHistoryLastUpdated(repository?: string): Promise<Date | null> {
+    this.logger.debug(
+      CLASS_NAME,
+      'getCommitHistoryLastUpdated',
+      repository ? `[${repository}] Querying last update time` : 'Querying last update time for all repositories',
+    );
+
+    const result: DatabaseQueryResult<{
+      last_updated: Date | null;
+    }> = repository
+      ? await this.db.query(SQL_GET_COMMIT_HISTORY_LAST_UPDATED, [repository])
+      : await this.db.query(SQL_GET_COMMIT_HISTORY_LAST_UPDATED_ALL);
+
+    const lastUpdated = result.rows[0]?.last_updated ?? null;
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getCommitHistoryLastUpdated',
+      repository
+        ? `[${repository}] Last updated: ${lastUpdated?.toISOString() ?? 'never'}`
+        : `Last updated: ${lastUpdated?.toISOString() ?? 'never'}`,
+    );
+
+    return lastUpdated;
+  }
+
+  /**
+   * Get distinct repository names from commit_history table.
+   * GITX-237: Used for repository dropdown filters in database-driven Dead Branches Report.
+   *
+   * @returns Array of repository names
+   */
+  async getDistinctRepositoriesFromCommitHistory(): Promise<string[]> {
+    this.logger.debug(CLASS_NAME, 'getDistinctRepositoriesFromCommitHistory', 'Querying distinct repositories');
+
+    const result: DatabaseQueryResult<{
+      repository: string;
+    }> = await this.db.query(SQL_GET_DISTINCT_REPOSITORIES_FROM_COMMIT_HISTORY);
+
+    const repositories = result.rows.map((row) => row.repository);
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getDistinctRepositoriesFromCommitHistory',
+      `Found ${repositories.length} distinct repositories`,
+    );
+
+    return repositories;
   }
 
   // ============================================================================

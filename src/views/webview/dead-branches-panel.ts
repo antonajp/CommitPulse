@@ -272,6 +272,7 @@ export class DeadBranchesPanel implements vscode.Disposable {
             riskDistribution: data.riskDistribution,
             repositoryBreakdown: data.repositoryBreakdown,
             hasData: data.branches.length > 0,
+            lastUpdated: data.lastUpdated?.toISOString(),
           });
           break;
         }
@@ -302,9 +303,29 @@ export class DeadBranchesPanel implements vscode.Disposable {
           this.logger.debug(
             CLASS_NAME,
             'handleMessage',
-            `Processing scanBranches: ${message.repository ?? 'all repositories'}`,
+            `Processing scanBranches (live git sync): ${message.repository ?? 'all repositories'}`,
           );
           await this.scanBranches(message);
+          break;
+        }
+
+        case 'refreshFromDb': {
+          this.logger.debug(
+            CLASS_NAME,
+            'handleMessage',
+            `Processing refreshFromDb (database-only refresh): ${message.repository ?? 'all repositories'}`,
+          );
+          // Refresh is just a re-query of existing data - same as requestBranchData
+          const data = await this.getBranchData({ repository: message.repository });
+          this.postMessage({
+            type: 'branchData',
+            branches: data.branches,
+            summary: data.summary,
+            riskDistribution: data.riskDistribution,
+            repositoryBreakdown: data.repositoryBreakdown,
+            hasData: data.branches.length > 0,
+            lastUpdated: data.lastUpdated?.toISOString(),
+          });
           break;
         }
 
@@ -365,10 +386,10 @@ export class DeadBranchesPanel implements vscode.Disposable {
 
   /**
    * Query branch data from the database with optional filters.
-   * Delegates to BranchRepository for all database operations.
+   * GITX-237: Database-first approach - tries commit_history first, falls back to git_branch.
    *
    * @param filters - Filter criteria from the webview
-   * @returns Branch data with summary statistics
+   * @returns Branch data with summary statistics and data freshness
    */
   private async getBranchData(filters: {
     repository?: string;
@@ -380,6 +401,7 @@ export class DeadBranchesPanel implements vscode.Disposable {
     summary: BranchSummary;
     riskDistribution: RiskDistribution;
     repositoryBreakdown: RepoBreakdown[];
+    lastUpdated: Date | null;
   }> {
     if (!this.branchRepo) {
       throw new Error('BranchRepository not initialized');
@@ -387,6 +409,176 @@ export class DeadBranchesPanel implements vscode.Disposable {
 
     this.logger.debug(CLASS_NAME, 'getBranchData', `Fetching branch data with filters: ${JSON.stringify(filters)}`);
 
+    // GITX-237: Try commit_history first (fast, no git operations)
+    const commitHistoryBranches = await this.branchRepo.getBranchesFromCommitHistory(filters.repository);
+
+    if (commitHistoryBranches.length > 0) {
+      this.logger.debug(
+        CLASS_NAME,
+        'getBranchData',
+        `Using commit_history data: ${commitHistoryBranches.length} branches found`,
+      );
+      return this.getBranchDataFromCommitHistory(commitHistoryBranches, filters);
+    }
+
+    // Fall back to git_branch table if commit_history has no data
+    this.logger.debug(
+      CLASS_NAME,
+      'getBranchData',
+      'commit_history empty, falling back to git_branch table',
+    );
+    return this.getBranchDataFromGitBranch(filters);
+  }
+
+  /**
+   * Get branch data from commit_history table (database-first, no git operations).
+   * GITX-237: Primary data source for Dead Branches Report.
+   *
+   * @param commitHistoryBranches - Raw branches from commit_history
+   * @param filters - Filter criteria from the webview
+   * @returns Branch data with summary statistics and data freshness
+   */
+  private async getBranchDataFromCommitHistory(
+    commitHistoryBranches: Array<{
+      branchName: string;
+      repository: string;
+      lastCommitDate: Date | null;
+      lastCommitAuthor: string | null;
+      lastCommitSha: string | null;
+      commitCount: number;
+      daysSinceLastCommit: number;
+      status: 'stale' | 'active';
+      riskLevel: 'medium' | 'high';
+      isMerged: boolean;
+      mergedInto: string | null;
+      isOrphaned: boolean;
+      hasOpenPr: boolean;
+      isProtected: boolean;
+    }>,
+    filters: {
+      riskLevel?: BranchRiskLevel;
+      status?: BranchStatus;
+      search?: string;
+    },
+  ): Promise<{
+    branches: BranchRow[];
+    summary: BranchSummary;
+    riskDistribution: RiskDistribution;
+    repositoryBreakdown: RepoBreakdown[];
+    lastUpdated: Date | null;
+  }> {
+    // Apply client-side filters (commit_history query only filters by repository)
+    let filteredBranches = commitHistoryBranches;
+
+    if (filters.riskLevel) {
+      filteredBranches = filteredBranches.filter((b) => b.riskLevel === filters.riskLevel);
+    }
+
+    if (filters.status) {
+      // Map status: commit_history only has 'stale' | 'active', not 'merged' | 'orphaned'
+      // For now, filter based on the available statuses
+      if (filters.status === 'stale' || filters.status === 'active') {
+        filteredBranches = filteredBranches.filter((b) => b.status === filters.status);
+      } else if (filters.status === 'merged') {
+        filteredBranches = filteredBranches.filter((b) => b.isMerged);
+      } else if (filters.status === 'orphaned') {
+        filteredBranches = filteredBranches.filter((b) => b.isOrphaned);
+      }
+    }
+
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filteredBranches = filteredBranches.filter((b) =>
+        b.branchName.toLowerCase().includes(searchLower),
+      );
+    }
+
+    // Get data freshness from commit_history
+    // branchRepo is guaranteed to exist because this method is only called from getBranchData()
+    // after the null check at the entry point
+    const lastUpdated = await this.branchRepo!.getCommitHistoryLastUpdated();
+
+    // Map to BranchRow format (no id from commit_history, use index)
+    const branches: BranchRow[] = filteredBranches.map((row, index) => ({
+      id: index, // commit_history has no row ID, use array index
+      branchName: row.branchName,
+      repository: row.repository,
+      lastCommitDate: row.lastCommitDate ? row.lastCommitDate.toISOString() : '',
+      lastCommitAuthor: row.lastCommitAuthor ?? 'Unknown',
+      lastCommitSha: row.lastCommitSha ?? '',
+      commitCount: row.commitCount,
+      status: row.status === 'stale' ? 'stale' : 'active', // Map to BranchStatus
+      riskLevel: row.riskLevel, // 'medium' | 'high' (commit_history doesn't compute 'safe' | 'low')
+      daysSinceLastCommit: Math.round(row.daysSinceLastCommit),
+      mergedInto: row.mergedInto ?? null,
+      tooltip: this.generateTooltip(
+        row.status,
+        row.riskLevel,
+        row.hasOpenPr,
+        Math.round(row.daysSinceLastCommit),
+      ),
+    }));
+
+    // Calculate summary from filtered data
+    const summary: BranchSummary = {
+      total: commitHistoryBranches.length,
+      merged: commitHistoryBranches.filter((b) => b.isMerged).length,
+      stale: commitHistoryBranches.filter((b) => b.status === 'stale').length,
+      orphaned: commitHistoryBranches.filter((b) => b.isOrphaned).length,
+      active: commitHistoryBranches.filter((b) => b.status === 'active').length,
+    };
+
+    // Calculate risk distribution
+    const riskDistribution: RiskDistribution = {
+      safe: 0, // commit_history doesn't compute 'safe' risk level
+      low: 0,  // commit_history doesn't compute 'low' risk level
+      medium: commitHistoryBranches.filter((b) => b.riskLevel === 'medium').length,
+      high: commitHistoryBranches.filter((b) => b.riskLevel === 'high').length,
+    };
+
+    // Calculate repository breakdown
+    const repoMap = new Map<string, { safe: number; low: number; medium: number; high: number }>();
+    for (const branch of commitHistoryBranches) {
+      if (!repoMap.has(branch.repository)) {
+        repoMap.set(branch.repository, { safe: 0, low: 0, medium: 0, high: 0 });
+      }
+      const breakdown = repoMap.get(branch.repository)!;
+      if (branch.riskLevel === 'medium') breakdown.medium++;
+      if (branch.riskLevel === 'high') breakdown.high++;
+    }
+
+    const repositoryBreakdown: RepoBreakdown[] = Array.from(repoMap.entries()).map(
+      ([repository, breakdown]) => ({
+        repository,
+        safe: breakdown.safe,
+        low: breakdown.low,
+        medium: breakdown.medium,
+        high: breakdown.high,
+      }),
+    );
+
+    return { branches, summary, riskDistribution, repositoryBreakdown, lastUpdated };
+  }
+
+  /**
+   * Get branch data from git_branch table (fallback when commit_history is empty).
+   * GITX-237: Fallback data source when commit_history has no data.
+   *
+   * @param filters - Filter criteria from the webview
+   * @returns Branch data with summary statistics and data freshness
+   */
+  private async getBranchDataFromGitBranch(filters: {
+    repository?: string;
+    riskLevel?: BranchRiskLevel;
+    status?: BranchStatus;
+    search?: string;
+  }): Promise<{
+    branches: BranchRow[];
+    summary: BranchSummary;
+    riskDistribution: RiskDistribution;
+    repositoryBreakdown: RepoBreakdown[];
+    lastUpdated: Date | null;
+  }> {
     // Convert webview filters to repository filters
     const repoFilters = {
       repository: filters.repository,
@@ -395,9 +587,21 @@ export class DeadBranchesPanel implements vscode.Disposable {
       search: filters.search,
     };
 
-    // Query branches from the repository
-    const summaryRows = await this.branchRepo.getDeadBranchSummary(repoFilters);
-    this.logger.debug(CLASS_NAME, 'getBranchData', `Found ${summaryRows.length} branches`);
+    // Query branches from the git_branch table
+    // branchRepo is guaranteed to exist because this method is only called from getBranchData()
+    // after the null check at the entry point
+    const summaryRows = await this.branchRepo!.getDeadBranchSummary(repoFilters);
+    this.logger.debug(CLASS_NAME, 'getBranchDataFromGitBranch', `Found ${summaryRows.length} branches`);
+
+    // Calculate data freshness - most recent commit date from the results
+    let lastUpdated: Date | null = null;
+    if (summaryRows.length > 0) {
+      const mostRecentCommit = summaryRows
+        .map((row) => row.lastCommitDate)
+        .filter((date): date is Date => date !== null)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      lastUpdated = mostRecentCommit ?? null;
+    }
 
     // Map repository rows to webview BranchRow format
     const branches: BranchRow[] = summaryRows.map((row) => ({
@@ -421,7 +625,7 @@ export class DeadBranchesPanel implements vscode.Disposable {
     }));
 
     // Get summary counts (unfiltered to show totals)
-    const summaryStats = await this.branchRepo.getGlobalSummaryStatistics();
+    const summaryStats = await this.branchRepo!.getGlobalSummaryStatistics();
     const summary: BranchSummary = {
       total: summaryStats.total,
       merged: summaryStats.merged,
@@ -431,7 +635,7 @@ export class DeadBranchesPanel implements vscode.Disposable {
     };
 
     // Get risk distribution
-    const riskStats = await this.branchRepo.getGlobalRiskDistribution();
+    const riskStats = await this.branchRepo!.getGlobalRiskDistribution();
     const riskDistribution: RiskDistribution = {
       safe: riskStats.safe,
       low: riskStats.low,
@@ -440,7 +644,7 @@ export class DeadBranchesPanel implements vscode.Disposable {
     };
 
     // Get repository breakdown
-    const repoBreakdown = await this.branchRepo.getRepositoryRiskBreakdown();
+    const repoBreakdown = await this.branchRepo!.getRepositoryRiskBreakdown();
     const repositoryBreakdown: RepoBreakdown[] = repoBreakdown.map((row) => ({
       repository: row.repository,
       safe: row.safe,
@@ -449,7 +653,7 @@ export class DeadBranchesPanel implements vscode.Disposable {
       high: row.high,
     }));
 
-    return { branches, summary, riskDistribution, repositoryBreakdown };
+    return { branches, summary, riskDistribution, repositoryBreakdown, lastUpdated };
   }
 
   /**
@@ -768,6 +972,7 @@ export class DeadBranchesPanel implements vscode.Disposable {
         riskDistribution: data.riskDistribution,
         repositoryBreakdown: data.repositoryBreakdown,
         hasData: data.branches.length > 0,
+        lastUpdated: data.lastUpdated?.toISOString(),
       });
     }
   }

@@ -293,4 +293,198 @@ describe('BranchRepository', () => {
       expect(params).toContain('%feature%');
     });
   });
+
+  // ========================================================================
+  // GITX-237: Commit History Based Methods
+  // ========================================================================
+
+  describe('getBranchesFromCommitHistory', () => {
+    it('should return branches from commit_history for all repositories', async () => {
+      const queryFn = mockDbService.query as ReturnType<typeof vi.fn>;
+      queryFn.mockResolvedValueOnce({
+        rows: [
+          {
+            branch_name: 'feature/GITX-100',
+            repository: 'gitr',
+            last_commit_date: new Date('2026-07-01'),
+            last_commit_author: 'alice@example.com',
+            last_commit_sha: 'abc123def456',
+            commit_count: 15,
+            days_since_last_commit: 33,
+            is_merged: false,
+            merged_into: null,
+            is_orphaned: false,
+            has_open_pr: false,
+            is_protected: false,
+            status: 'active',
+            risk_level: 'high',
+          },
+          {
+            branch_name: 'bugfix/old-issue',
+            repository: 'legacy-app',
+            last_commit_date: new Date('2025-12-01'),
+            last_commit_author: 'bob@example.com',
+            last_commit_sha: 'xyz789ghi012',
+            commit_count: 8,
+            days_since_last_commit: 245,
+            is_merged: false,
+            merged_into: null,
+            is_orphaned: false,
+            has_open_pr: false,
+            is_protected: false,
+            status: 'stale',
+            risk_level: 'medium',
+          },
+        ],
+        rowCount: 2,
+      });
+
+      const repo = new BranchRepository(mockDbService);
+      const branches = await repo.getBranchesFromCommitHistory();
+
+      expect(branches).toHaveLength(2);
+      expect(branches[0]).toEqual({
+        branchName: 'feature/GITX-100',
+        repository: 'gitr',
+        lastCommitDate: new Date('2026-07-01'),
+        lastCommitAuthor: 'alice@example.com',
+        lastCommitSha: 'abc123def456',
+        commitCount: 15,
+        daysSinceLastCommit: 33,
+        isMerged: false,
+        mergedInto: null,
+        isOrphaned: false,
+        hasOpenPr: false,
+        isProtected: false,
+        status: 'active',
+        riskLevel: 'high',
+      });
+      expect(branches[1]?.status).toBe('stale');
+      expect(branches[1]?.riskLevel).toBe('medium');
+
+      // Verify query was called with null (all repositories)
+      expect(queryFn).toHaveBeenCalledWith(expect.any(String), [null]);
+    });
+
+    it('should return branches from commit_history for a specific repository', async () => {
+      const queryFn = mockDbService.query as ReturnType<typeof vi.fn>;
+      queryFn.mockResolvedValueOnce({
+        rows: [
+          {
+            branch_name: 'feature/new-ui',
+            repository: 'frontend',
+            last_commit_date: new Date('2026-07-20'),
+            last_commit_author: 'charlie@example.com',
+            last_commit_sha: 'def456ghi789',
+            commit_count: 42,
+            days_since_last_commit: 14,
+            is_merged: false,
+            merged_into: null,
+            is_orphaned: false,
+            has_open_pr: false,
+            is_protected: false,
+            status: 'active',
+            risk_level: 'high',
+          },
+        ],
+        rowCount: 1,
+      });
+
+      const repo = new BranchRepository(mockDbService);
+      const branches = await repo.getBranchesFromCommitHistory('frontend');
+
+      expect(branches).toHaveLength(1);
+      expect(branches[0]?.repository).toBe('frontend');
+      expect(branches[0]?.branchName).toBe('feature/new-ui');
+
+      // Verify query was called with repository name
+      expect(queryFn).toHaveBeenCalledWith(expect.any(String), ['frontend']);
+    });
+
+    it('should return empty array when no commits found', async () => {
+      const queryFn = mockDbService.query as ReturnType<typeof vi.fn>;
+      queryFn.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const repo = new BranchRepository(mockDbService);
+      const branches = await repo.getBranchesFromCommitHistory();
+
+      expect(branches).toEqual([]);
+    });
+  });
+
+  describe('getCommitHistoryLastUpdated', () => {
+    it('should return the most recent commit date for a specific repository', async () => {
+      const queryFn = mockDbService.query as ReturnType<typeof vi.fn>;
+      const lastUpdate = new Date('2026-08-03T12:00:00Z');
+      queryFn.mockResolvedValueOnce({
+        rows: [{ last_updated: lastUpdate }],
+        rowCount: 1,
+      });
+
+      const repo = new BranchRepository(mockDbService);
+      const result = await repo.getCommitHistoryLastUpdated('gitr');
+
+      expect(result).toEqual(lastUpdate);
+      expect(queryFn).toHaveBeenCalledWith(expect.any(String), ['gitr']);
+    });
+
+    it('should return the most recent commit date across all repositories', async () => {
+      const queryFn = mockDbService.query as ReturnType<typeof vi.fn>;
+      const lastUpdate = new Date('2026-08-03T15:30:00Z');
+      queryFn.mockResolvedValueOnce({
+        rows: [{ last_updated: lastUpdate }],
+        rowCount: 1,
+      });
+
+      const repo = new BranchRepository(mockDbService);
+      const result = await repo.getCommitHistoryLastUpdated();
+
+      expect(result).toEqual(lastUpdate);
+      // Should use the global query without parameters
+      expect(queryFn).toHaveBeenCalledWith(expect.stringContaining('SELECT MAX(commit_date)'));
+    });
+
+    it('should return null when no commits exist', async () => {
+      const queryFn = mockDbService.query as ReturnType<typeof vi.fn>;
+      queryFn.mockResolvedValueOnce({
+        rows: [{ last_updated: null }],
+        rowCount: 1,
+      });
+
+      const repo = new BranchRepository(mockDbService);
+      const result = await repo.getCommitHistoryLastUpdated('empty-repo');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getDistinctRepositoriesFromCommitHistory', () => {
+    it('should return list of distinct repository names from commit_history', async () => {
+      const queryFn = mockDbService.query as ReturnType<typeof vi.fn>;
+      queryFn.mockResolvedValueOnce({
+        rows: [
+          { repository: 'backend-api' },
+          { repository: 'frontend-app' },
+          { repository: 'mobile-app' },
+        ],
+        rowCount: 3,
+      });
+
+      const repo = new BranchRepository(mockDbService);
+      const repositories = await repo.getDistinctRepositoriesFromCommitHistory();
+
+      expect(repositories).toEqual(['backend-api', 'frontend-app', 'mobile-app']);
+      expect(queryFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return empty array when no repositories in commit_history', async () => {
+      const queryFn = mockDbService.query as ReturnType<typeof vi.fn>;
+      queryFn.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const repo = new BranchRepository(mockDbService);
+      const repositories = await repo.getDistinctRepositoriesFromCommitHistory();
+
+      expect(repositories).toEqual([]);
+    });
+  });
 });

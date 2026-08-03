@@ -70,6 +70,16 @@ export interface RequestScanBranches {
 }
 
 /**
+ * Request to refresh data from database only (fast, no git commands).
+ * Queries commit_history and git_branch tables without running live git operations.
+ */
+export interface RequestRefreshFromDb {
+  readonly type: 'refreshFromDb';
+  /** Optional: specific repository to refresh. If omitted, refreshes all. */
+  readonly repository?: string;
+}
+
+/**
  * Union type of all messages sent from the webview to the extension host.
  * Includes shared message types (exportCsv, openExternal) from shared-protocol.ts.
  */
@@ -78,6 +88,7 @@ export type DeadBranchesWebviewToHost =
   | RequestFilterOptions
   | RequestDeleteBranches
   | RequestScanBranches
+  | RequestRefreshFromDb
   | SharedWebviewToHost;
 
 // ============================================================================
@@ -167,6 +178,8 @@ export interface ResponseBranchData {
   readonly repositoryBreakdown: readonly RepoBreakdown[];
   /** True if any data exists (empty state if false) */
   readonly hasData: boolean;
+  /** ISO date string of most recent commit in the data (for freshness indicator) */
+  readonly lastUpdated?: string;
 }
 
 /**
