@@ -10,9 +10,11 @@
  * as the discriminant for exhaustive switch-case handling.
  *
  * Ticket: GITX-231
+ * GITX-236: Updated to use shared protocol for exportCsv and openExternal
  */
 
 import type { BranchStatus, BranchRiskLevel } from '../../services/dead-branches-types.js';
+import type { SharedWebviewToHost, SharedHostToWebview } from './shared-protocol.js';
 
 // ============================================================================
 // Webview -> Extension (Requests)
@@ -54,22 +56,8 @@ export interface RequestDeleteBranches {
   readonly force?: boolean;
 }
 
-/**
- * Request to export branch data to CSV file.
- */
-export interface RequestExportCsv {
-  readonly type: 'exportCsv';
-  /** The filtered/sorted branch data to export */
-  readonly data: unknown[];
-}
-
-/**
- * Request to open an external URL (commit link, GitHub branch).
- */
-export interface RequestOpenExternal {
-  readonly type: 'openExternal';
-  readonly url: string;
-}
+// NOTE: RequestExportCsv and RequestOpenExternal are now imported from shared-protocol.ts
+// This ensures consistency with the shared message handlers.
 
 /**
  * Request to scan repositories for branch analysis.
@@ -83,14 +71,14 @@ export interface RequestScanBranches {
 
 /**
  * Union type of all messages sent from the webview to the extension host.
+ * Includes shared message types (exportCsv, openExternal) from shared-protocol.ts.
  */
 export type DeadBranchesWebviewToHost =
   | RequestBranchData
   | RequestFilterOptions
   | RequestDeleteBranches
-  | RequestExportCsv
-  | RequestOpenExternal
-  | RequestScanBranches;
+  | RequestScanBranches
+  | SharedWebviewToHost;
 
 // ============================================================================
 // Extension -> Webview (Responses)
@@ -247,13 +235,18 @@ export interface ResponseScanProgress {
 
 /**
  * Response indicating scan completed.
+ *
+ * GITX-235: Added cleanupCandidates field to distinguish between total branches
+ * scanned and branches that are cleanup candidates (non-protected).
  */
 export interface ResponseScanComplete {
   readonly type: 'scanComplete';
-  /** Number of branches found */
+  /** Number of branches found (all branches including protected) */
   readonly branchesFound: number;
   /** Number of repositories scanned */
   readonly repositoriesScanned: number;
+  /** Number of cleanup candidate branches (excludes protected) */
+  readonly cleanupCandidates?: number;
   /** True if scan completed successfully */
   readonly success: boolean;
   /** Error message if scan failed */
@@ -262,6 +255,7 @@ export interface ResponseScanComplete {
 
 /**
  * Union type of all messages sent from the extension host to the webview.
+ * Includes shared response types (exportCsvSuccess, exportCsvError) from shared-protocol.ts.
  */
 export type DeadBranchesHostToWebview =
   | ResponseBranchData
@@ -269,4 +263,5 @@ export type DeadBranchesHostToWebview =
   | ResponseDeleteResult
   | ResponseError
   | ResponseScanProgress
-  | ResponseScanComplete;
+  | ResponseScanComplete
+  | SharedHostToWebview;

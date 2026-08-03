@@ -10,6 +10,7 @@ import type {
   BranchSummaryStats,
   RiskDistributionStats,
   RepositoryRiskBreakdown,
+  TotalBranchCountStats,
 } from './branch-types.js';
 import {
   SQL_UPSERT_BRANCH,
@@ -25,6 +26,7 @@ import {
   SQL_GET_GLOBAL_RISK_DISTRIBUTION,
   SQL_GET_REPOSITORY_RISK_BREAKDOWN,
   SQL_GET_DISTINCT_REPOSITORIES,
+  SQL_GET_TOTAL_BRANCH_COUNT,
 } from './branch-queries.js';
 
 // Re-export types so consumers can import from branch-repository directly
@@ -37,6 +39,7 @@ export type {
   BranchSummaryStats,
   RiskDistributionStats,
   RepositoryRiskBreakdown,
+  TotalBranchCountStats,
 } from './branch-types.js';
 
 /**
@@ -650,6 +653,36 @@ export class BranchRepository {
     );
 
     return repositories;
+  }
+
+  /**
+   * Get total branch count including protected branches.
+   * GITX-235: Distinguishes between total branches and cleanup candidates.
+   *
+   * @returns Total branch count statistics
+   */
+  async getTotalBranchCount(): Promise<TotalBranchCountStats> {
+    this.logger.debug(CLASS_NAME, 'getTotalBranchCount', 'Querying total branch count');
+
+    const result: DatabaseQueryResult<{
+      total_branches: number;
+      cleanup_candidates: number;
+    }> = await this.db.query(SQL_GET_TOTAL_BRANCH_COUNT);
+
+    const row = result.rows[0];
+
+    const stats: TotalBranchCountStats = {
+      totalBranches: row?.total_branches ?? 0,
+      cleanupCandidates: row?.cleanup_candidates ?? 0,
+    };
+
+    this.logger.debug(
+      CLASS_NAME,
+      'getTotalBranchCount',
+      `Total branches: ${stats.totalBranches}, Cleanup candidates: ${stats.cleanupCandidates}`,
+    );
+
+    return stats;
   }
 
   // ============================================================================

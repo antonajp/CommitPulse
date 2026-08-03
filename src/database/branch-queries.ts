@@ -137,25 +137,54 @@ export const SQL_GET_GLOBAL_RISK_DISTRIBUTION = `
 /**
  * Get risk breakdown by repository.
  * Used by DeadBranchesPanel for the stacked bar chart.
+ *
+ * GITX-235: Uses LEFT JOIN to include all repositories, even those with only
+ * protected branches (which have zero rows in vw_dead_branch_summary).
+ * This ensures all 42 configured repositories appear in the chart, not just
+ * the 2 that have non-protected branches.
  */
 export const SQL_GET_REPOSITORY_RISK_BREAKDOWN = `
+  WITH all_repos AS (
+    SELECT DISTINCT repository
+    FROM git_branch
+    WHERE deleted_at IS NULL
+  )
   SELECT
-    repository,
-    COUNT(*) FILTER (WHERE risk_level = 'safe')::int AS safe_count,
-    COUNT(*) FILTER (WHERE risk_level = 'low')::int AS low_count,
-    COUNT(*) FILTER (WHERE risk_level = 'medium')::int AS medium_count,
-    COUNT(*) FILTER (WHERE risk_level = 'high')::int AS high_count
-  FROM vw_dead_branch_summary
-  GROUP BY repository
-  ORDER BY repository
+    ar.repository,
+    COALESCE(COUNT(*) FILTER (WHERE vdbs.risk_level = 'safe'), 0)::int AS safe_count,
+    COALESCE(COUNT(*) FILTER (WHERE vdbs.risk_level = 'low'), 0)::int AS low_count,
+    COALESCE(COUNT(*) FILTER (WHERE vdbs.risk_level = 'medium'), 0)::int AS medium_count,
+    COALESCE(COUNT(*) FILTER (WHERE vdbs.risk_level = 'high'), 0)::int AS high_count
+  FROM all_repos ar
+  LEFT JOIN vw_dead_branch_summary vdbs ON ar.repository = vdbs.repository
+  GROUP BY ar.repository
+  ORDER BY ar.repository
 `;
 
 /**
  * Get distinct repositories from the view.
  * Used by DeadBranchesPanel for filter dropdown options.
+ *
+ * GITX-235: Query git_branch table directly instead of the view to include
+ * all repositories, even those with only protected branches.
  */
 export const SQL_GET_DISTINCT_REPOSITORIES = `
   SELECT DISTINCT repository
-  FROM vw_dead_branch_summary
+  FROM git_branch
+  WHERE deleted_at IS NULL
   ORDER BY repository
+`;
+
+/**
+ * Get total branch count (all non-deleted branches including protected).
+ * Used by DeadBranchesPanel to show accurate total branch counts.
+ *
+ * GITX-235: Separate query for total branches vs cleanup candidates.
+ */
+export const SQL_GET_TOTAL_BRANCH_COUNT = `
+  SELECT
+    COUNT(*)::int AS total_branches,
+    COUNT(*) FILTER (WHERE is_protected = FALSE)::int AS cleanup_candidates
+  FROM git_branch
+  WHERE deleted_at IS NULL
 `;

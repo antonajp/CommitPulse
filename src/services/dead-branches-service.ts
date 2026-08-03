@@ -717,40 +717,105 @@ export class DeadBranchesService {
   /**
    * Sync branch metadata to database.
    *
-   * Analyzes all branches and inserts/updates branch records in
-   * the branches table for persistence and reporting.
+   * GITX-235: Now syncs ALL branches including protected ones to the database.
+   * This ensures accurate total branch counts. The vw_dead_branch_summary view
+   * filters out protected branches for cleanup candidate display.
    *
-   * @returns Number of branches synced
+   * @returns Number of branches synced (includes protected branches)
    */
   async syncBranchesToDatabase(): Promise<number> {
     this.logger.info(CLASS_NAME, 'syncBranchesToDatabase', 'Syncing branches to database');
 
-    const result = await this.analyzeBranches();
+    let syncedCount = 0;
 
-    for (const branch of result.branches) {
-      try {
-        await this.branchRepo.upsertBranch({
-          branchName: branch.name,
-          repository: branch.repository,
-          lastCommitSha: branch.lastCommitSha,
-          lastCommitDate: branch.lastCommitDate,
-          lastCommitAuthor: branch.lastCommitAuthor,
-          commitCount: branch.commitCount,
-          isMerged: branch.isMerged,
-          mergedInto: branch.mergedInto,
-          mergedDate: null, // Could be set if merge date tracking is implemented
-          isOrphaned: branch.isOrphaned,
-          hasOpenPr: branch.hasOpenPR,
-          isProtected: branch.isProtected,
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(CLASS_NAME, 'syncBranchesToDatabase', `Failed to upsert branch ${branch.name}: ${message}`);
+    try {
+      // Get all local branches
+      const branchSummary = await this.git.branchLocal();
+      const branchNames = branchSummary.all;
+
+      this.logger.debug(CLASS_NAME, 'syncBranchesToDatabase', `Found ${branchNames.length} local branches`);
+
+      // Get orphaned branches for context
+      const orphanedBranches = await this.detectOrphanedBranches();
+
+      for (const branchName of branchNames) {
+        // Security: Validate branch name before using in git commands (CWE-78)
+        const validation = this.validateBranchName(branchName);
+        if (!validation.isValid) {
+          this.logger.warn(
+            CLASS_NAME,
+            'syncBranchesToDatabase',
+            `Skipping invalid branch name: ${branchName} - ${validation.reason}`
+          );
+          continue;
+        }
+
+        try {
+          // Get last commit info
+          const log = await this.git.log({ maxCount: 1, [branchName]: null });
+          const lastCommit = log.latest;
+
+          if (!lastCommit) {
+            this.logger.warn(CLASS_NAME, 'syncBranchesToDatabase', `No commits found for branch: ${branchName}`);
+            continue;
+          }
+
+          const lastCommitDate = new Date(lastCommit.date);
+
+          // Get commit count (approximate via log)
+          const fullLog = await this.git.log({ [branchName]: null });
+          const commitCount = fullLog.total;
+
+          // Check if protected
+          const isProtected = this.isProtectedBranch(branchName);
+
+          // Check merge status (only for non-protected branches to save time)
+          let isMerged = false;
+          let mergedInto: string | null = null;
+          if (!isProtected) {
+            const mergeStatus = await this.checkMergeStatus(branchName);
+            isMerged = mergeStatus.isMerged;
+            mergedInto = mergeStatus.mergedInto;
+          }
+
+          // Determine if orphaned
+          const isOrphaned = orphanedBranches.includes(branchName);
+
+          await this.branchRepo.upsertBranch({
+            branchName,
+            repository: this.getRepositoryName(),
+            lastCommitSha: lastCommit.hash,
+            lastCommitDate,
+            lastCommitAuthor: lastCommit.author_name,
+            commitCount,
+            isMerged,
+            mergedInto,
+            mergedDate: null,
+            isOrphaned,
+            hasOpenPr: false,
+            isProtected,
+          });
+
+          syncedCount++;
+
+          this.logger.trace(
+            CLASS_NAME,
+            'syncBranchesToDatabase',
+            `Synced branch: ${branchName} (protected: ${isProtected})`
+          );
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.error(CLASS_NAME, 'syncBranchesToDatabase', `Failed to sync branch ${branchName}: ${message}`);
+        }
       }
-    }
 
-    this.logger.info(CLASS_NAME, 'syncBranchesToDatabase', `Synced ${result.branches.length} branches to database`);
-    return result.branches.length;
+      this.logger.info(CLASS_NAME, 'syncBranchesToDatabase', `Synced ${syncedCount} branches to database`);
+      return syncedCount;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(CLASS_NAME, 'syncBranchesToDatabase', `Branch sync failed: ${message}`);
+      throw new Error(`Branch sync failed: ${message}`);
+    }
   }
 
   // ==========================================================================
