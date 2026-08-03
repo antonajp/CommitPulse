@@ -204,7 +204,7 @@ export type LogLevelString = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'CR
 
 /**
  * Branch cleanup settings for dead branch analysis.
- * Ticket: GITX-231
+ * Ticket: GITX-231, GITX-233
  */
 export interface BranchCleanupSettings {
   /** Number of days of inactivity before a branch is considered stale. Default: 90. */
@@ -215,6 +215,13 @@ export interface BranchCleanupSettings {
   readonly mergedOnly: boolean;
   /** Require type-to-confirm for batch deletions over 10 branches. Default: true. */
   readonly confirmBatchDelete: boolean;
+  /**
+   * Target branches to check for merge status.
+   * GITX-233: Configurable to support BitBucket and other git providers with
+   * non-standard default branch naming conventions.
+   * Default: ['main', 'master', 'develop', 'production', 'release']
+   */
+  readonly targetBranches: readonly string[];
 }
 
 /**
@@ -361,7 +368,7 @@ export function getSettings(): GitrxConfiguration {
     debugLogging: config.get<boolean>('git.debugLogging', false),
   });
 
-  // Read Branch cleanup settings (GITX-231)
+  // Read Branch cleanup settings (GITX-231, GITX-233)
   const branchCleanup: BranchCleanupSettings = Object.freeze({
     staleDays: config.get<number>('branchCleanup.staleDays', 90),
     excludePatterns: config.get<string[]>('branchCleanup.excludePatterns', [
@@ -369,6 +376,10 @@ export function getSettings(): GitrxConfiguration {
     ]),
     mergedOnly: config.get<boolean>('branchCleanup.mergedOnly', true),
     confirmBatchDelete: config.get<boolean>('branchCleanup.confirmBatchDelete', true),
+    // GITX-233: Configurable target branches for merge detection
+    targetBranches: config.get<string[]>('branchCleanup.targetBranches', [
+      'main', 'master', 'develop', 'production', 'release',
+    ]),
   });
 
   const settings: GitrxConfiguration = {

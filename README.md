@@ -574,6 +574,63 @@ The "Sync GitHub PRs" button in the dashboard (or the **Gitr: Sync GitHub PRs** 
 
 **Note:** The sync uses the `gitrx.prCoverage.sinceDays` setting to determine how far back to fetch PRs. Increase this value if you need historical PR data beyond 90 days.
 
+### Dead Branches Report
+
+Open via Command Palette: **Gitr: Analyze Branches for Cleanup**
+
+Analyzes all configured repositories to identify branches that may be candidates for deletion, categorized by risk level.
+
+**Risk Levels:**
+
+| Risk | Criteria | Action |
+|------|----------|--------|
+| **Safe** (Green) | Merged AND >90 days old | Safe to delete |
+| **Low** (Blue) | Merged AND <90 days old | Review before deleting |
+| **Medium** (Yellow) | Unmerged, 90-180 days old, no open PR | Investigate before deleting |
+| **High** (Red) | Unmerged, <90 days old OR has open PR | Active development - do not delete |
+
+**Dashboard Components:**
+- **Summary KPIs** — Total, Merged, Stale, Orphaned, Active branch counts
+- **Risk Distribution Chart** — D3.js donut chart showing branches by risk level
+- **Repository Breakdown** — Stacked bar chart showing risk distribution per repository
+- **Branches Table** — Sortable, filterable list with multi-select for batch operations
+
+**Scan Workflow:**
+1. Click "Scan Branches" button in the report
+2. The extension analyzes each configured repository via `git branch -vv` and `git merge-base`
+3. Results are stored in the `git_branch` table for persistence
+4. Risk levels are calculated based on merge status, age, and PR state
+
+**Branch Cleanup Settings:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `gitrx.branchCleanup.staleDays` | `90` | Days of inactivity before a branch is considered stale |
+| `gitrx.branchCleanup.mergedOnly` | `true` | Only show merged branches (safer mode) |
+| `gitrx.branchCleanup.excludePatterns` | `["main", "master", "develop", "release/*", "hotfix/*"]` | Branch name patterns to exclude from analysis |
+| `gitrx.branchCleanup.targetBranches` | `["main", "master", "develop", "production", "release"]` | Branches to check for merge status |
+| `gitrx.branchCleanup.confirmBatchDelete` | `true` | Require type-to-confirm for batch deletions over 10 branches |
+
+**Example configuration:**
+
+```json
+{
+  "gitrx.branchCleanup.staleDays": 60,
+  "gitrx.branchCleanup.mergedOnly": true,
+  "gitrx.branchCleanup.excludePatterns": ["main", "master", "develop", "release/*", "dependabot/*"],
+  "gitrx.branchCleanup.targetBranches": ["main", "master", "develop", "production"]
+}
+```
+
+**Deletion Workflow:**
+1. Select branches using checkboxes in the table
+2. Click "Delete Selected" button
+3. Confirm deletion in the modal dialog
+4. Branches are deleted locally using `git branch -d` (or `-D` for force)
+5. Operations are logged for audit trail
+
+> **Note:** Branch deletion is local only. To delete remote branches, use Git directly or your Git hosting provider's UI.
+
 ### BitBucket PR Sync
 
 For BitBucket repositories, additional configuration is required:

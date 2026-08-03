@@ -605,14 +605,17 @@ export class DeadBranchesPanel implements vscode.Disposable {
     const branchRepo = new BranchRepository(this.db);
 
     // Get config from settings
+    // GITX-233: Include targetBranches from settings for configurable merge detection
     const config: DeadBranchesConfig = {
       staleDaysThreshold: settings.branchCleanup.staleDays,
       excludePatterns: [...settings.branchCleanup.excludePatterns],
       mergedOnly: settings.branchCleanup.mergedOnly,
+      targetBranches: [...settings.branchCleanup.targetBranches],
     };
 
     // Create service for this repository
-    const service = new DeadBranchesService(repoConfig.path, branchRepo, config);
+    // GITX-233: Pass repository name from settings to ensure database entries match config
+    const service = new DeadBranchesService(repoConfig.path, branchRepo, config, repoConfig.name);
 
     // Delete branches using service
     const deleteResults = await service.deleteBranches(branches, force);
@@ -695,10 +698,12 @@ export class DeadBranchesPanel implements vscode.Disposable {
     const branchRepo = new BranchRepository(this.db);
 
     // Get config from settings
+    // GITX-233: Include targetBranches from settings for configurable merge detection
     const config: DeadBranchesConfig = {
       staleDaysThreshold: settings.branchCleanup.staleDays,
       excludePatterns: [...settings.branchCleanup.excludePatterns],
       mergedOnly: settings.branchCleanup.mergedOnly,
+      targetBranches: [...settings.branchCleanup.targetBranches],
     };
 
     for (const repoConfig of targetRepos) {
@@ -715,7 +720,8 @@ export class DeadBranchesPanel implements vscode.Disposable {
         this.logger.debug(CLASS_NAME, 'scanBranches', `Analyzing repository: ${repoConfig.name} at ${repoConfig.path}`);
 
         // Create service for this repository
-        const service = new DeadBranchesService(repoConfig.path, branchRepo, config);
+        // GITX-233: Pass repository name from settings to ensure database entries match config
+        const service = new DeadBranchesService(repoConfig.path, branchRepo, config, repoConfig.name);
 
         // Analyze branches and save to database
         const branchCount = await service.syncBranchesToDatabase();
