@@ -408,7 +408,12 @@ export function generateDeadBranchesHtml(params: DeadBranchesHtmlParams): string
       scanSpinner.hidden = true;
 
       if (message.success) {
-        const successMsg = 'Scan complete: ' + message.branchesFound + ' branches found in ' + message.repositoriesScanned + ' repositories';
+        // GITX-235: Show both total branches and cleanup candidates in success message
+        // Format: "Scan complete: X total branches in Y repositories (Z cleanup candidates)"
+        let successMsg = 'Scan complete: ' + message.branchesFound + ' total branches in ' + message.repositoriesScanned + ' repositories';
+        if (typeof message.cleanupCandidates === 'number') {
+          successMsg += ' (' + message.cleanupCandidates + ' cleanup candidates)';
+        }
         scanStatus.textContent = successMsg;
         showSuccess(successMsg);
         console.log(successMsg);
@@ -888,9 +893,59 @@ export function generateDeadBranchesHtml(params: DeadBranchesHtmlParams): string
         return;
       }
 
+      // CSV headers matching branch data fields
+      const headers = [
+        'Branch Name',
+        'Repository',
+        'Risk Level',
+        'Status',
+        'Days Inactive',
+        'Last Author',
+        'Last Commit Date',
+        'Last Commit SHA',
+        'Commit Count',
+        'Merged Into'
+      ];
+
+      // RFC 4180 CSV escape function
+      function escapeCsvField(value) {
+        const s = String(value ?? '');
+        // If field contains comma, quote, or newline, wrap in quotes and escape quotes
+        if (s.includes(',') || s.includes('"') || s.includes('\\n') || s.includes('\\r')) {
+          return '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+      }
+
+      // Convert branch data to CSV rows
+      const rows = filteredBranches.map(function(b) {
+        return [
+          escapeCsvField(b.branchName),
+          escapeCsvField(b.repository),
+          escapeCsvField(formatRiskLevel(b.riskLevel)),
+          escapeCsvField(formatStatus(b.status)),
+          escapeCsvField(b.daysSinceLastCommit),
+          escapeCsvField(b.lastCommitAuthor),
+          escapeCsvField(new Date(b.lastCommitDate).toISOString()),
+          escapeCsvField(b.lastCommitSha),
+          escapeCsvField(b.commitCount ?? ''),
+          escapeCsvField(b.mergedInto ?? '')
+        ].join(',');
+      });
+
+      // Combine headers and rows into CSV content
+      const csvContent = [headers.join(',')].concat(rows).join('\\n');
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = 'dead-branches-' + timestamp + '.csv';
+
+      // Send message with correct format expected by shared-message-handlers.ts
       vscode.postMessage({
         type: 'exportCsv',
-        data: filteredBranches
+        csvContent: csvContent,
+        filename: filename,
+        source: 'dead-branches'
       });
     }
 

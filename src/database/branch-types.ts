@@ -130,3 +130,14 @@ export interface RepositoryRiskBreakdown {
   medium: number;
   high: number;
 }
+
+/**
+ * Total branch count statistics.
+ * GITX-235: Distinguishes between total branches and cleanup candidates.
+ */
+export interface TotalBranchCountStats {
+  /** Total branches including protected */
+  totalBranches: number;
+  /** Cleanup candidates (excludes protected branches) */
+  cleanupCandidates: number;
+}

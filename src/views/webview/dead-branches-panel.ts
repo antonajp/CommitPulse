@@ -691,7 +691,6 @@ export class DeadBranchesPanel implements vscode.Disposable {
 
     this.logger.info(CLASS_NAME, 'scanBranches', `Scanning ${targetRepos.length} repositories`);
 
-    let totalBranches = 0;
     let scannedRepos = 0;
 
     // Create branch repository for database operations
@@ -725,7 +724,6 @@ export class DeadBranchesPanel implements vscode.Disposable {
 
         // Analyze branches and save to database
         const branchCount = await service.syncBranchesToDatabase();
-        totalBranches += branchCount;
         scannedRepos++;
 
         this.logger.info(
@@ -740,17 +738,23 @@ export class DeadBranchesPanel implements vscode.Disposable {
       }
     }
 
+    // GITX-235: Get accurate total branch count vs cleanup candidates
+    // totalBranches from syncBranchesToDatabase counts non-protected branches only.
+    // We need to query the database for the accurate breakdown.
+    const branchCountStats = await branchRepo.getTotalBranchCount();
+
     this.logger.info(
       CLASS_NAME,
       'scanBranches',
-      `Scan complete: ${totalBranches} branches in ${scannedRepos} repositories`,
+      `Scan complete: ${branchCountStats.totalBranches} total branches (${branchCountStats.cleanupCandidates} cleanup candidates) in ${scannedRepos} repositories`,
     );
 
-    // Send completion message
+    // Send completion message with both total and cleanup candidate counts
     this.postMessage({
       type: 'scanComplete',
-      branchesFound: totalBranches,
+      branchesFound: branchCountStats.totalBranches,
       repositoriesScanned: scannedRepos,
+      cleanupCandidates: branchCountStats.cleanupCandidates,
       success: scannedRepos > 0,
     });
 
