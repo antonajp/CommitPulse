@@ -45,7 +45,8 @@ export type ChartType =
   | 'fileContributionReport'
   | 'complexityTrend'
   | 'joinDiagnostic'
-  | 'prCoverageReport';
+  | 'prCoverageReport'
+  | 'deadBranches';
 
 /**
  * Chart category for grouping in the TreeView.

@@ -2,7 +2,7 @@
   "name": "gitr",
   "displayName": "CommitPulse - Git Analytics Pipeline",
   "description": "CommitPulse transforms your Git repositories into actionable engineering intelligence. It extracts commit history, links commits to Jira and Linear issues, syncs contributor data from GitHub, and calculates team-level metrics — all from within VS Code. Data is stored locally in PostgreSQL (via Docker), keeping your engineering analytics private, fast, and under your control. Public repo: https://github.com/antonajp/CommitPulse",
-  "version": "0.1.64",
+  "version": "0.1.65",
   "publisher": "ImproviseLabs",
   "license": "MIT",
   "repository": {
@@ -276,26 +276,6 @@
         "command": "gitr.syncGitHubPRs",
         "title": "Gitr: Sync GitHub PRs (Deprecated)",
         "category": "Gitr"
-      },
-      {
-        "command": "gitrx.analyzeBranches",
-        "title": "Gitr: Open Dead Branches Dashboard",
-        "icon": "$(git-branch)"
-      },
-      {
-        "command": "gitrx.refreshDeadBranches",
-        "title": "Gitr: Refresh Dead Branches",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitrx.copyBranchName",
-        "title": "Copy Branch Name",
-        "icon": "$(copy)"
-      },
-      {
-        "command": "gitrx.viewBranchInDashboard",
-        "title": "View in Dashboard",
-        "icon": "$(graph)"
       },
       {
         "command": "gitrx.refreshBranches",
@@ -810,11 +790,6 @@
           "id": "gitrx-charts",
           "name": "Charts",
           "icon": "$(graph)"
-        },
-        {
-          "id": "gitrx-dead-branches",
-          "name": "Dead Branches",
-          "icon": "$(git-branch)"
         }
       ]
     },
@@ -844,16 +819,6 @@
           "command": "gitrx.refreshCharts",
           "when": "view == gitrx-charts",
           "group": "navigation"
-        },
-        {
-          "command": "gitrx.refreshDeadBranches",
-          "when": "view == gitrx-dead-branches",
-          "group": "navigation@1"
-        },
-        {
-          "command": "gitrx.analyzeBranches",
-          "when": "view == gitrx-dead-branches",
-          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -876,16 +841,6 @@
           "command": "gitrx.openOrganizationProfile",
           "when": "view == gitrx-contributors && viewItem == organization",
           "group": "navigation@1"
-        },
-        {
-          "command": "gitrx.viewBranchInDashboard",
-          "when": "view == gitrx-dead-branches && viewItem == deadBranch",
-          "group": "1_actions@1"
-        },
-        {
-          "command": "gitrx.copyBranchName",
-          "when": "view == gitrx-dead-branches && viewItem == deadBranch",
-          "group": "1_actions@2"
         }
       ]
     }
