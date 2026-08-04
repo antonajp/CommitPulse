@@ -35,7 +35,6 @@ import { OrganizationProfilePanel } from './views/webview/org-profile-panel.js';
 import { PRCoveragePanel } from './views/webview/pr-coverage-panel.js';
 import { DeadBranchesPanel } from './views/webview/dead-branches-panel.js';
 import { ChartTreeProvider } from './providers/chart-tree-provider.js';
-import { DeadBranchesTreeProvider } from './providers/dead-branches-tree-provider.js';
 import { GitHubPRSyncService } from './services/github-pr-sync-service.js';
 import { PRCoverageService } from './services/pr-coverage-service.js';
 import type { GitHubPRSyncConfig } from './services/code-review-velocity-types.js';
@@ -79,12 +78,6 @@ let pipelineRunTreeProvider: PipelineRunTreeProvider | undefined;
  * Ticket: IQS-886
  */
 let chartTreeProvider: ChartTreeProvider | undefined;
-
-/**
- * Dead Branches TreeView provider for displaying dead/stale branches.
- * Ticket: GITX-239
- */
-let deadBranchesTreeProvider: DeadBranchesTreeProvider | undefined;
 
 /**
  * Class name constant for structured logging context.
@@ -161,9 +154,6 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Register Charts TreeView and Architecture Chart command (IQS-886)
   initializeChartTreeView(context);
-
-  // Register Dead Branches TreeView (GITX-239)
-  initializeDeadBranchesTreeView(context);
 
   // Listen for configuration changes
   const configChangeDisposable = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -1251,90 +1241,6 @@ function initializeChartTreeView(context: vscode.ExtensionContext): void {
 }
 
 /**
- * Initialize the Dead Branches TreeView provider and register associated commands.
- * Registers:
- *  - gitrx-dead-branches TreeView with DeadBranchesTreeProvider
- *  - gitrx.refreshDeadBranches command
- *  - gitrx.copyBranchName context menu command
- *  - gitrx.viewBranchInDashboard context menu command
- *
- * Ticket: GITX-239
- */
-function initializeDeadBranchesTreeView(context: vscode.ExtensionContext): void {
-  logger?.debug(CLASS_NAME, 'initializeDeadBranchesTreeView', 'Initializing Dead Branches TreeView');
-
-  const secretService = getSecretService();
-  if (!secretService) {
-    logger?.warn(CLASS_NAME, 'initializeDeadBranchesTreeView', 'SecretStorageService not available yet, deferring TreeView init');
-    return;
-  }
-
-  deadBranchesTreeProvider = new DeadBranchesTreeProvider(secretService);
-  disposables.push(deadBranchesTreeProvider);
-
-  // Register the TreeView with VS Code
-  const treeView = vscode.window.createTreeView('gitrx-dead-branches', {
-    treeDataProvider: deadBranchesTreeProvider,
-    showCollapseAll: true,
-  });
-  disposables.push(treeView);
-  logger?.debug(CLASS_NAME, 'initializeDeadBranchesTreeView', 'TreeView gitrx-dead-branches registered');
-
-  // gitrx.refreshDeadBranches - Refresh the Dead Branches TreeView
-  const refreshDisposable = vscode.commands.registerCommand('gitrx.refreshDeadBranches', () => {
-    logger?.info(CLASS_NAME, 'refreshDeadBranches', 'Command executed: gitrx.refreshDeadBranches');
-    deadBranchesTreeProvider?.refresh();
-  });
-  disposables.push(refreshDisposable);
-
-  // gitrx.copyBranchName - Copy branch name to clipboard (context menu)
-  const copyBranchNameDisposable = vscode.commands.registerCommand(
-    'gitrx.copyBranchName',
-    async (item: { nodeData?: { branch?: { branchName?: string } } }) => {
-      const branchName = item?.nodeData?.branch?.branchName;
-      logger?.info(CLASS_NAME, 'copyBranchName', `Command executed: gitrx.copyBranchName for ${branchName ?? 'unknown'}`);
-
-      if (!branchName) {
-        logger?.warn(CLASS_NAME, 'copyBranchName', 'No branch name context available');
-        void vscode.window.showWarningMessage('Gitr: No branch selected.');
-        return;
-      }
-
-      await vscode.env.clipboard.writeText(branchName);
-      void vscode.window.showInformationMessage(`Copied: ${branchName}`);
-    },
-  );
-  disposables.push(copyBranchNameDisposable);
-
-  // gitrx.viewBranchInDashboard - Open dead branches dashboard with focus on branch
-  const viewBranchInDashboardDisposable = vscode.commands.registerCommand(
-    'gitrx.viewBranchInDashboard',
-    (item: { nodeData?: { branch?: { branchName?: string; repository?: string } } }) => {
-      const branchName = item?.nodeData?.branch?.branchName;
-      const repository = item?.nodeData?.branch?.repository;
-      logger?.info(CLASS_NAME, 'viewBranchInDashboard', `Command executed: gitrx.viewBranchInDashboard for ${branchName ?? 'unknown'}`);
-
-      if (!secretService) {
-        logger?.warn(CLASS_NAME, 'viewBranchInDashboard', 'SecretStorageService not available');
-        void vscode.window.showWarningMessage('Gitr: Extension not fully initialized. Try again in a moment.');
-        return;
-      }
-
-      // Open the dead branches dashboard (same as gitrx.analyzeBranches)
-      // The dashboard will show all branches; branch-specific filtering could be added later
-      DeadBranchesPanel.createOrShow(context.extensionUri, secretService);
-
-      if (branchName && repository) {
-        void vscode.window.showInformationMessage(`Viewing: ${branchName} (${repository})`);
-      }
-    },
-  );
-  disposables.push(viewBranchInDashboardDisposable);
-
-  logger?.info(CLASS_NAME, 'initializeDeadBranchesTreeView', 'Dead Branches TreeView and commands registered successfully');
-}
-
-/**
  * GITX-168: Execute the Fix Repository Names command.
  * Detects and corrects repository name mismatches in the database.
  * Requires user confirmation before making any corrections.
@@ -1508,12 +1414,6 @@ export function deactivate(): void {
   if (chartTreeProvider) {
     logger?.debug(CLASS_NAME, 'deactivate', 'Disposing ChartTreeProvider');
     chartTreeProvider = undefined;
-  }
-
-  // Clean up the dead branches tree provider (GITX-239)
-  if (deadBranchesTreeProvider) {
-    logger?.debug(CLASS_NAME, 'deactivate', 'Disposing DeadBranchesTreeProvider');
-    deadBranchesTreeProvider = undefined;
   }
 
   for (const disposable of disposables) {

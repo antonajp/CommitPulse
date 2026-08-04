@@ -243,6 +243,14 @@ export const CHART_CATALOG: readonly ChartDefinition[] = [
     description: 'Identify commits without pull requests',
     icon: 'git-pull-request',
   },
+  {
+    type: 'deadBranches',
+    label: 'Dead Branches',
+    category: 'Process',
+    command: 'gitrx.analyzeBranches',
+    description: 'Identify stale and merged branches for cleanup',
+    icon: 'git-branch',
+  },
 ] as const;
 
 /**
